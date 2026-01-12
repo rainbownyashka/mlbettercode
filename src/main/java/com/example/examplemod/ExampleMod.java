@@ -1202,9 +1202,12 @@ public class ExampleMod
         {
             String title = getScoreboardTitle();
             if ("\u0420\u0415\u0414\u0410\u041a\u0422\u041e\u0420 \u0418\u0413\u0420\u042b".equals(title))
-            {
+            {  
                 scoreboardCodeMode = true;
-
+                // DEV=true если креатив и найден скорборд
+                editorModeActive = true;
+                editorModeWasActive = true;
+                pendingDev = false;
             }
         }
         if (mc != null && mc.playerController != null && mc.playerController.isInCreativeMode()
