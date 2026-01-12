@@ -1,0 +1,16 @@
+[
+{
+  "modid": "bettercode",
+  "name": "Creative+ BetterCode",
+  "description": "Localhost HTTP API bridge for Minecraft.",
+  "version": "${version}",
+  "mcversion": "${mcversion}",
+  "url": "",
+  "updateUrl": "",
+  "authorList": ["rainbow_universe"],
+  "credits": "Built for local Python integration",
+  "logoFile": "",
+  "screenshots": [],
+  "dependencies": []
+}
+]
