@@ -180,6 +180,10 @@ public class ExampleMod
     private static Logger logger;
     private static Configuration config;
     private static boolean enableSecondHotbar = true;
+    // --- Auto chest cache settings (config) ---
+    private static boolean autoCacheEnabled = false;
+    private static int autoCacheRadius = 6;
+    private static boolean autoCacheTrappedOnly = true;
     private static volatile String lastChatMessage = "";
     private static volatile String lastChatPlayer = "";
     private static volatile long lastChatTimeMs = 0L;
@@ -299,9 +303,13 @@ public class ExampleMod
     private File chestCacheFile = null;
     private File noteFile = null;
     private File menuCacheFile = null;
+    private File clickMenuFile = null;
     private File shulkerHoloFile = null;
     private boolean entriesDirty = false;
     private long lastEntriesSaveMs = 0L;
+    private boolean clickMenuDirty = false;
+    private long lastClickMenuSaveMs = 0L;
+    private final AtomicBoolean clickMenuSaveQueued = new AtomicBoolean(false);
     private String noteText = "";
     private BlockPos lastClickedPos = null;
     private int lastClickedDim = 0;
@@ -312,6 +320,59 @@ public class ExampleMod
 
     private BlockPos lastGlassPos = null;
     private int lastGlassDim = 0;
+    // Click-to-menu recording
+    private ItemStack lastClickedSlotStack = null;
+    private int lastClickedSlotNumber = -1;
+    private long lastClickedSlotMs = 0L;
+    private String lastClickedGuiClass = null;
+    private String lastClickedGuiTitle = null;
+    // history of last two clicked item keys (non-ignored clicks)
+    private String[] lastClickedKeyHistory = new String[] { null, null };
+    // last observed container items (most recent snapshot while a container was open)
+    private List<ItemStack> lastObservedContainerItems = null;
+    private long lastObservedContainerMs = 0L;
+    private String previousScreenClass = null;
+    private String previousScreenTitle = null;
+    private final Map<String, List<ItemStack>> clickMenuMap = new HashMap<>();
+    private final Map<String, String> clickMenuLocation = new HashMap<>();
+    private final Map<String, String> clickFunctionMap = new HashMap<>();
+    // Place blocks command state
+    private static class PlaceEntry {
+        BlockPos pos;
+        Block block;
+        String searchKey; // lower-case normalized search key for GUI item to click after placing
+        int desiredSlotIndex;
+        boolean placedBlock;
+        boolean awaitingMenu;
+        long menuStartMs;
+        long lastMenuClickMs;
+        int lastMenuWindowId;
+        PlaceEntry(BlockPos pos, Block block) {
+            this.pos = pos;
+            this.block = block;
+            this.searchKey = null;
+            this.desiredSlotIndex = -1;
+            this.placedBlock = false;
+            this.awaitingMenu = false;
+            this.menuStartMs = 0L;
+            this.lastMenuClickMs = 0L;
+            this.lastMenuWindowId = -1;
+        }
+        PlaceEntry(BlockPos pos, Block block, String searchKey) {
+            this.pos = pos;
+            this.block = block;
+            this.searchKey = searchKey;
+            this.desiredSlotIndex = -1;
+            this.placedBlock = false;
+            this.awaitingMenu = false;
+            this.menuStartMs = 0L;
+            this.lastMenuClickMs = 0L;
+            this.lastMenuWindowId = -1;
+        }
+    }
+    private final Deque<PlaceEntry> placeBlocksQueue = new ArrayDeque<>();
+    private PlaceEntry placeBlocksCurrent = null;
+    private boolean placeBlocksActive = false;
     private boolean pendingChestSnapshot = false;
     private long pendingChestUntilMs = 0L;
     private String lastSnapshotInfo = "";
@@ -321,6 +382,17 @@ public class ExampleMod
     private long allowChestUntilMs = 0L;
     private long lastChestSnapshotMs = 0L;
     private long lastChestSnapshotTick = -1L;
+
+    // --- Auto chest cache runtime state ---
+    private long nextAutoCacheScanMs = 0L;
+    private boolean autoCacheInProgress = false;
+    private long autoCacheStartMs = 0L;
+    private BlockPos autoCacheTargetPos = null;
+    private int autoCacheTargetDim = 0;
+    private boolean cacheAllActive = false;
+    private final Deque<BlockPos> cacheAllQueue = new ArrayDeque<>();
+    private BlockPos cacheAllCurrentTarget = null;
+    private int cacheAllCurrentDim = 0;
     private boolean lastEditorModeActive = false;
     private boolean chestIdDirty = false;
     private long lastChestIdSaveMs = 0L;
@@ -1157,6 +1229,234 @@ public class ExampleMod
                 initHotbarsForWorld(mc);
             }
         }
+        // Screen change triggers: detect when current GUI changes and report
+        GuiScreen currentScreen = mc == null ? null : mc.currentScreen;
+        String currentScreenClass = currentScreen == null ? null : currentScreen.getClass().getSimpleName();
+        String currentScreenTitle = null;
+        if (currentScreen instanceof GuiChest)
+        {
+            currentScreenTitle = getGuiTitle((GuiChest) currentScreen);
+        }
+        else if (currentScreen != null)
+        {
+            currentScreenTitle = currentScreen.getClass().getSimpleName();
+        }
+        // Compare with previous
+        if ((previousScreenClass == null && currentScreenClass != null)
+            || (previousScreenClass != null && currentScreenClass == null)
+            || (previousScreenClass != null && currentScreenClass != null && !previousScreenClass.equals(currentScreenClass))
+            || (previousScreenTitle != null && currentScreenTitle != null && !previousScreenTitle.equals(currentScreenTitle)))
+        {
+            // Determine trigger type
+            String trigger = "ScreenChanged";
+            if (previousScreenClass == null && currentScreenClass != null)
+            {
+                trigger = "OpenedMenu";
+            }
+            else if (previousScreenClass != null && currentScreenClass == null)
+            {
+                trigger = "ClosedMenu";
+            }
+            else if (previousScreenTitle != null && currentScreenTitle != null && !previousScreenTitle.equals(currentScreenTitle))
+            {
+                trigger = "TitleChanged";
+            }
+            else if (previousScreenClass != null && currentScreenClass != null && !previousScreenClass.equals(currentScreenClass))
+            {
+                trigger = "ClassChanged";
+            }
+            if (debugUi && mc != null && mc.player != null)
+            {
+                String prev = previousScreenTitle == null ? "-" : previousScreenTitle;
+                String cur = currentScreenTitle == null ? "-" : currentScreenTitle;
+                mc.player.sendMessage(new TextComponentString("Trigger=" + trigger + " prev='" + prev + "' cur='" + cur + "'"));
+            }
+            // If a menu was just opened, clear pending click/place queues to avoid interference
+            if ("OpenedMenu".equals(trigger))
+            {
+                // Schedule content-change detection after a short delay so the server can populate the container.
+                try
+                {
+                    if (mc.player != null && mc.player.openContainer != null)
+                    {
+                        pendingMenuDetect = true;
+                        pendingMenuDetectStartMs = System.currentTimeMillis();
+                        pendingMenuDetectWindowId = mc.player.openContainer.windowId;
+                        if (debugUi && mc.player != null)
+                        {
+                            mc.player.sendMessage(new TextComponentString("Scheduled menu-content detection for window " + pendingMenuDetectWindowId));
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // ignore scheduling errors
+                }
+
+                if (!placeBlocksActive)
+                {
+                    queuedClicks.clear();
+                    placeBlocksQueue.clear();
+                    placeBlocksCurrent = null;
+                    placeBlocksActive = false;
+                }
+                lastClickedSlotStack = null;
+                lastClickedGuiClass = null;
+                lastClickedGuiTitle = null;
+            }
+
+            // If title changed and we have a recent clicked slot, assign the current title as the
+            // function for the clicked item and report it in chat.
+            if ("TitleChanged".equals(trigger))
+            {
+                if (lastClickedSlotStack != null && System.currentTimeMillis() - lastClickedSlotMs < 5000L)
+                {
+                    String key = getItemNameKey(lastClickedSlotStack);
+                    String func = currentScreenTitle == null ? "-" : currentScreenTitle;
+                    clickFunctionMap.put(key, func);
+                if (debugUi && mc != null && mc.player != null)
+                {
+                    String itemName = lastClickedSlotStack.isEmpty() ? "empty" : lastClickedSlotStack.getDisplayName();
+                    mc.player.sendMessage(new TextComponentString("Assigned function '" + func + "' to item " + itemName + " (key=" + key + ")"));
+                }
+                    lastClickedSlotStack = null;
+                    lastClickedGuiClass = null;
+                    lastClickedGuiTitle = null;
+                }
+            }
+            if ("ClosedMenu".equals(trigger))
+            {
+                boolean wasChat = previousScreenClass != null && previousScreenClass.contains("GuiChat");
+                if (!wasChat && lastObservedContainerItems != null && !lastObservedContainerItems.isEmpty())
+                {
+                    for (String key : lastClickedKeyHistory)
+                    {
+                        if (key == null || "empty".equalsIgnoreCase(key))
+                        {
+                            continue;
+                        }
+                        if (clickMenuMap.containsKey(key))
+                        {
+                            continue;
+                        }
+                        List<ItemStack> copy = new ArrayList<>();
+                        for (ItemStack st : lastObservedContainerItems)
+                        {
+                            copy.add(st.isEmpty() ? ItemStack.EMPTY : st.copy());
+                        }
+                        clickMenuMap.put(key, copy);
+                        clickMenuLocation.put(key, "closedMenuFallback");
+                        clickMenuDirty = true;
+                    }
+                }
+            }
+            // If screen closed, clear queues to avoid false positives
+            if (currentScreen == null)
+            {
+                if (!placeBlocksActive)
+                {
+                    queuedClicks.clear();
+                    placeBlocksQueue.clear();
+                    placeBlocksCurrent = null;
+                    placeBlocksActive = false;
+                }
+                lastClickedSlotStack = null;
+            }
+        }
+        previousScreenClass = currentScreenClass;
+        previousScreenTitle = currentScreenTitle;
+        // If there are queued clicks waiting for a server container, try to replay them now
+        if (mc != null && mc.player != null && !queuedClicks.isEmpty() && mc.player.openContainer != null)
+        {
+            replayQueuedClicks(mc);
+        }
+        if (mc != null && mc.currentScreen instanceof GuiContainer)
+        {
+            handlePlaceMenuNavigation((GuiContainer) mc.currentScreen, System.currentTimeMillis());
+        }
+        
+        // If a menu-open detection was scheduled, run it after a short delay so the server has time
+        // to populate the container. Timeout if it takes too long.
+        if (pendingMenuDetect)
+        {
+            long nowMs = System.currentTimeMillis();
+            // wait at least 250ms before running detection
+            if (nowMs - pendingMenuDetectStartMs >= 250L)
+            {
+                try
+                {
+                    if (mc != null && mc.player != null && mc.player.openContainer != null
+                        && mc.player.openContainer.windowId == pendingMenuDetectWindowId)
+                    {
+                        // perform the same detection that used to run immediately on OpenedMenu
+                        if (lastClickedSlotStack != null && nowMs - lastClickedSlotMs < 5000L)
+                        {
+                            List<ItemStack> observed = getOpenContainerItems(mc.player.openContainer);
+                            int bestDiff = Integer.MAX_VALUE;
+                            int bestFirst = -1;
+                            String bestKey = null;
+                            for (Map.Entry<String, CachedMenu> e : menuCache.entrySet())
+                            {
+                                List<ItemStack> cachedItems = e.getValue() == null ? null : e.getValue().items;
+                                int[] res = compareMenuDiffWithFirst(observed, cachedItems);
+                                if (res[0] < bestDiff)
+                                {
+                                    bestDiff = res[0];
+                                    bestFirst = res[1];
+                                    bestKey = e.getKey();
+                                }
+                            }
+                            boolean meaningful = false;
+                            if (bestDiff == Integer.MAX_VALUE)
+                            {
+                                meaningful = !observed.isEmpty();
+                            }
+                            else if (bestDiff > 1)
+                            {
+                                meaningful = true;
+                            }
+                            else if (bestDiff == 1)
+                            {
+                                if (bestFirst != lastClickedSlotNumber)
+                                {
+                                    meaningful = true;
+                                }
+                            }
+                            if (meaningful)
+                            {
+                                String key = getItemNameKey(lastClickedSlotStack);
+                                String func = (currentScreenTitle == null ? "menu_changed" : currentScreenTitle);
+                                clickFunctionMap.put(key, func);
+                                if (debugUi && mc.player != null)
+                                {
+                                    mc.player.sendMessage(new TextComponentString("Assigned function '" + func + "' to item "
+                                        + (lastClickedSlotStack == null ? "empty" : lastClickedSlotStack.getDisplayName())
+                                        + " (key=" + key + ") due to menu content change (delayed)"));
+                                }
+                                lastClickedSlotStack = null;
+                                lastClickedGuiClass = null;
+                                lastClickedGuiTitle = null;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // ignore
+                }
+                // clear the pending flag once we've attempted detection
+                pendingMenuDetect = false;
+                pendingMenuDetectStartMs = 0L;
+                pendingMenuDetectWindowId = -1;
+            }
+            else if (nowMs - pendingMenuDetectStartMs > 5000L)
+            {
+                // give up after 5s
+                pendingMenuDetect = false;
+                pendingMenuDetectStartMs = 0L;
+                pendingMenuDetectWindowId = -1;
+            }
+        }
         long now = System.currentTimeMillis();
         if (allowChestSnapshot && now > allowChestUntilMs)
         {
@@ -1266,12 +1566,19 @@ public class ExampleMod
                 {
                     if (worldTick >= 0 && worldTick != lastChestSnapshotTick)
                     {
-                        snapshotCurrentContainer((GuiContainer) mc.currentScreen);
-                        lastChestSnapshotTick = worldTick;
+                        GuiContainer screen = (GuiContainer) mc.currentScreen;
+                        if (screen != null)
+                        {
+                            snapshotCurrentContainer(screen);
+                            lastChestSnapshotTick = worldTick;
+                        }
                     }
-                    pendingChestSnapshot = false;
-                    lastSnapshotInfo = "snap:screen=" + mc.currentScreen.getClass().getSimpleName()
-                        + " pos=" + (lastClickedPos == null ? "-" : lastClickedPos.toString());
+                    if (mc.currentScreen != null)
+                    {
+                        pendingChestSnapshot = false;
+                        lastSnapshotInfo = "snap:screen=" + mc.currentScreen.getClass().getSimpleName()
+                            + " pos=" + (lastClickedPos == null ? "-" : lastClickedPos.toString());
+                    }
                 }
                 else if (mc.player != null && mc.player.openContainer != null
                     && mc.player.openContainer != mc.player.inventoryContainer)
@@ -1330,9 +1637,13 @@ public class ExampleMod
         handleTpScrollQueue(mc);
         handleTpPathQueue(mc);
         handleHotbarSwap(mc);
+        handleCacheAllTick(mc, now);
+        handlePlaceBlocksTick(mc, now);
+        handleAutoChestCacheTick(mc, now);
         checkConfigFileChanges();
         saveEntriesIfNeeded();
         saveMenuCacheIfNeeded();
+        saveClickMenuIfNeeded();
         saveChestIdCachesIfNeeded();
         saveShulkerHolosIfNeeded();
         saveCodeBlueGlassIfNeeded();
@@ -1579,6 +1890,10 @@ public class ExampleMod
         ClientCommandHandler.instance.registerCommand(new TpPathCommand());
         ClientCommandHandler.instance.registerCommand(new SignSearchCommand());
         ClientCommandHandler.instance.registerCommand(new ExportLineCommand());
+        ClientCommandHandler.instance.registerCommand(new AutoCacheCommand());
+        ClientCommandHandler.instance.registerCommand(new CacheAllChestsCommand());
+        ClientCommandHandler.instance.registerCommand(new PlaceBlocksCommand());
+        ClientCommandHandler.instance.registerCommand(new ShowFuncsCommand());
     }
 
 
@@ -1704,6 +2019,28 @@ public class ExampleMod
         {
             debugUi = !debugUi;
             setActionBar(true, debugUi ? "&aDebug ON" : "&cDebug OFF", 2000L);
+            Minecraft mc = Minecraft.getMinecraft();
+            GuiScreen screen = mc == null ? null : mc.currentScreen;
+            String screenInfo = "screen = ";
+            if (screen == null)
+            {
+                screenInfo += "-";
+                // clear queues when screen closed
+                queuedClicks.clear();
+                placeBlocksQueue.clear();
+                placeBlocksCurrent = null;
+                placeBlocksActive = false;
+            }
+            else
+            {
+                String cls = screen.getClass().getSimpleName();
+                String title = (screen instanceof GuiChest) ? getGuiTitle((GuiChest) screen) : cls;
+                screenInfo += cls + " title='" + title + "'";
+            }
+            if (mc != null && mc.player != null)
+            {
+                mc.player.sendMessage(new TextComponentString(screenInfo));
+            }
         }
 
         @Override
@@ -2862,6 +3199,78 @@ public class ExampleMod
         Minecraft mc = Minecraft.getMinecraft();
         int mouseX = getScaledMouseX(mc, gui);
         int mouseY = getScaledMouseY(mc, gui);
+        // Record clicked slot for click->menu mapping
+        if (Mouse.getEventButtonState())
+        {
+            try
+            {
+                Slot hovered = getSlotUnderMouse((GuiContainer) gui);
+                if (hovered != null)
+                {
+                    ItemStack s = hovered.getStack();
+                    if (s != null && !s.isEmpty())
+                    {
+                        // ignore clicks on stained_glass_pane and treat null/empty as air
+                        try
+                        {
+                            ResourceLocation rn = s.getItem().getRegistryName();
+                            if (rn != null && "stained_glass_pane".equals(rn.getResourcePath()))
+                            {
+                                // ignore this click
+                            }
+                            else
+                            {
+                                // push history (keep last two keys)
+                                String key = getItemNameKey(s);
+                                lastClickedKeyHistory[0] = lastClickedKeyHistory[1];
+                                lastClickedKeyHistory[1] = key;
+                                lastClickedSlotStack = s.copy();
+                                lastClickedSlotNumber = hovered.slotNumber;
+                                lastClickedSlotMs = System.currentTimeMillis();
+                                lastClickedGuiClass = gui.getClass().getSimpleName();
+                                if (gui instanceof GuiChest)
+                                {
+                                    lastClickedGuiTitle = getGuiTitle((GuiChest) gui);
+                                }
+                                else
+                                {
+                                    lastClickedGuiTitle = "";
+                                }
+                                // Immediately snapshot the current GUI contents so ClosedMenu fallback has fresh data
+                                try
+                                {
+                                    Minecraft mm = Minecraft.getMinecraft();
+                                    if (gui instanceof GuiContainer && mm != null && mm.player != null)
+                                    {
+                                        Container c = ((GuiContainer) gui).inventorySlots;
+                                        List<ItemStack> snap = new ArrayList<>();
+                                        for (Slot slot : c.inventorySlots)
+                                        {
+                                            if (slot == null) continue;
+                                            try { if (slot.inventory == mm.player.inventory) continue; } catch (Exception ignore) {}
+                                            if (!slot.getHasStack()) continue;
+                                            ItemStack st = slot.getStack();
+                                            if (st == null || st.isEmpty()) continue;
+                                            snap.add(st.copy());
+                                        }
+                                        if (!snap.isEmpty())
+                                        {
+                                            lastObservedContainerItems = snap;
+                                            lastObservedContainerMs = System.currentTimeMillis();
+                                        }
+                                    }
+                                }
+                                catch (Exception ignore) { }
+                            }
+                        }
+                        catch (Exception ignore)
+                        {
+                        }
+                    }
+                }
+            }
+            catch (Exception ignored) { }
+        }
         if (inputActive)
         {
             if (Mouse.getEventButtonState())
@@ -3172,6 +3581,7 @@ public class ExampleMod
         {
             saveEntriesIfNeeded();
             saveMenuCacheIfNeeded();
+            saveClickMenuIfNeeded();
             saveChestIdCachesIfNeeded();
             editorModeActive = false;
             editorModeWasActive = false;
@@ -3318,6 +3728,11 @@ public class ExampleMod
         lastClickedMs = System.currentTimeMillis();
         Block clickedBlock = event.getWorld().getBlockState(event.getPos()).getBlock();
         TileEntity clickedTile = event.getWorld().getTileEntity(event.getPos());
+        if (isStainedGlassMeta(event.getWorld(), event.getPos(), 3))
+        {
+            lastGlassPos = event.getPos();
+            lastGlassDim = lastClickedDim;
+        }
         boolean isInventory = clickedTile instanceof net.minecraft.inventory.IInventory;
         lastClickedChest = isInventory || clickedBlock == Blocks.CHEST || clickedBlock == Blocks.TRAPPED_CHEST;
         allowChestSnapshot = lastClickedChest;
@@ -3695,6 +4110,16 @@ public class ExampleMod
             setActionBar(true, "&cTarget outside world border/height", 2500L);
             return;
         }
+        
+        // Enable flight for smooth TP
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc != null && mc.player != null)
+        {
+            mc.player.capabilities.allowFlying = true;
+            mc.player.capabilities.isFlying = true;
+            mc.player.sendPlayerAbilities();
+        }
+        
         tpPathQueue.clear();
         double dx = tx - sx;
         double dy = ty - sy;
@@ -4174,9 +4599,17 @@ public class ExampleMod
             ItemStack stack = inv.getStackInSlot(i);
             items.add(stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
         }
+        // remember these observed items for potential ClosedMenu fallback
+        lastObservedContainerItems = new ArrayList<>();
+        for (ItemStack st : items)
+        {
+            lastObservedContainerItems.add(st.isEmpty() ? ItemStack.EMPTY : st.copy());
+        }
+        lastObservedContainerMs = System.currentTimeMillis();
         String title = getGuiTitle(chest);
         String hash = buildMenuHash(items);
         CachedMenu menu = new CachedMenu(title, size, items, hash);
+        Minecraft mc = Minecraft.getMinecraft();
         if (pendingCacheKey != null)
         {
             menuCache.put(pendingCacheKey, menu);
@@ -4208,6 +4641,65 @@ public class ExampleMod
             && System.currentTimeMillis() - lastClickedMs < 5000L)
         {
             cacheChestInventoryAt(lastClickedDim, lastClickedPos, items, lastClickedLabel);
+        }
+
+        // If user clicked a slot that opened this menu, record mapping from clicked item -> available items
+        if (lastClickedSlotStack != null && System.currentTimeMillis() - lastClickedSlotMs < 5000L)
+        {
+            String currentGuiClass = chest.getClass().getSimpleName();
+            // If the click happened in the same GUI class/title, skip (not an open-from-click)
+            if (lastClickedGuiClass != null && lastClickedGuiClass.equals(currentGuiClass)
+                && lastClickedGuiTitle != null && lastClickedGuiTitle.equals(title))
+            {
+                lastClickedSlotStack = null;
+                lastClickedGuiClass = null;
+                lastClickedGuiTitle = null;
+            }
+            
+            
+            else
+            {
+                String key = getItemNameKey(lastClickedSlotStack);
+                if (!clickMenuMap.containsKey(key))
+                {
+                    List<ItemStack> copy = new ArrayList<>();
+                    for (ItemStack st : items)
+                    {
+                        copy.add(st.isEmpty() ? ItemStack.EMPTY : st.copy());
+                    }
+                    clickMenuMap.put(key, copy);
+                    clickMenuLocation.put(key, "slot:" + lastClickedSlotNumber + " title:" + title);
+                    clickMenuDirty = true;
+                    if (mc != null && mc.player != null)
+                    {
+                        StringBuilder dbg = new StringBuilder();
+                        dbg.append("Recorded click ").append(lastClickedSlotNumber).append(" -> ");
+                        int show = Math.min(6, copy.size());
+                        for (int i = 0; i < show; i++)
+                        {
+                            ItemStack s = copy.get(i);
+                            dbg.append((i==0?"":" ,") + (s.isEmpty()?"empty":s.getDisplayName()));
+                        }
+                        mc.player.sendMessage(new TextComponentString("Recorded key=" + key + " -> " + dbg.toString()));
+                    }
+                }
+                lastClickedSlotStack = null;
+                lastClickedGuiClass = null;
+                lastClickedGuiTitle = null;
+            }
+        }
+
+        // --- Auto-cache: close chest immediately after snapshot so player doesn't notice ---
+        if (autoCacheInProgress)
+        {
+            if (mc != null && mc.player != null)
+            {
+                mc.player.closeScreen();
+            }
+            autoCacheInProgress = false;
+            autoCacheTargetPos = null;
+            autoCacheStartMs = 0L;
+            nextAutoCacheScanMs = System.currentTimeMillis() + 250L;
         }
 
         if (fakeMenuActive && fakeMenuKey != null)
@@ -4272,6 +4764,13 @@ public class ExampleMod
         {
             return;
         }
+        // store last observed container items for potential ClosedMenu fallback
+        lastObservedContainerItems = new ArrayList<>();
+        for (ItemStack st : items)
+        {
+            lastObservedContainerItems.add(st.isEmpty() ? ItemStack.EMPTY : st.copy());
+        }
+        lastObservedContainerMs = System.currentTimeMillis();
         String title = "Container";
         String hash = buildMenuHash(items);
         CachedMenu menu = new CachedMenu(title, items.size(), items, hash);
@@ -4297,6 +4796,48 @@ public class ExampleMod
         if (lastClickedPos != null && lastClickedChest && System.currentTimeMillis() - lastClickedMs < 5000L)
         {
             cacheChestInventoryAt(lastClickedDim, lastClickedPos, items, lastClickedLabel);
+        }
+
+        // Also handle openContainer snapshots (same behavior)
+        if (lastClickedSlotStack != null && System.currentTimeMillis() - lastClickedSlotMs < 5000L)
+        {
+            String currentGuiClass = "container:" + menu.title; // approximate class/title
+            if (lastClickedGuiClass != null && lastClickedGuiClass.equals(currentGuiClass))
+            {
+                lastClickedSlotStack = null;
+                lastClickedGuiClass = null;
+                lastClickedGuiTitle = null;
+            }
+            else
+            {
+                String key = getItemNameKey(lastClickedSlotStack);
+                if (!clickMenuMap.containsKey(key))
+                {
+                    List<ItemStack> copy = new ArrayList<>();
+                    for (ItemStack st : items)
+                    {
+                        copy.add(st.isEmpty() ? ItemStack.EMPTY : st.copy());
+                    }
+                    clickMenuMap.put(key, copy);
+                    clickMenuLocation.put(key, "slot:" + lastClickedSlotNumber + " container");
+                    clickMenuDirty = true;
+                    if (mc != null && mc.player != null)
+                    {
+                        StringBuilder dbg = new StringBuilder();
+                        dbg.append("Recorded click ").append(lastClickedSlotNumber).append(" -> ");
+                        int show = Math.min(6, copy.size());
+                        for (int i = 0; i < show; i++)
+                        {
+                            ItemStack s = copy.get(i);
+                            dbg.append((i==0?"":" ,") + (s.isEmpty()?"empty":s.getDisplayName()));
+                        }
+                        mc.player.sendMessage(new TextComponentString("Recorded key=" + key + " -> " + dbg.toString()));
+                    }
+                }
+                lastClickedSlotStack = null;
+                lastClickedGuiClass = null;
+                lastClickedGuiTitle = null;
+            }
         }
     }
 
@@ -4374,7 +4915,34 @@ public class ExampleMod
         {
             return;
         }
-        queuedClicks.clear();
+        // Execute queued clicks against the current open container
+        try
+        {
+            for (ClickAction act : new ArrayList<>(queuedClicks))
+            {
+                if (act == null)
+                {
+                    continue;
+                }
+                try
+                {
+                    int windowId = container.windowId;
+                    int slot = act.slotNumber;
+                    int button = act.button;
+                    ClickType type = act.type == null ? ClickType.PICKUP : act.type;
+                    mc.playerController.windowClick(windowId, slot, button, type, mc.player);
+                    mc.playerController.updateController();
+                }
+                catch (Exception e)
+                {
+                    // ignore individual click failures
+                }
+            }
+        }
+        finally
+        {
+            queuedClicks.clear();
+        }
     }
 
     private void updateCachePathFromItem(ItemStack stack)
@@ -4586,6 +5154,38 @@ public class ExampleMod
         return Integer.toHexString(sb.toString().hashCode());
     }
 
+    private String getItemNameKey(ItemStack stack)
+    {
+        if (stack == null || stack.isEmpty())
+        {
+            return "empty";
+        }
+        String name = stack.getDisplayName();
+        if (name == null)
+        {
+            name = "";
+        }
+        String cleaned = net.minecraft.util.text.TextFormatting.getTextWithoutFormattingCodes(name).trim().toLowerCase();
+        return cleaned.isEmpty() ? "empty" : cleaned;
+    }
+
+    private String normalizeForMatch(String s)
+    {
+        if (s == null)
+        {
+            return "";
+        }
+        String without = net.minecraft.util.text.TextFormatting.getTextWithoutFormattingCodes(s);
+        if (without == null)
+        {
+            without = s;
+        }
+        // normalize whitespace and lower-case
+        without = without.replace('\u00A0', ' ');
+        without = without.replaceAll("\\s+", " ").trim().toLowerCase(Locale.ROOT);
+        return without;
+    }
+
     private IInventory getChestInventory(GuiChest chest)
     {
         if (chest == null)
@@ -4647,6 +5247,76 @@ public class ExampleMod
             sb.append("|");
         }
         return Integer.toHexString(sb.toString().hashCode());
+    }
+
+    private List<ItemStack> getOpenContainerItems(Container container)
+    {
+        List<ItemStack> items = new ArrayList<>();
+        if (container == null)
+        {
+            return items;
+        }
+        for (Slot slot : container.inventorySlots)
+        {
+            if (slot == null)
+            {
+                continue;
+            }
+            if (slot.inventory == null)
+            {
+                continue;
+            }
+            // skip player inventory slots
+            try
+            {
+                if (slot.inventory == null || slot.inventory == Minecraft.getMinecraft().player.inventory)
+                {
+                    continue;
+                }
+            }
+            catch (Exception e)
+            {
+                // ignore
+            }
+            ItemStack s = slot.getStack();
+            items.add(s == null || s.isEmpty() ? ItemStack.EMPTY : s.copy());
+        }
+        return items;
+    }
+
+    private int compareMenuDiff(List<ItemStack> a, List<ItemStack> b)
+    {
+        if (a == null) a = new ArrayList<>();
+        if (b == null) b = new ArrayList<>();
+        int diff = 0;
+        int n = Math.max(a.size(), b.size());
+        for (int i = 0; i < n; i++)
+        {
+            String ak = i < a.size() && a.get(i) != null && !a.get(i).isEmpty() ? normalizeForMatch(getItemNameKey(a.get(i))) : "";
+            String bk = i < b.size() && b.get(i) != null && !b.get(i).isEmpty() ? normalizeForMatch(getItemNameKey(b.get(i))) : "";
+            if (!ak.equals(bk)) diff++;
+        }
+        return diff;
+    }
+
+    private int[] compareMenuDiffWithFirst(List<ItemStack> a, List<ItemStack> b)
+    {
+        if (a == null) a = new ArrayList<>();
+        if (b == null) b = new ArrayList<>();
+        int diff = 0;
+        int first = -1;
+        int n = Math.max(a.size(), b.size());
+        for (int i = 0; i < n; i++)
+        {
+            String ak = i < a.size() && a.get(i) != null && !a.get(i).isEmpty() ? normalizeForMatch(getItemNameKey(a.get(i))) : "";
+            String bk = i < b.size() && b.get(i) != null && !b.get(i).isEmpty() ? normalizeForMatch(getItemNameKey(b.get(i))) : "";
+            if (!ak.equals(bk))
+            {
+                diff++;
+                if (first == -1) first = i;
+            }
+        }
+        return new int[]{diff, first};
     }
 
     private Slot getSlotUnderMouse(GuiContainer gui)
@@ -5415,6 +6085,9 @@ public class ExampleMod
             codeBlueGlassDirty = true;
             setActionBar(true, "&aCode glass found", 1500L);
         }
+        // Remember the last glass position for exportline command
+        lastGlassPos = found;
+        lastGlassDim = world.provider.getDimension();
     }
 
     private BlockPos findBlueGlassFromBase(World world, BlockPos base)
@@ -5881,6 +6554,54 @@ public class ExampleMod
             finally
             {
                 menuSaveQueued.set(false);
+            }
+        });
+    }
+
+    private void saveClickMenuIfNeeded()
+    {
+        if (!clickMenuDirty || clickMenuFile == null)
+        {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastClickMenuSaveMs < 10000L)
+        {
+            return;
+        }
+        if (clickMenuSaveQueued.get())
+        {
+            return;
+        }
+        lastClickMenuSaveMs = now;
+        final File target = clickMenuFile;
+        final Map<String, List<ItemStack>> snapshot = new LinkedHashMap<>();
+        final Map<String, String> locSnapshot = new LinkedHashMap<>();
+        for (Map.Entry<String, List<ItemStack>> entry : clickMenuMap.entrySet())
+        {
+            String key = entry.getKey();
+            List<ItemStack> items = entry.getValue();
+            if (key == null || items == null)
+            {
+                continue;
+            }
+            snapshot.put(key, copyItemStackList(items));
+            String loc = clickMenuLocation.get(key);
+            if (loc != null && !loc.isEmpty())
+            {
+                locSnapshot.put(key, loc);
+            }
+        }
+        clickMenuDirty = false;
+        clickMenuSaveQueued.set(true);
+        ioExecutor.execute(() -> {
+            try
+            {
+                saveClickMenuSnapshot(target, snapshot, locSnapshot);
+            }
+            finally
+            {
+                clickMenuSaveQueued.set(false);
             }
         });
     }
@@ -6617,6 +7338,53 @@ public class ExampleMod
         }
     }
 
+    private void saveClickMenuSnapshot(File target, Map<String, List<ItemStack>> snapshot, Map<String, String> locSnapshot)
+    {
+        if (target == null)
+        {
+            return;
+        }
+        try
+        {
+            NBTTagCompound root = new NBTTagCompound();
+            NBTTagList list = new NBTTagList();
+            for (Map.Entry<String, List<ItemStack>> entry : snapshot.entrySet())
+            {
+                String key = entry.getKey();
+                List<ItemStack> items = entry.getValue();
+                if (key == null || items == null)
+                {
+                    continue;
+                }
+                NBTTagCompound tag = new NBTTagCompound();
+                tag.setString("Key", key);
+                String loc = locSnapshot.get(key);
+                if (loc != null && !loc.isEmpty())
+                {
+                    tag.setString("Loc", loc);
+                }
+                NBTTagList itemsTag = new NBTTagList();
+                for (ItemStack stack : items)
+                {
+                    NBTTagCompound itemTag = new NBTTagCompound();
+                    if (stack != null && !stack.isEmpty())
+                    {
+                        stack.writeToNBT(itemTag);
+                    }
+                    itemsTag.appendTag(itemTag);
+                }
+                tag.setTag("Items", itemsTag);
+                list.appendTag(tag);
+            }
+            root.setTag("ClickMenus", list);
+            CompressedStreamTools.write(root, target);
+        }
+        catch (Exception e)
+        {
+            // ignore
+        }
+    }
+
     private void saveShulkerHoloSnapshot(File target, Map<String, ShulkerHolo> snapshot)
     {
         if (target == null)
@@ -6807,6 +7575,52 @@ public class ExampleMod
                     items.add(stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
                 }
                 customMenuCache = new CachedMenu(title, size, items, hash);
+            }
+        }
+        catch (Exception e)
+        {
+            // ignore
+        }
+    }
+
+    private void loadClickMenu()
+    {
+        if (clickMenuFile == null || !clickMenuFile.exists())
+        {
+            return;
+        }
+        try
+        {
+            NBTTagCompound root = CompressedStreamTools.read(clickMenuFile);
+            if (root == null || !root.hasKey("ClickMenus", 9))
+            {
+                return;
+            }
+            NBTTagList list = root.getTagList("ClickMenus", 10);
+            clickMenuMap.clear();
+            clickMenuLocation.clear();
+            for (int i = 0; i < list.tagCount(); i++)
+            {
+                NBTTagCompound tag = list.getCompoundTagAt(i);
+                String key = tag.getString("Key");
+                if (key == null || key.isEmpty())
+                {
+                    continue;
+                }
+                NBTTagList itemsTag = tag.getTagList("Items", 10);
+                List<ItemStack> items = new ArrayList<>();
+                for (int j = 0; j < itemsTag.tagCount(); j++)
+                {
+                    NBTTagCompound itemTag = itemsTag.getCompoundTagAt(j);
+                    ItemStack stack = new ItemStack(itemTag);
+                    items.add(stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
+                }
+                clickMenuMap.put(key, items);
+                String loc = tag.getString("Loc");
+                if (loc != null && !loc.isEmpty())
+                {
+                    clickMenuLocation.put(key, loc);
+                }
             }
         }
         catch (Exception e)
@@ -8169,62 +8983,85 @@ public class ExampleMod
     @SubscribeEvent
     public void onRenderWorld(RenderWorldLastEvent event)
     {
+        if (renderDisabledDueToError)
+        {
+            return;
+        }
         Minecraft mc = Minecraft.getMinecraft();
         if (mc == null || mc.player == null || mc.world == null)
         {
             return;
         }
-        double px = mc.player.lastTickPosX + (mc.player.posX - mc.player.lastTickPosX) * event.getPartialTicks();
-        double py = mc.player.lastTickPosY + (mc.player.posY - mc.player.lastTickPosY) * event.getPartialTicks();
-        double pz = mc.player.lastTickPosZ + (mc.player.posZ - mc.player.lastTickPosZ) * event.getPartialTicks();
+        try
+        {
+            double px = mc.player.lastTickPosX + (mc.player.posX - mc.player.lastTickPosX) * event.getPartialTicks();
+            double py = mc.player.lastTickPosY + (mc.player.posY - mc.player.lastTickPosY) * event.getPartialTicks();
+            double pz = mc.player.lastTickPosZ + (mc.player.posZ - mc.player.lastTickPosZ) * event.getPartialTicks();
 
-        GlStateManager.pushMatrix();
-        GlStateManager.translate(-px, -py, -pz);
-        RenderHelper.disableStandardItemLighting();
-        if (editorModeActive)
+            GlStateManager.pushMatrix();
+            GlStateManager.translate(-px, -py, -pz);
+            RenderHelper.disableStandardItemLighting();
+            if (editorModeActive)
+            {
+                for (ChestCache cache : chestCaches.values())
+                {
+                    if (cache.dim != mc.world.provider.getDimension())
+                    {
+                        continue;
+                    }
+                    BlockPos pos = cache.pos;
+                    if (pos == null)
+                    {
+                        continue;
+                    }
+                    if (mc.player.getDistanceSq(pos) > CHEST_PREVIEW_RANGE * CHEST_PREVIEW_RANGE)
+                    {
+                        continue;
+                    }
+                    renderChestPreviewWithFbo(mc, cache, pos);
+                }
+                if (testHoloActive && testHoloPos != null)
+                {
+                    renderTestHolo(mc, testHoloPos);
+                }
+                if (!testChestHolos.isEmpty())
+                {
+                    for (TestChestHolo holo : testChestHolos)
+                    {
+                        renderChestHolo(mc, holo);
+                    }
+                }
+            }
+            if (!shulkerHolos.isEmpty())
+            {
+                int dim = mc.world == null ? 0 : mc.world.provider.getDimension();
+                for (ShulkerHolo holo : shulkerHolos.values())
+                {
+                    if (holo != null && holo.dim == dim)
+                    {
+                        renderShulkerHolo(mc, holo);
+                    }
+                }
+            }
+            renderSignSearchMarkers(mc);
+            GlStateManager.popMatrix();
+        }
+        catch (Throwable t)
         {
-            for (ChestCache cache : chestCaches.values())
+            renderDisabledDueToError = true;
+            logger.error("Render error, disabling chest-holo rendering", t);
+            try
             {
-                if (cache.dim != mc.world.provider.getDimension())
+                if (mc != null && mc.player != null)
                 {
-                    continue;
+                    mc.player.sendMessage(new TextComponentString("[BetterCode] Rendering disabled due to error: " + t.getClass().getSimpleName()));
                 }
-                BlockPos pos = cache.pos;
-                if (pos == null)
-                {
-                    continue;
-                }
-                if (mc.player.getDistanceSq(pos) > CHEST_PREVIEW_RANGE * CHEST_PREVIEW_RANGE)
-                {
-                    continue;
-                }
-                renderChestPreviewWithFbo(mc, cache, pos);
             }
-            if (testHoloActive && testHoloPos != null)
+            catch (Throwable t2)
             {
-                renderTestHolo(mc, testHoloPos);
-            }
-            if (!testChestHolos.isEmpty())
-            {
-                for (TestChestHolo holo : testChestHolos)
-                {
-                    renderChestHolo(mc, holo);
-                }
+                // ignore messaging failures
             }
         }
-        if (!shulkerHolos.isEmpty())
-        {
-            int dim = mc.world == null ? 0 : mc.world.provider.getDimension();
-            for (ShulkerHolo holo : shulkerHolos.values())
-            {
-                if (holo != null && holo.dim == dim)
-                {
-                    renderShulkerHolo(mc, holo);
-                }
-            }
-        }
-        renderSignSearchMarkers(mc);
-        GlStateManager.popMatrix();
     }
 
     private void renderTestHolo(Minecraft mc, BlockPos pos)
@@ -8973,6 +9810,15 @@ public class ExampleMod
         return y;
     }
 
+    // Pending menu detection state (delay to allow server to populate container)
+    private boolean pendingMenuDetect = false;
+    private long pendingMenuDetectStartMs = 0L;
+    private int pendingMenuDetectWindowId = -1;
+
+    // If rendering hits an unexpected error (NoClassDefFoundError / stack overflow), disable
+    // the chest-holo rendering to avoid repeated GL errors and restore GUI responsiveness.
+    private volatile boolean renderDisabledDueToError = false;
+
     private ResourceLocation getFontTextureLocation(net.minecraft.client.gui.FontRenderer fontRenderer)
     {
         if (fontRenderer == null)
@@ -9165,6 +10011,8 @@ public class ExampleMod
         loadChestIdCaches();
         menuCacheFile = new File(dir, "mcpythonapi_menu_cache.dat");
         loadMenuCache();
+        clickMenuFile = new File(dir, "mcpythonapi_click_menu.dat");
+        loadClickMenu();
         shulkerHoloFile = new File(dir, "mcpythonapi_shulker_holos.dat");
         loadShulkerHolos();
         codeBlueGlassFile = new File(dir, "mcpythonapi_code_glass.dat");
@@ -9203,6 +10051,14 @@ public class ExampleMod
             }
             enableSecondHotbar = config.getBoolean("enableSecondHotbar", "hotbar", true,
                 "Enable the second hotbar swap feature.");
+            autoCacheEnabled = config.getBoolean("autoCacheEnabled", "chest", false,
+                "AUTO-CACHE CHESTS: Automatically open and cache nearby trapped chests in DEV mode.\n"
+                    + "Only works in creative mode with special scoreboard. Check with /autocache command.\n"
+                    + "Blocked while holding IRON_INGOT or GOLD_INGOT.");
+            autoCacheRadius = config.getInt("autoCacheRadius", "chest", 6, 2, 16,
+                "Radius (blocks) around player to scan for chests to auto-cache.");
+            autoCacheTrappedOnly = config.getBoolean("autoCacheTrappedOnly", "chest", true,
+                "If true: only TRAPPED_CHEST blocks. If false: TRAPPED_CHEST + CHEST blocks.");
             String holoColor = config.getString("holoTextColor", "hologram", "FFFFFF",
                 "Hex RGB text color for chest holograms (e.g. FFFFFF).");
             chestHoloTextColor = parseHexColor(holoColor, 0xFFFFFF);
@@ -9346,6 +10202,1166 @@ public class ExampleMod
         }
     }
 
+
+    // ----------------------------
+    // Auto-cache trapped chests
+    // ----------------------------
+
+    private boolean isHoldingIronOrGoldIngot(Minecraft mc)
+    {
+        if (mc == null || mc.player == null)
+        {
+            return false;
+        }
+        ItemStack main = mc.player.getHeldItemMainhand();
+        ItemStack off = mc.player.getHeldItemOffhand();
+        Item m = main.isEmpty() ? null : main.getItem();
+        Item o = off.isEmpty() ? null : off.getItem();
+        return m == Items.IRON_INGOT || m == Items.GOLD_INGOT
+            || o == Items.IRON_INGOT || o == Items.GOLD_INGOT;
+    }
+
+    private boolean isDevCreativeScoreboard(Minecraft mc)
+    {
+        if (mc == null || mc.playerController == null)
+        {
+            return false;
+        }
+        if (!mc.playerController.isInCreativeMode()
+            || mc.playerController.getCurrentGameType() != GameType.CREATIVE)
+        {
+            return false;
+        }
+        String title = getScoreboardTitle();
+        return "\u0420\u0415\u0414\u0410\u041a\u0422\u041e\u0420 \u0418\u0413\u0420\u042b".equals(title);
+    }
+
+    private boolean isChestCached(int dim, BlockPos pos)
+    {
+        if (pos == null)
+        {
+            return true;
+        }
+        String key = chestKey(dim, pos);
+        return key != null && chestCaches.containsKey(key);
+    }
+
+    private boolean isTargetChestBlock(World world, BlockPos pos)
+    {
+        if (world == null || pos == null)
+        {
+            return false;
+        }
+        Block b = world.getBlockState(pos).getBlock();
+        if (autoCacheTrappedOnly)
+        {
+            return b == Blocks.TRAPPED_CHEST;
+        }
+        return b == Blocks.TRAPPED_CHEST || b == Blocks.CHEST;
+    }
+
+    private BlockPos findNearbyChestToCache(Minecraft mc, int radius)
+    {
+        if (mc == null || mc.world == null || mc.player == null)
+        {
+            return null;
+        }
+        BlockPos base = new BlockPos(mc.player.posX, mc.player.posY, mc.player.posZ);
+        int dim = mc.world.provider.getDimension();
+
+        int r = Math.max(2, Math.min(16, radius));
+        BlockPos best = null;
+        double bestDist = Double.MAX_VALUE;
+
+        for (int dx = -r; dx <= r; dx++)
+        {
+            for (int dy = -2; dy <= 2; dy++)
+            {
+                for (int dz = -r; dz <= r; dz++)
+                {
+                    BlockPos p = base.add(dx, dy, dz);
+                    if (!isTargetChestBlock(mc.world, p))
+                    {
+                        continue;
+                    }
+                    if (isChestCached(dim, p))
+                    {
+                        continue;
+                    }
+                    double d = mc.player.getDistanceSqToCenter(p);
+                    if (d < bestDist)
+                    {
+                        bestDist = d;
+                        best = p;
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
+    private void beginAutoCacheChest(Minecraft mc, BlockPos pos, long now)
+    {
+        if (mc == null || mc.world == null || mc.player == null
+            || mc.playerController == null || pos == null)
+        {
+            return;
+        }
+
+        int dim = mc.world.provider.getDimension();
+        autoCacheInProgress = true;
+        autoCacheStartMs = now;
+        autoCacheTargetPos = pos;
+        autoCacheTargetDim = dim;
+
+        lastClickedPos = pos;
+        lastClickedDim = dim;
+        lastClickedMs = now;
+        lastClickedIsSign = false;
+        lastClickedChest = true;
+        allowChestSnapshot = true;
+        allowChestUntilMs = now + 5000L;
+        pendingChestSnapshot = true;
+        pendingChestUntilMs = now + 5000L;
+        lastClickedLabel = getChestLabel(mc.world, pos);
+
+        mc.playerController.processRightClickBlock(
+            mc.player, mc.world, pos,
+            EnumFacing.UP, new Vec3d(0.5, 0.5, 0.5),
+            EnumHand.MAIN_HAND
+        );
+        mc.player.swingArm(EnumHand.MAIN_HAND);
+    }
+
+    private void handleAutoChestCacheTick(Minecraft mc, long now)
+    {
+        if (!autoCacheEnabled || !editorModeActive || !isDevCreativeScoreboard(mc))
+        {
+            return;
+        }
+        if (mc == null || mc.world == null || mc.player == null)
+        {
+            return;
+        }
+        if (isHoldingIronOrGoldIngot(mc))
+        {
+            return;
+        }
+        if (mc.currentScreen != null)
+        {
+            // If a non-container GUI (chat/custom) is open, close it so placing can proceed.
+            if (!(mc.currentScreen instanceof GuiContainer))
+            {
+                try
+                {
+                    mc.player.closeScreen();
+                }
+                catch (Exception ignore) { }
+                return;
+            }
+            // If a container GUI is open, don't proceed.
+            return;
+        }
+        if (autoCacheInProgress)
+        {
+            if (now - autoCacheStartMs > 2500L)
+            {
+                autoCacheInProgress = false;
+                autoCacheTargetPos = null;
+                autoCacheStartMs = 0L;
+                nextAutoCacheScanMs = now + 500L;
+            }
+            return;
+        }
+        if (now < nextAutoCacheScanMs)
+        {
+            return;
+        }
+        nextAutoCacheScanMs = now + 700L;
+
+        BlockPos target = findNearbyChestToCache(mc, autoCacheRadius);
+        if (target != null)
+        {
+            beginAutoCacheChest(mc, target, now);
+        }
+    }
+
+    private void handleCacheAllTick(Minecraft mc, long now)
+    {
+        if (!cacheAllActive)
+        {
+            return;
+        }
+        if (mc == null || mc.world == null || mc.player == null)
+        {
+            cacheAllActive = false;
+            cacheAllQueue.clear();
+            cacheAllCurrentTarget = null;
+            return;
+        }
+        if (!editorModeActive || !isDevCreativeScoreboard(mc))
+        {
+            return;
+        }
+        if (isHoldingIronOrGoldIngot(mc) || autoCacheInProgress || mc.currentScreen != null)
+        {
+            return;
+        }
+        if (!tpPathQueue.isEmpty())
+        {
+            return;
+        }
+
+        int dim = mc.world.provider.getDimension();
+
+        if (cacheAllCurrentTarget == null)
+        {
+            while (!cacheAllQueue.isEmpty())
+            {
+                BlockPos p = cacheAllQueue.poll();
+                if (p == null || !isTargetChestBlock(mc.world, p) || isChestCached(dim, p))
+                {
+                    continue;
+                }
+                cacheAllCurrentTarget = p;
+                break;
+            }
+            if (cacheAllCurrentTarget == null)
+            {
+                cacheAllActive = false;
+                setActionBar(true, "&aCacheAll done", 2000L);
+                return;
+            }
+            buildTpPathQueue(
+                mc.world,
+                mc.player.posX, mc.player.posY, mc.player.posZ,
+                cacheAllCurrentTarget.getX() + 0.5,
+                cacheAllCurrentTarget.getY() + 0.5,
+                cacheAllCurrentTarget.getZ() + 0.5
+            );
+            return;
+        }
+
+        if (mc.player.getDistanceSqToCenter(cacheAllCurrentTarget) <= 9.0)
+        {
+            beginAutoCacheChest(mc, cacheAllCurrentTarget, now);
+            cacheAllCurrentTarget = null;
+        }
+        else
+        {
+            buildTpPathQueue(
+                mc.world,
+                mc.player.posX, mc.player.posY, mc.player.posZ,
+                cacheAllCurrentTarget.getX() + 0.5,
+                cacheAllCurrentTarget.getY() + 0.5,
+                cacheAllCurrentTarget.getZ() + 0.5
+            );
+        }
+    }
+
+    private void handlePlaceBlocksTick(Minecraft mc, long now)
+    {
+        if (!placeBlocksActive)
+        {
+            return;
+        }
+        if (mc == null || mc.world == null || mc.player == null)
+        {
+            placeBlocksActive = false;
+            placeBlocksQueue.clear();
+            placeBlocksCurrent = null;
+            return;
+        }
+        if (!editorModeActive || !isDevCreativeScoreboard(mc))
+        {
+            return;
+        }
+        if (isHoldingIronOrGoldIngot(mc))
+        {
+            return;
+        }
+        if (mc.currentScreen != null)
+        {
+            // If a non-container GUI is open (chat, custom screens), close it so placing can proceed.
+            if (!(mc.currentScreen instanceof GuiContainer))
+            {
+                try
+                {
+                    mc.displayGuiScreen(null);
+                    if (debugUi && mc.player != null)
+                    {
+                        mc.player.sendMessage(new TextComponentString("/place: closed non-container GUI to continue"));
+                    }
+                }
+                catch (Exception ignore) { }
+            }
+            // In either case (container or non-container), wait for next tick to proceed.
+            return;
+        }
+        if (!tpPathQueue.isEmpty())
+        {
+            return;
+        }
+
+        if (placeBlocksCurrent != null && placeBlocksCurrent.placedBlock)
+        {
+            if (placeBlocksCurrent.awaitingMenu && now - placeBlocksCurrent.menuStartMs > 10000L)
+            {
+                setActionBar(false, "&c/place: menu timeout", 2000L);
+                placeBlocksCurrent = null;
+            }
+            return;
+        }
+
+        if (placeBlocksCurrent == null)
+        {
+            while (!placeBlocksQueue.isEmpty())
+            {
+                PlaceEntry e = placeBlocksQueue.poll();
+                if (e == null)
+                {
+                    continue;
+                }
+                placeBlocksCurrent = e;
+                break;
+            }
+            if (placeBlocksCurrent == null)
+            {
+                placeBlocksActive = false;
+                setActionBar(true, "&aPlace done", 2000L);
+                return;
+            }
+            // Approach position: -2 on Z from target, Y same as target
+            double ax = placeBlocksCurrent.pos.getX() + 0.5;
+            double ay = placeBlocksCurrent.pos.getY();
+            double az = placeBlocksCurrent.pos.getZ() - 2.0 + 0.5;
+            buildTpPathQueue(mc.world, mc.player.posX, mc.player.posY, mc.player.posZ, ax, ay, az);
+            return;
+        }
+
+        if (mc.player.getDistanceSqToCenter(placeBlocksCurrent.pos) <= 9.0)
+        {
+            // Place block: set held item and right-click on block below target
+            try
+            {
+                Block b = placeBlocksCurrent.block;
+                if (b == null)
+                {
+                    setActionBar(false, "&cBlock not found", 2000L);
+                }
+                else
+                {
+                    // Prefer existing hotbar item
+                    Item item = Item.getItemFromBlock(b);
+                    int foundHotbar = -1;
+                    for (int h = 0; h < 9; h++)
+                    {
+                        ItemStack s = mc.player.inventory.getStackInSlot(h);
+                        if (!s.isEmpty() && s.getItem() == item)
+                        {
+                            foundHotbar = h;
+                            break;
+                        }
+                    }
+
+                    if (foundHotbar == -1)
+                    {
+                        // Try to find in main inventory
+                        int invIndex = -1;
+                        int size = mc.player.inventory.getSizeInventory();
+                        for (int i = 9; i < size; i++)
+                        {
+                            ItemStack s = mc.player.inventory.getStackInSlot(i);
+                            if (!s.isEmpty() && s.getItem() == item)
+                            {
+                                invIndex = i;
+                                break;
+                            }
+                        }
+                        if (invIndex != -1)
+                        {
+                            // Move from inventory slot to empty hotbar slot (creative-safe)
+                            Integer empty = findEmptyHotbarSlot(mc);
+                            if (empty == null)
+                            {
+                                empty = mc.player.inventory.currentItem;
+                            }
+                            ItemStack toMove = mc.player.inventory.getStackInSlot(invIndex);
+                            mc.player.inventory.setInventorySlotContents(empty, toMove);
+                            sendCreativeSlotUpdate(mc, empty, toMove);
+                            foundHotbar = empty;
+                        }
+                        else
+                        {
+                            // Not present: create via creative give into hotbar
+                            giveItemToHotbar(mc, new ItemStack(b));
+                            // search again
+                            for (int h = 0; h < 9; h++)
+                            {
+                                ItemStack s = mc.player.inventory.getStackInSlot(h);
+                                if (!s.isEmpty() && s.getItem() == item)
+                                {
+                                    foundHotbar = h;
+                                    break;
+                                }
+                            }
+                            if (debugUi && mc.player != null)
+                            {
+                                mc.player.sendMessage(new TextComponentString("/place: after give attempt, foundHotbar=" + foundHotbar));
+                            }
+                        }
+                    }
+
+                    if (foundHotbar != -1)
+                    {
+                        if (debugUi && mc.player != null)
+                        {
+                            mc.player.sendMessage(new TextComponentString("/place: using hotbar slot=" + foundHotbar));
+                        }
+                        mc.player.inventory.currentItem = foundHotbar;
+                        mc.playerController.updateController();
+                        mc.playerController.processRightClickBlock(
+                            mc.player, mc.world, placeBlocksCurrent.pos.down(), EnumFacing.UP,
+                            new Vec3d(0.5, 0.5, 0.5), EnumHand.MAIN_HAND
+                        );
+                        mc.player.swingArm(EnumHand.MAIN_HAND);
+                    }
+                    else
+                    {
+                        setActionBar(false, "&cCould not put block into hotbar", 2000L);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                setActionBar(false, "&cPlace failed: " + ex.getMessage(), 2000L);
+            }
+            // After placing block, try to find a sign at z-1 and click it to open the menu, then queue the desired slot click
+            try
+            {
+                BlockPos signPos = findSignAtZMinus1(mc.world, placeBlocksCurrent.pos);
+                if (signPos != null)
+                {
+                    mc.playerController.processRightClickBlock(
+                        mc.player, mc.world, signPos, EnumFacing.UP, new Vec3d(0.5, 0.5, 0.5), EnumHand.MAIN_HAND
+                    );
+                    mc.player.swingArm(EnumHand.MAIN_HAND);
+                    placeBlocksCurrent.placedBlock = true;
+                    placeBlocksCurrent.awaitingMenu = true;
+                    placeBlocksCurrent.menuStartMs = System.currentTimeMillis();
+                }
+            }
+            catch (Exception ex2)
+            {
+                // ignore sign-click failures
+            }
+            return;
+        }
+        else
+        {
+            double ax = placeBlocksCurrent.pos.getX() + 0.5;
+            double ay = placeBlocksCurrent.pos.getY();
+            double az = placeBlocksCurrent.pos.getZ() - 2.0 + 0.5;
+            buildTpPathQueue(mc.world, mc.player.posX, mc.player.posY, mc.player.posZ, ax, ay, az);
+        }
+    }
+
+    private void handlePlaceMenuNavigation(GuiContainer gui, long nowMs)
+    {
+        if (!placeBlocksActive || placeBlocksCurrent == null || !placeBlocksCurrent.awaitingMenu)
+        {
+            return;
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null || mc.player.openContainer == null)
+        {
+            return;
+        }
+        if (placeBlocksCurrent.searchKey == null || placeBlocksCurrent.searchKey.trim().isEmpty())
+        {
+            placeBlocksCurrent.awaitingMenu = false;
+            placeBlocksCurrent = null;
+            return;
+        }
+        if (nowMs - placeBlocksCurrent.menuStartMs > 10000L)
+        {
+            setActionBar(false, "&c/place: menu timeout", 2000L);
+            placeBlocksCurrent = null;
+            return;
+        }
+        int windowId = mc.player.openContainer.windowId;
+        if (placeBlocksCurrent.lastMenuWindowId == windowId && nowMs - placeBlocksCurrent.lastMenuClickMs < 300L)
+        {
+            return;
+        }
+        MenuStep step = findMenuStep(gui, placeBlocksCurrent.searchKey);
+        if (step == null)
+        {
+            return;
+        }
+        queuedClicks.add(new ClickAction(step.slotNumber, 0, ClickType.PICKUP));
+        placeBlocksCurrent.lastMenuClickMs = nowMs;
+        placeBlocksCurrent.lastMenuWindowId = windowId;
+        if (step.directHit)
+        {
+            placeBlocksCurrent.awaitingMenu = false;
+            placeBlocksCurrent = null;
+        }
+        else
+        {
+            placeBlocksCurrent.menuStartMs = nowMs;
+        }
+    }
+
+    private static class MenuStep
+    {
+        final int slotNumber;
+        final boolean directHit;
+
+        MenuStep(int slotNumber, boolean directHit)
+        {
+            this.slotNumber = slotNumber;
+            this.directHit = directHit;
+        }
+    }
+
+    private MenuStep findMenuStep(GuiContainer gui, String searchKey)
+    {
+        if (gui == null || searchKey == null)
+        {
+            return null;
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null)
+        {
+            return null;
+        }
+        String normSearch = normalizeForMatch(searchKey);
+        MenuStep direct = findDirectMenuMatch(gui, mc.player, normSearch);
+        if (direct != null)
+        {
+            return direct;
+        }
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || slot.inventory == mc.player.inventory)
+            {
+                continue;
+            }
+            ItemStack stack = slot.getStack();
+            if (stack == null || stack.isEmpty())
+            {
+                continue;
+            }
+            String key = getItemNameKey(stack);
+            List<ItemStack> sub = clickMenuMap.get(key);
+            if (menuContainsSearch(sub, normSearch))
+            {
+                return new MenuStep(slot.slotNumber, false);
+            }
+        }
+        return null;
+    }
+
+    private MenuStep findDirectMenuMatch(GuiContainer gui, EntityPlayer player, String normSearch)
+    {
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || slot.inventory == player.inventory)
+            {
+                continue;
+            }
+            ItemStack stack = slot.getStack();
+            if (stack == null || stack.isEmpty())
+            {
+                continue;
+            }
+            String key = normalizeForMatch(getItemNameKey(stack));
+            if (!key.isEmpty() && key.contains(normSearch))
+            {
+                return new MenuStep(slot.slotNumber, true);
+            }
+        }
+        return null;
+    }
+
+    private boolean menuContainsSearch(List<ItemStack> items, String normSearch)
+    {
+        if (items == null || normSearch == null || normSearch.isEmpty())
+        {
+            return false;
+        }
+        for (ItemStack stack : items)
+        {
+            if (stack == null || stack.isEmpty())
+            {
+                continue;
+            }
+            String key = normalizeForMatch(getItemNameKey(stack));
+            if (!key.isEmpty() && key.contains(normSearch))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private class ExportLineCommand extends CommandBase
+    {
+        @Override
+        public String getName()
+        {
+            return "exportline";
+        }
+
+        @Override
+        public String getUsage(ICommandSender sender)
+        {
+            return "/exportline - export logic chain from last glass position";
+        }
+
+        @Override
+        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
+        {
+            Minecraft mc = Minecraft.getMinecraft();
+            if (mc == null || mc.world == null)
+            {
+                setActionBar(false, "&cNo world", 2000L);
+                return;
+            }
+            
+            // Get last glass position from codeBlueGlassById
+            BlockPos glassPos = null;
+            if (lastGlassPos != null && lastGlassDim == mc.world.provider.getDimension())
+            {
+                glassPos = lastGlassPos;
+            }
+            if (glassPos == null)
+            {
+                String glassKey = getCodeGlassScopeKey(mc.world);
+                if (glassKey != null)
+                {
+                    glassPos = codeBlueGlassById.get(glassKey);
+                }
+            }
+            
+            if (glassPos == null)
+            {
+                setActionBar(false, "&cNo glass position found", 2000L);
+                return;
+            }
+
+            String logicChain = parseLogicChain(mc.world, glassPos);
+            if (logicChain == null || logicChain.isEmpty())
+            {
+                setActionBar(false, "&cNo sign found at (y+1,z-1)", 2000L);
+                return;
+            }
+
+            // Copy to clipboard
+            try
+            {
+                java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(
+                    new java.awt.datatransfer.StringSelection(logicChain),
+                    null
+                );
+                setActionBar(true, "&aCopied: " + (logicChain.length() > 30 ? logicChain.substring(0, 27) + "..." : logicChain), 3000L);
+            }
+            catch (Exception e)
+            {
+                setActionBar(false, "&cFailed to copy: " + e.getMessage(), 2000L);
+            }
+        }
+
+        @Override
+        public int getRequiredPermissionLevel()
+        {
+            return 0;
+        }
+    }
+
+    private class ShowFuncsCommand extends CommandBase
+    {
+        @Override
+        public String getName()
+        {
+            return "showfuncs";
+        }
+
+        @Override
+        public String getUsage(ICommandSender sender)
+        {
+            return "/showfuncs - show assigned functions and recorded GUI items";
+        }
+
+        @Override
+        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
+        {
+            Minecraft mc = Minecraft.getMinecraft();
+            if (mc == null || mc.player == null)
+            {
+                return;
+            }
+            if (clickFunctionMap.isEmpty())
+            {
+                mc.player.sendMessage(new TextComponentString("No functions assigned."));
+                return;
+            }
+            int shown = 0;
+            for (Map.Entry<String, String> e : clickFunctionMap.entrySet())
+            {
+                String key = e.getKey();
+                String func = e.getValue();
+                String loc = clickMenuLocation.containsKey(key) ? (" " + clickMenuLocation.get(key)) : "";
+                StringBuilder sb = new StringBuilder();
+                sb.append(key).append(" -> ").append(func).append(loc).append(" : ");
+                List<ItemStack> items = clickMenuMap.get(key);
+                if (items == null || items.isEmpty())
+                {
+                    sb.append("(no items)");
+                }
+                else
+                {
+                    int show = Math.min(6, items.size());
+                    for (int i = 0; i < show; i++)
+                    {
+                        ItemStack s = items.get(i);
+                        sb.append(i==0?"":" ,").append(s.isEmpty()?"empty":s.getDisplayName());
+                    }
+                    if (items.size() > show)
+                    {
+                        sb.append(" (+").append(items.size() - show).append(" more)");
+                    }
+                }
+                mc.player.sendMessage(new TextComponentString(sb.toString()));
+                shown++;
+                if (shown >= 50)
+                {
+                    mc.player.sendMessage(new TextComponentString("(truncated, too many entries)"));
+                    break;
+                }
+            }
+        }
+    }
+
+    private String parseLogicChain(World world, BlockPos glassPos)
+    {
+        // Start at y+1 from glass (glass is at y, we search at y+1)
+        BlockPos startPos = glassPos.add(0, 1, 0);
+        
+        // Check for sign at z-1 from start position (try multiple Y levels)
+        BlockPos firstSignPos = findSignAtZMinus1(world, startPos);
+        if (firstSignPos == null)
+        {
+            return null;
+        }
+
+        TileEntity firstTile = world.getTileEntity(firstSignPos);
+        if (!(firstTile instanceof TileEntitySign))
+        {
+            return null;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        TileEntitySign sign = (TileEntitySign) firstTile;
+        String firstText = getSignText(sign);
+        if (!firstText.isEmpty())
+        {
+            // Start without leading arrow; first element is raw text
+            sb.append(firstText);
+        }
+
+        // Now traverse left (x-1) from the start position
+        String nested = parseNestingLevel(world, startPos);
+        if (!nested.isEmpty())
+        {
+            sb.append(nested);
+        }
+
+        return sb.toString();
+    }
+    
+    private String getSignText(TileEntitySign sign)
+    {
+        // Get text from line 2 if available, otherwise line 1
+        String text = sign.signText[1].getUnformattedText().trim();
+        if (text.isEmpty())
+        {
+            text = sign.signText[0].getUnformattedText().trim();
+        }
+        
+        // Append line 3 if it exists, separated by space
+        String line3 = sign.signText[2].getUnformattedText().trim();
+        if (!line3.isEmpty())
+        {
+            text = text + " " + line3;
+        }
+        
+        return text;
+    }
+    
+    private BlockPos findSignAtZMinus1(World world, BlockPos basePos)
+    {
+        // Try to find sign at z-1 from basePos at various Y levels
+        for (int dy = -2; dy <= 0; dy++)
+        {
+            BlockPos checkPos = basePos.add(0, dy, -1);
+            TileEntity tile = world.getTileEntity(checkPos);
+            if (tile instanceof TileEntitySign)
+            {
+                return checkPos;
+            }
+        }
+        return null;
+    }
+
+    private String parseNestingLevel(World world, BlockPos pos)
+    {
+        StringBuilder sb = new StringBuilder();
+        
+        // Scan along the x-axis going left (x-1, x-2, x-3...)
+        BlockPos current = pos;
+        int airCount = 0;  // Count consecutive air blocks
+        final int MAX_AIR = 10;  // Stop after 10 air blocks in a row
+        
+        for (int i = 0; i < 128; i++)
+        {
+            current = current.add(-1, 0, 0);
+            
+            // Check for block at current position
+            IBlockState state = world.getBlockState(current);
+            Block block = state.getBlock();
+            
+            // Check for sign at z-1 from current position (try multiple Y levels)
+            BlockPos signPos = findSignAtZMinus1(world, current);
+            if (signPos != null)
+            {
+                TileEntity signTile = world.getTileEntity(signPos);
+                if (signTile instanceof TileEntitySign)
+                {
+                    TileEntitySign sign = (TileEntitySign) signTile;
+                    String text = getSignText(sign);
+                    if (!text.isEmpty())
+                    {
+                        // Decide separator based on previous content
+                        if (sb.length() == 0)
+                        {
+                            sb.append(text);
+                        }
+                        else
+                        {
+                            char last = sb.charAt(sb.length() - 1);
+                            if (last == ']')
+                            {
+                                // If previous token ended with a closing bracket, separate with single space
+                                sb.append(' ').append(text);
+                            }
+                            else
+                            {
+                                sb.append(" > ").append(text);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Check for piston at current position
+            if (block == Blocks.PISTON || block == Blocks.STICKY_PISTON)
+            {
+                EnumFacing facing = state.getValue(BlockPistonBase.FACING);
+                if (facing == EnumFacing.WEST)
+                {
+                    // Remove trailing separator if present before opening bracket
+                    if (sb.length() >= 3)
+                    {
+                        String tail = sb.substring(sb.length() - 3);
+                        if (" > ".equals(tail))
+                        {
+                            sb.setLength(sb.length() - 3);
+                        }
+                    }
+                    sb.append(" [ ");
+                    airCount = 0;  // Reset air count
+                    continue;
+                }
+                else if (facing == EnumFacing.EAST)
+                {
+                    sb.append(" ]");
+                    return sb.toString();
+                }
+            }
+            
+            // If block is air, count it
+            if (block == Blocks.AIR)
+            {
+                airCount++;
+                if (airCount >= MAX_AIR)
+                {
+                    // Stop after 10 consecutive air blocks
+                    return sb.toString();
+                }
+                continue;
+            }
+            
+            // Any other block resets air count
+            airCount = 0;
+        }
+        
+        return sb.toString();
+    }
+
+    private class AutoCacheCommand extends CommandBase
+    {
+        @Override
+        public String getName()
+        {
+            return "autocache";
+        }
+
+        @Override
+        public String getUsage(ICommandSender sender)
+        {
+            return "/autocache [info]";
+        }
+
+        @Override
+        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
+        {
+            Minecraft mc = Minecraft.getMinecraft();
+            if (mc == null || mc.world == null || mc.player == null)
+            {
+                return;
+            }
+
+            // Show status from config
+            if (autoCacheEnabled)
+            {
+                setActionBar(true, "&aAutoCache: &eON &8(radius=" + autoCacheRadius + " trapped=" + autoCacheTrappedOnly + ")", 3000L);
+            }
+            else
+            {
+                setActionBar(true, "&cAutoCache: OFF &8(enable in mod config)", 3000L);
+            }
+        }
+
+        @Override
+        public int getRequiredPermissionLevel()
+        {
+            return 0;
+        }
+    }
+
+    private class CacheAllChestsCommand extends CommandBase
+    {
+        @Override
+        public String getName()
+        {
+            return "cacheallchests";
+        }
+
+        @Override
+        public String getUsage(ICommandSender sender)
+        {
+            return "/cacheallchests [stop]";
+        }
+
+        @Override
+        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
+        {
+            Minecraft mc = Minecraft.getMinecraft();
+            if (mc == null || mc.world == null || mc.player == null)
+            {
+                return;
+            }
+            if (args.length > 0 && "stop".equalsIgnoreCase(args[0]))
+            {
+                cacheAllActive = false;
+                cacheAllQueue.clear();
+                cacheAllCurrentTarget = null;
+                setActionBar(true, "&eCacheAll stopped", 2000L);
+                return;
+            }
+            if (!editorModeActive || !isDevCreativeScoreboard(mc))
+            {
+                setActionBar(false, "&cDEV mode only (creative + scoreboard)", 2500L);
+                return;
+            }
+
+            int dim = mc.world.provider.getDimension();
+            LinkedHashSet<BlockPos> found = new LinkedHashSet<>();
+
+            for (TileEntity te : mc.world.loadedTileEntityList)
+            {
+                if (!(te instanceof TileEntityChest))
+                {
+                    continue;
+                }
+                BlockPos p = te.getPos();
+                if (p == null || isChestCached(dim, p) || !isTargetChestBlock(mc.world, p))
+                {
+                    continue;
+                }
+                found.add(p);
+            }
+
+            cacheAllQueue.clear();
+            cacheAllQueue.addAll(found);
+            cacheAllCurrentTarget = null;
+            cacheAllActive = !cacheAllQueue.isEmpty();
+            setActionBar(true, "&aCacheAll queued=" + cacheAllQueue.size(), 2500L);
+        }
+
+        @Override
+        public int getRequiredPermissionLevel()
+        {
+            return 0;
+        }
+    }
+
+    private class PlaceBlocksCommand extends CommandBase
+    {
+        @Override
+        public String getName()
+        {
+            return "place";
+        }
+
+        @Override
+        public String getUsage(ICommandSender sender)
+        {
+            return "/place <block1> [block2] [block3]... - place blocks relative to last blue glass";
+        }
+
+        @Override
+        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
+        {
+            Minecraft mc = Minecraft.getMinecraft();
+            if (mc == null || mc.world == null || mc.player == null)
+            {
+                setActionBar(false, "&cNo world/player", 2000L);
+                return;
+            }
+
+            if (args == null || args.length == 0)
+            {
+                setActionBar(false, "&cUsage: /place <block1> [block2]...", 3000L);
+                return;
+            }
+
+            if (lastGlassPos == null)
+            {
+                String key = getCodeGlassScopeKey(mc.world);
+                if (key != null)
+                {
+                    lastGlassPos = codeBlueGlassById.get(key);
+                    if (lastGlassPos != null)
+                    {
+                        lastGlassDim = mc.world.provider.getDimension();
+                    }
+                }
+                if (lastGlassPos == null)
+                {
+                    setActionBar(false, "&cNo blue glass position recorded", 2000L);
+                    return;
+                }
+            }
+
+            // New: parse alternating pairs: <block> <searchName> [<block> <searchName> ...]
+            String raw = String.join(" ", args).trim();
+            // Tokenize respecting quotes
+            List<String> tokens = new ArrayList<>();
+            StringBuilder cur = new StringBuilder();
+            boolean inQuote = false;
+            for (int i = 0; i < raw.length(); i++)
+            {
+                char c = raw.charAt(i);
+                if (c == '"')
+                {
+                    inQuote = !inQuote;
+                    continue;
+                }
+                if (Character.isWhitespace(c) && !inQuote)
+                {
+                    if (cur.length() > 0)
+                    {
+                        tokens.add(cur.toString());
+                        cur.setLength(0);
+                    }
+                }
+                else
+                {
+                    cur.append(c);
+                }
+            }
+            if (cur.length() > 0)
+            {
+                tokens.add(cur.toString());
+            }
+
+            if (tokens.size() % 2 != 0)
+            {
+                setActionBar(false, "&cUsage: /place <block> <name> [<block> <name> ...]", 4000L);
+                return;
+            }
+
+            BlockPos glass = lastGlassPos;
+            if (glass == null)
+            {
+                setActionBar(false, "&cNo blue glass position recorded", 2000L);
+                return;
+            }
+
+            int pairs = tokens.size() / 2;
+            for (int p = 0; p < pairs; p++)
+            {
+                String blockTok = tokens.get(p * 2);
+                String nameTok = tokens.get(p * 2 + 1);
+                String blockName = blockTok.contains(":") ? blockTok : ("minecraft:" + blockTok);
+                Block b = Block.getBlockFromName(blockName);
+                if (b == null)
+                {
+                    if (debugUi && mc.player != null)
+                    {
+                        mc.player.sendMessage(new TextComponentString("/place: unknown block '" + blockTok + "'"));
+                    }
+                    continue;
+                }
+                BlockPos target = glass.add(-2 * p, 1, 0);
+                String search = nameTok == null ? "" : nameTok.trim();
+                String norm = normalizeForMatch(search);
+                boolean cachedMatch = false;
+                if (!norm.isEmpty())
+                {
+                    for (List<ItemStack> items : clickMenuMap.values())
+                    {
+                        if (menuContainsSearch(items, norm))
+                        {
+                            cachedMatch = true;
+                            break;
+                        }
+                    }
+                }
+
+                PlaceEntry entry = new PlaceEntry(target, b, norm);
+                entry.searchKey = norm;
+                entry.desiredSlotIndex = -1;
+                if (!cachedMatch && debugUi && mc.player != null)
+                {
+                    mc.player.sendMessage(new TextComponentString(
+                        "/place: no cached menu item matching '" + nameTok + "' (will try live)"));
+                }
+                placeBlocksQueue.add(entry);
+            }
+            placeBlocksActive = !placeBlocksQueue.isEmpty();
+            setActionBar(true, "&aPlaced queue created: " + placeBlocksQueue.size() + " entries", 2000L);
+        }
+
+        @Override
+        public int getRequiredPermissionLevel()
+        {
+            return 0;
+        }
+    }
     private static class RegistryEntry
     {
         final String name;
