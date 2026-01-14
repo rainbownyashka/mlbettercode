@@ -52,12 +52,51 @@ import net.minecraft.nbt.NBTTagList;
 import net.minecraft.nbt.NBTTagString;
 import net.minecraft.nbt.CompressedStreamTools;
 import net.minecraft.network.PacketBuffer;
+import net.minecraft.network.play.client.CPacketHeldItemChange;
+import net.minecraft.network.play.client.CPacketPlayer;
+import net.minecraft.network.play.client.CPacketPlayerTryUseItemOnBlock;
 import net.minecraft.network.play.client.CPacketCreativeInventoryAction;
 import net.minecraft.network.play.client.CPacketCustomPayload;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.tileentity.TileEntityChest;
 import net.minecraft.tileentity.TileEntityShulkerBox;
+import com.example.examplemod.model.CachedMenu;
+import com.example.examplemod.model.ChestCache;
+import com.example.examplemod.model.ChestPreviewFbo;
+import com.example.examplemod.model.ClickAction;
+import com.example.examplemod.model.CopiedSlot;
+import com.example.examplemod.model.CommandResult;
+import com.example.examplemod.model.ExportResult;
+import com.example.examplemod.model.InputEntry;
+import com.example.examplemod.model.Label;
+import com.example.examplemod.model.LabelCandidate;
+import com.example.examplemod.model.LayoutResult;
+import com.example.examplemod.model.MenuStep;
+import com.example.examplemod.model.PlaceArg;
+import com.example.examplemod.model.PlaceEntry;
+import com.example.examplemod.model.PlacedLabel;
+import com.example.examplemod.model.Rect;
+import com.example.examplemod.model.RegistryEntry;
+import com.example.examplemod.model.ShulkerHolo;
+import com.example.examplemod.model.TestChestHolo;
+import com.example.examplemod.io.ChestIdCacheIO;
+import com.example.examplemod.io.ClickMenuIO;
+import com.example.examplemod.io.CodeBlueGlassIO;
+import com.example.examplemod.io.MenuCacheIO;
+import com.example.examplemod.io.ShulkerHoloIO;
+import com.example.examplemod.cmd.ActionBarSink;
+import com.example.examplemod.cmd.CBarCommand;
+import com.example.examplemod.cmd.GenCommand;
+import com.example.examplemod.cmd.GuiExportCommand;
+import com.example.examplemod.cmd.GuiExportSink;
+import com.example.examplemod.cmd.ScoreLineCommand;
+import com.example.examplemod.cmd.ScoreTitleCommand;
+import com.example.examplemod.util.ItemStackUtils;
+import com.example.examplemod.feature.place.PlaceModule;
+import com.example.examplemod.feature.place.PlaceModuleHost;
+import com.example.examplemod.feature.regallactions.RegAllActionsHost;
+import com.example.examplemod.feature.regallactions.RegAllActionsModule;
 import net.minecraft.tileentity.TileEntitySign;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.EnumFacing;
@@ -116,6 +155,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -135,7 +175,7 @@ import java.util.concurrent.TimeUnit;
 
 @Mod(modid = ExampleMod.MODID, name = ExampleMod.NAME, version = ExampleMod.VERSION,
     guiFactory = "com.example.examplemod.ModGuiFactory")
-public class ExampleMod
+public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
 {
     public static final String MODID = "bettercode";
     public static final String NAME = "Creative+ BetterCode";
@@ -336,40 +376,11 @@ public class ExampleMod
     private final Map<String, List<ItemStack>> clickMenuMap = new HashMap<>();
     private final Map<String, String> clickMenuLocation = new HashMap<>();
     private final Map<String, String> clickFunctionMap = new HashMap<>();
-    // Place blocks command state
-    private static class PlaceEntry {
-        BlockPos pos;
-        Block block;
-        String searchKey; // lower-case normalized search key for GUI item to click after placing
-        int desiredSlotIndex;
-        boolean placedBlock;
-        boolean awaitingMenu;
-        long menuStartMs;
-        long lastMenuClickMs;
-        int lastMenuWindowId;
-        PlaceEntry(BlockPos pos, Block block) {
-            this.pos = pos;
-            this.block = block;
-            this.searchKey = null;
-            this.desiredSlotIndex = -1;
-            this.placedBlock = false;
-            this.awaitingMenu = false;
-            this.menuStartMs = 0L;
-            this.lastMenuClickMs = 0L;
-            this.lastMenuWindowId = -1;
-        }
-        PlaceEntry(BlockPos pos, Block block, String searchKey) {
-            this.pos = pos;
-            this.block = block;
-            this.searchKey = searchKey;
-            this.desiredSlotIndex = -1;
-            this.placedBlock = false;
-            this.awaitingMenu = false;
-            this.menuStartMs = 0L;
-            this.lastMenuClickMs = 0L;
-            this.lastMenuWindowId = -1;
-        }
-    }
+    // Place blocks (/place, /placeadvanced) module
+    private final PlaceModule placeModule = new PlaceModule(this);
+    // Discover/crawl menus into clickMenuMap
+    private final RegAllActionsModule regAllActionsModule = new RegAllActionsModule(this);
+    // Legacy state (kept temporarily while migrating code out of this class).
     private final Deque<PlaceEntry> placeBlocksQueue = new ArrayDeque<>();
     private PlaceEntry placeBlocksCurrent = null;
     private boolean placeBlocksActive = false;
@@ -463,9 +474,267 @@ public class ExampleMod
     {
         // some example code
         logger.info("DIRT BLOCK >> {}", Blocks.DIRT.getRegistryName());
+        try
+        {
+            if (ExampleMod.class.getProtectionDomain() != null
+                && ExampleMod.class.getProtectionDomain().getCodeSource() != null
+                && ExampleMod.class.getProtectionDomain().getCodeSource().getLocation() != null)
+            {
+                logger.info("Loaded from {}", ExampleMod.class.getProtectionDomain().getCodeSource().getLocation());
+            }
+        }
+        catch (Exception ignore) { }
+        logDuplicateClassSources();
         initHotbarStorage();
         registerKeybinds();
+        ensureRenderModelClassesLoaded();
         startHttpServer();
+    }
+
+    @Override
+    public boolean isEditorModeActive()
+    {
+        return editorModeActive;
+    }
+
+    @Override
+    public boolean isDebugUi()
+    {
+        return debugUi;
+    }
+
+    @Override
+    public boolean isInputActive()
+    {
+        return inputActive;
+    }
+
+    @Override
+    public void debugChat(String text)
+    {
+        if (!debugUi)
+        {
+            return;
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null)
+        {
+            return;
+        }
+        mc.player.sendMessage(new TextComponentString("[BetterCode] " + (text == null ? "" : text)));
+    }
+
+    @Override
+    public void queueClick(ClickAction action)
+    {
+        if (action == null)
+        {
+            return;
+        }
+        queuedClicks.add(action);
+    }
+
+    @Override
+    public void clearQueuedClicks()
+    {
+        queuedClicks.clear();
+    }
+
+    @Override
+    public boolean tpPathQueueIsEmpty()
+    {
+        return tpPathQueue.isEmpty();
+    }
+
+    @Override
+    public void clearTpPathQueue()
+    {
+        tpPathQueue.clear();
+    }
+
+    @Override
+    public void closeCurrentScreen()
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null)
+        {
+            return;
+        }
+        if (mc.player != null)
+        {
+            mc.player.closeScreen();
+        }
+        else
+        {
+            mc.displayGuiScreen(null);
+        }
+    }
+
+    @Override
+    public BlockPos getLastGlassPos()
+    {
+        return lastGlassPos;
+    }
+
+    @Override
+    public int getLastGlassDim()
+    {
+        return lastGlassDim;
+    }
+
+    @Override
+    public void setLastGlassPos(BlockPos pos, int dim)
+    {
+        lastGlassPos = pos;
+        lastGlassDim = dim;
+    }
+
+    @Override
+    public Map<String, BlockPos> getCodeBlueGlassById()
+    {
+        return codeBlueGlassById;
+    }
+
+    @Override
+    public Map<String, List<ItemStack>> getClickMenuMap()
+    {
+        return clickMenuMap;
+    }
+
+    @Override
+    public BlockPos getLastClickedPos()
+    {
+        return lastClickedPos;
+    }
+
+    @Override
+    public boolean isLastClickedSign()
+    {
+        return lastClickedIsSign;
+    }
+
+    @Override
+    public void cacheClickMenuSnapshot(String key, List<ItemStack> items, String location)
+    {
+        if (key == null || key.trim().isEmpty() || items == null)
+        {
+            return;
+        }
+        List<ItemStack> copy = new ArrayList<>();
+        for (ItemStack st : items)
+        {
+            copy.add(st == null || st.isEmpty() ? ItemStack.EMPTY : st.copy());
+        }
+        clickMenuMap.put(key, copy);
+        if (location != null)
+        {
+            clickMenuLocation.put(key, location);
+        }
+        clickMenuDirty = true;
+    }
+
+    @Override
+    public boolean isPlayerInventorySlot(GuiContainer gui, Slot slot)
+    {
+        if (slot == null)
+        {
+            return false;
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        return mc != null && mc.player != null && slot.inventory == mc.player.inventory;
+    }
+
+    private void logDuplicateClassSources()
+    {
+        try
+        {
+            Minecraft mc = Minecraft.getMinecraft();
+            if (mc == null || mc.mcDataDir == null)
+            {
+                return;
+            }
+            File modsDir = new File(mc.mcDataDir, "mods");
+            if (!modsDir.isDirectory())
+            {
+                return;
+            }
+            List<File> jars = new ArrayList<>();
+            Deque<File> stack = new ArrayDeque<>();
+            stack.push(modsDir);
+            while (!stack.isEmpty())
+            {
+                File dir = stack.pop();
+                File[] children = dir.listFiles();
+                if (children == null)
+                {
+                    continue;
+                }
+                for (File f : children)
+                {
+                    if (f.isDirectory())
+                    {
+                        stack.push(f);
+                    }
+                    else if (f.isFile() && f.getName().toLowerCase(Locale.ROOT).endsWith(".jar"))
+                    {
+                        jars.add(f);
+                    }
+                }
+            }
+            List<String> hits = new ArrayList<>();
+            for (File jar : jars)
+            {
+                try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar))
+                {
+                    if (zip.getEntry("com/example/examplemod/ExampleMod.class") != null)
+                    {
+                        hits.add(jar.getAbsolutePath());
+                    }
+                }
+                catch (Exception ignore) { }
+            }
+            if (hits.size() > 1)
+            {
+                logger.warn("Multiple jars contain com/example/examplemod/ExampleMod.class (this can cause NoClassDefFoundError):");
+                for (String p : hits)
+                {
+                    logger.warn(" - {}", p);
+                }
+            }
+        }
+        catch (Exception ignore) { }
+    }
+
+    private void ensureRenderModelClassesLoaded()
+    {
+        // Some classloader/OptiFine setups have thrown NPEs during lazy class loading inside render code paths.
+        // Load required model classes early to avoid NoClassDefFoundError during RenderWorldLastEvent.
+        String[] required =
+            {
+                "com.example.examplemod.model.LabelCandidate",
+                "com.example.examplemod.model.LayoutResult",
+                "com.example.examplemod.model.Rect",
+                "com.example.examplemod.model.Label",
+                "com.example.examplemod.model.PlacedLabel",
+                "com.example.examplemod.model.ChestPreviewFbo",
+            };
+        for (String name : required)
+        {
+            try
+            {
+                Class.forName(name);
+            }
+            catch (Throwable t)
+            {
+                try
+                {
+                    logger.error("Failed to load required class {} (disabling chest-holo rendering)", name, t);
+                }
+                catch (Exception ignore) { }
+                renderDisabledDueToError = true;
+                break;
+            }
+        }
     }
 
     @EventHandler
@@ -1293,12 +1562,10 @@ public class ExampleMod
                     // ignore scheduling errors
                 }
 
-                if (!placeBlocksActive)
+                if (!placeModule.isActive())
                 {
                     queuedClicks.clear();
-                    placeBlocksQueue.clear();
-                    placeBlocksCurrent = null;
-                    placeBlocksActive = false;
+                    placeModule.reset();
                 }
                 lastClickedSlotStack = null;
                 lastClickedGuiClass = null;
@@ -1353,12 +1620,10 @@ public class ExampleMod
             // If screen closed, clear queues to avoid false positives
             if (currentScreen == null)
             {
-                if (!placeBlocksActive)
+                if (!placeModule.isActive())
                 {
                     queuedClicks.clear();
-                    placeBlocksQueue.clear();
-                    placeBlocksCurrent = null;
-                    placeBlocksActive = false;
+                    placeModule.reset();
                 }
                 lastClickedSlotStack = null;
             }
@@ -1372,7 +1637,8 @@ public class ExampleMod
         }
         if (mc != null && mc.currentScreen instanceof GuiContainer)
         {
-            handlePlaceMenuNavigation((GuiContainer) mc.currentScreen, System.currentTimeMillis());
+            placeModule.onGuiTick((GuiContainer) mc.currentScreen, System.currentTimeMillis());
+            regAllActionsModule.onGuiTick((GuiContainer) mc.currentScreen, System.currentTimeMillis());
         }
         
         // If a menu-open detection was scheduled, run it after a short delay so the server has time
@@ -1638,7 +1904,8 @@ public class ExampleMod
         handleTpPathQueue(mc);
         handleHotbarSwap(mc);
         handleCacheAllTick(mc, now);
-        handlePlaceBlocksTick(mc, now);
+        placeModule.onClientTick(mc, now);
+        regAllActionsModule.onClientTick(mc, now);
         handleAutoChestCacheTick(mc, now);
         checkConfigFileChanges();
         saveEntriesIfNeeded();
@@ -1873,27 +2140,119 @@ public class ExampleMod
 
     private void registerClientCommands()
     {
-        ClientCommandHandler.instance.registerCommand(new CBarCommand("cbar", true));
-        ClientCommandHandler.instance.registerCommand(new CBarCommand("cbar2", false));
+        ActionBarSink actionBarSink = (primary, text, ms) -> setActionBar(primary, text, ms);
+        GuiExportSink guiExportSink = (gui, wantRaw, wantClean) -> exportGuiToClipboard(gui, wantRaw, wantClean);
+        ClientCommandHandler.instance.registerCommand(new CBarCommand("cbar", true, BAR_DEFAULT_MS, actionBarSink));
+        ClientCommandHandler.instance.registerCommand(new CBarCommand("cbar2", false, BAR_DEFAULT_MS, actionBarSink));
         ClientCommandHandler.instance.registerCommand(new GenCommand());
-        ClientCommandHandler.instance.registerCommand(new DebugCommand());
-        ClientCommandHandler.instance.registerCommand(new ConfigDebugCommand());
-        ClientCommandHandler.instance.registerCommand(new TestHoloCommand());
-        ClientCommandHandler.instance.registerCommand(new TestChestHoloCommand());
-        ClientCommandHandler.instance.registerCommand(new TestShulkerHoloCommand());
-        ClientCommandHandler.instance.registerCommand(new NoteCommand());
-        ClientCommandHandler.instance.registerCommand(new ScoreLineCommand());
-        ClientCommandHandler.instance.registerCommand(new ScoreTitleCommand());
-        ClientCommandHandler.instance.registerCommand(new ApiPortCommand());
-        ClientCommandHandler.instance.registerCommand(new GuiExportCommand());
-        ClientCommandHandler.instance.registerCommand(new TestTpLocalCommand());
-        ClientCommandHandler.instance.registerCommand(new TpPathCommand());
-        ClientCommandHandler.instance.registerCommand(new SignSearchCommand());
-        ClientCommandHandler.instance.registerCommand(new ExportLineCommand());
-        ClientCommandHandler.instance.registerCommand(new AutoCacheCommand());
-        ClientCommandHandler.instance.registerCommand(new CacheAllChestsCommand());
-        ClientCommandHandler.instance.registerCommand(new PlaceBlocksCommand());
-        ClientCommandHandler.instance.registerCommand(new ShowFuncsCommand());
+        ClientCommandHandler.instance.registerCommand(
+            new com.example.examplemod.cmd.DelegatingCommand("mpdebug", "/mpdebug", this::runDebugCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.ConfigDebugCommand(actionBarSink,
+            () -> config == null ? null : config.getConfigFile(), () -> enableSecondHotbar, () -> chestHoloTextColor));
+        ClientCommandHandler.instance.registerCommand(
+            new com.example.examplemod.cmd.DelegatingCommand("testholo", "/testholo [on|off]", this::runTestHoloCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("testchestholo",
+            "/testchestholo add [gui|fbo] [s=0.016] [w=40] [tex=1024] | set [s=0.016] [w=40] [tex=1024] [mode=cache|test|gui] [font=linear|nearest] | clear",
+            this::runTestChestHoloCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("testshulkerholo",
+            "/testshulkerholo set [s=0.03] [y=1.15] [z=0.0] | clear | me <text> | mefront <text> | mode [billboard|fixed] | depth [on|off] | cull [on|off] | info",
+            this::runTestShulkerHoloCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.NoteCommand(actionBarSink, () -> noteText,
+            s -> noteText = s, this::saveNote));
+        ClientCommandHandler.instance.registerCommand(new ScoreLineCommand(actionBarSink, this::getScoreboardLineByScore));
+        ClientCommandHandler.instance.registerCommand(new ScoreTitleCommand(actionBarSink, this::getScoreboardTitle));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.ApiPortCommand(() -> apiPort));
+        ClientCommandHandler.instance.registerCommand(new GuiExportCommand(actionBarSink, guiExportSink));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.TestTpLocalCommand(actionBarSink));
+        ClientCommandHandler.instance.registerCommand(
+            new com.example.examplemod.cmd.TpPathCommand(actionBarSink, () -> editorModeActive, this::buildTpPathQueue));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.SignSearchCommand(actionBarSink, () -> {
+            signSearchQuery = null;
+            signSearchMatches.clear();
+        }, (query) -> {
+            Minecraft mc = Minecraft.getMinecraft();
+            if (mc == null || mc.world == null)
+            {
+                return 0;
+            }
+            String q = query == null ? "" : query.trim();
+            if (q.isEmpty())
+            {
+                return 0;
+            }
+            signSearchQuery = q.toLowerCase(Locale.ROOT);
+            signSearchDim = mc.world.provider.getDimension();
+            signSearchMatches.clear();
+            for (TileEntity tile : new ArrayList<>(mc.world.loadedTileEntityList))
+            {
+                if (!(tile instanceof TileEntitySign))
+                {
+                    continue;
+                }
+                TileEntitySign sign = (TileEntitySign) tile;
+                if (signMatchesQuery(sign, signSearchQuery))
+                {
+                    signSearchMatches.add(sign.getPos());
+                }
+            }
+            return signSearchMatches.size();
+        }));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.ExportLineCommand(actionBarSink, () -> {
+            Minecraft mc = Minecraft.getMinecraft();
+            return mc == null ? null : mc.world;
+        }, () -> {
+            Minecraft mc = Minecraft.getMinecraft();
+            if (mc == null || mc.world == null)
+            {
+                return null;
+            }
+            return resolveExportGlassPos(mc.world);
+        }, (pos) -> {
+            Minecraft mc = Minecraft.getMinecraft();
+            if (mc == null || mc.world == null)
+            {
+                return null;
+            }
+            return parseLogicChain(mc.world, pos);
+        }));
+        ClientCommandHandler.instance.registerCommand(
+            new com.example.examplemod.cmd.DelegatingCommand("autocache", "/autocache [info]", this::runAutoCacheCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("cacheallchests",
+            "/cacheallchests [stop]", this::runCacheAllChestsCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("place",
+            "/place <block1> [block2] [block3]... - place blocks relative to last blue glass", placeModule::runPlaceBlocksCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("placeadvanced",
+            "/placeadvanced <block> <name> <args|no> [<block> <name> <args|no> ...]", placeModule::runPlaceAdvancedCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("testplace",
+            "/testplace <method 1-10> [block]", this::runTestPlaceCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("regallactions",
+            "/regallactions [stop] - crawl sign menus and cache them", regAllActionsModule::runCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("regallactionsdebug",
+            "/regallactionsdebug [on/off] - slow + actionbar debug for regallactions", regAllActionsModule::runDebugCommand));
+        ClientCommandHandler.instance.registerCommand(
+            new com.example.examplemod.cmd.ShowFuncsCommand(() -> clickFunctionMap, () -> clickMenuLocation, () -> clickMenuMap));
+    }
+
+    private BlockPos resolveExportGlassPos(World world)
+    {
+        if (world == null)
+        {
+            return null;
+        }
+        BlockPos glassPos = null;
+        if (lastGlassPos != null && lastGlassDim == world.provider.getDimension())
+        {
+            glassPos = lastGlassPos;
+        }
+        if (glassPos == null)
+        {
+            String glassKey = getCodeGlassScopeKey(world);
+            if (glassKey != null)
+            {
+                glassPos = codeBlueGlassById.get(glassKey);
+            }
+        }
+        return glassPos;
     }
 
 
@@ -1908,312 +2267,94 @@ public class ExampleMod
         ClientRegistry.registerKeyBinding(keyTpForward);
     }
 
-    private static class CBarCommand extends CommandBase
+    private void runDebugCommand(MinecraftServer server, ICommandSender sender, String[] args)
     {
-        private final String name;
-        private final boolean primary;
-
-        CBarCommand(String name, boolean primary)
+        debugUi = !debugUi;
+        setActionBar(true, debugUi ? "&aDebug ON" : "&cDebug OFF", 2000L);
+        Minecraft mc = Minecraft.getMinecraft();
+        GuiScreen screen = mc == null ? null : mc.currentScreen;
+        String screenInfo = "screen = ";
+        if (screen == null)
         {
-            this.name = name;
-            this.primary = primary;
+            screenInfo += "-";
+            // clear queues when screen closed
+            queuedClicks.clear();
+            placeModule.reset();
         }
-
-        @Override
-        public String getName()
+        else
         {
-            return name;
+            String cls = screen.getClass().getSimpleName();
+            String title = (screen instanceof GuiChest) ? getGuiTitle((GuiChest) screen) : cls;
+            screenInfo += cls + " title='" + title + "'";
         }
-
-        @Override
-        public String getUsage(ICommandSender sender)
+        if (mc != null && mc.player != null)
         {
-            return "/" + name + " <text>";
-        }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
-        {
-            if (args.length == 0)
-            {
-                return;
-            }
-            String text = String.join(" ", args);
-            setActionBar(primary, text, BAR_DEFAULT_MS);
-        }
-
-        @Override
-        public int getRequiredPermissionLevel()
-        {
-            return 0;
+            mc.player.sendMessage(new TextComponentString(screenInfo));
         }
     }
 
-    private static class GenCommand extends CommandBase
+    private void runTestHoloCommand(MinecraftServer server, ICommandSender sender, String[] args)
     {
-        @Override
-        public String getName()
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null)
         {
-            return "gen";
+            return;
         }
-
-        @Override
-        public String getUsage(ICommandSender sender)
+        if (args.length > 0)
         {
-            return "/gen <name> <start-end>";
-        }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
-        {
-            if (args.length < 2)
-            {
-                return;
-            }
-            Minecraft mc = Minecraft.getMinecraft();
-            if (mc == null || mc.player == null)
-            {
-                return;
-            }
-            String base = args[0];
-            int[] range = parseRange(args[1]);
-            if (range == null)
-            {
-                return;
-            }
-            int start = range[0];
-            int end = range[1];
-            int count = Math.min(9, end - start + 1);
-            for (int i = 0; i < count; i++)
-            {
-                int index = start + i;
-                ItemStack stack = new ItemStack(Items.MAGMA_CREAM, 1);
-                stack.setStackDisplayName(base + index);
-                mc.player.inventory.setInventorySlotContents(i, stack);
-            }
-        }
-
-        @Override
-        public int getRequiredPermissionLevel()
-        {
-            return 0;
-        }
-    }
-
-    private class DebugCommand extends CommandBase
-    {
-        @Override
-        public String getName()
-        {
-            return "mpdebug";
-        }
-
-        @Override
-        public String getUsage(ICommandSender sender)
-        {
-            return "/mpdebug";
-        }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
-        {
-            debugUi = !debugUi;
-            setActionBar(true, debugUi ? "&aDebug ON" : "&cDebug OFF", 2000L);
-            Minecraft mc = Minecraft.getMinecraft();
-            GuiScreen screen = mc == null ? null : mc.currentScreen;
-            String screenInfo = "screen = ";
-            if (screen == null)
-            {
-                screenInfo += "-";
-                // clear queues when screen closed
-                queuedClicks.clear();
-                placeBlocksQueue.clear();
-                placeBlocksCurrent = null;
-                placeBlocksActive = false;
-            }
-            else
-            {
-                String cls = screen.getClass().getSimpleName();
-                String title = (screen instanceof GuiChest) ? getGuiTitle((GuiChest) screen) : cls;
-                screenInfo += cls + " title='" + title + "'";
-            }
-            if (mc != null && mc.player != null)
-            {
-                mc.player.sendMessage(new TextComponentString(screenInfo));
-            }
-        }
-
-        @Override
-        public int getRequiredPermissionLevel()
-        {
-            return 0;
-        }
-    }
-
-    private class TestHoloCommand extends CommandBase
-    {
-        @Override
-        public String getName()
-        {
-            return "testholo";
-        }
-
-        @Override
-        public String getUsage(ICommandSender sender)
-        {
-            return "/testholo [on|off]";
-        }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
-        {
-            Minecraft mc = Minecraft.getMinecraft();
-            if (mc == null || mc.player == null)
-            {
-                return;
-            }
-            if (args.length > 0)
-            {
-                String arg = args[0].toLowerCase(Locale.ROOT);
-                if ("on".equals(arg))
-                {
-                    testHoloActive = true;
-                }
-                else if ("off".equals(arg))
-                {
-                    testHoloActive = false;
-                }
-            }
-            else
-            {
-                testHoloActive = !testHoloActive;
-            }
-            if (testHoloActive)
-            {
-                testHoloPos = new BlockPos(mc.player.posX, mc.player.posY + 1.5, mc.player.posZ);
-                setActionBar(true, "&aHolo ON", 1500L);
-            }
-            else
-            {
-                setActionBar(true, "&cHolo OFF", 1500L);
-            }
-        }
-
-        @Override
-        public int getRequiredPermissionLevel()
-        {
-            return 0;
-        }
-    }
-
-    private class TestChestHoloCommand extends CommandBase
-    {
-        @Override
-        public String getName()
-        {
-            return "testchestholo";
-        }
-
-        @Override
-        public String getUsage(ICommandSender sender)
-        {
-            return "/testchestholo add [gui|fbo] [s=0.016] [w=40] [tex=1024] | set [s=0.016] [w=40] [tex=1024] [mode=cache|test|gui] [font=linear|nearest] | clear";
-        }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
-        {
-            Minecraft mc = Minecraft.getMinecraft();
-            if (mc == null || mc.player == null || mc.world == null)
-            {
-                return;
-            }
-            if (args.length == 0)
-            {
-                addTestChestHolo(mc, false, CHEST_HOLO_SCALE, CHEST_HOLO_TEXT_WIDTH, CHEST_HOLO_TEX_SIZE);
-                return;
-            }
             String arg = args[0].toLowerCase(Locale.ROOT);
-            if ("clear".equals(arg))
+            if ("on".equals(arg))
             {
-                testChestHolos.clear();
-                setActionBar(true, "&cChest holo cleared", 1500L);
-                return;
+                testHoloActive = true;
             }
-            if ("set".equals(arg))
+            else if ("off".equals(arg))
             {
-                float scale = chestHoloScale;
-                int textWidth = chestHoloTextWidth;
-                int texSize = chestHoloTexSize;
-                boolean force = chestHoloForceRerender;
-                boolean useTest = chestHoloUseTestPipeline;
-                boolean smoothFont = chestHoloSmoothFont;
-                boolean useGui = chestHoloUseGuiRender;
-                for (int i = 1; i < args.length; i++)
-                {
-                    String opt = args[i];
-                    if (opt.startsWith("s="))
-                    {
-                        try { scale = Float.parseFloat(opt.substring(2)); } catch (Exception e) { }
-                    }
-                    else if (opt.startsWith("w="))
-                    {
-                        try { textWidth = Integer.parseInt(opt.substring(2)); } catch (Exception e) { }
-                    }
-                    else if (opt.startsWith("tex="))
-                    {
-                        try { texSize = Integer.parseInt(opt.substring(4)); } catch (Exception e) { }
-                    }
-                    else if (opt.startsWith("force="))
-                    {
-                        force = "1".equals(opt.substring(6)) || "true".equalsIgnoreCase(opt.substring(6));
-                    }
-                    else if (opt.startsWith("mode="))
-                    {
-                        String mode = opt.substring(5).toLowerCase(Locale.ROOT);
-                        if ("gui".equals(mode))
-                        {
-                            useGui = true;
-                            useTest = false;
-                        }
-                        else if ("test".equals(mode))
-                        {
-                            useTest = true;
-                            useGui = false;
-                        }
-                        else
-                        {
-                            useTest = false;
-                            useGui = false;
-                        }
-                    }
-                    else if (opt.startsWith("font="))
-                    {
-                        String mode = opt.substring(5).toLowerCase(Locale.ROOT);
-                        smoothFont = !"nearest".equals(mode);
-                    }
-                }
-                chestHoloScale = scale;
-                chestHoloTextWidth = textWidth;
-                chestHoloTexSize = texSize;
-                chestHoloForceRerender = force;
-                chestHoloUseTestPipeline = useTest;
-                chestHoloSmoothFont = smoothFont;
-                chestHoloUseGuiRender = useGui;
-                lastTestScale = scale;
-                lastTestTextWidth = textWidth;
-                lastTestTexSize = texSize;
-                chestPreviewFbos.clear();
-                chestTestHolos.clear();
-                setActionBar(true, "&aChest holo set", 1500L);
-                return;
+                testHoloActive = false;
             }
-            boolean useFbo = "fbo".equals(arg);
-            float scale = CHEST_HOLO_SCALE;
-            int textWidth = CHEST_HOLO_TEXT_WIDTH;
-            int texSize = CHEST_HOLO_TEX_SIZE;
+        }
+        else
+        {
+            testHoloActive = !testHoloActive;
+        }
+        if (testHoloActive)
+        {
+            testHoloPos = new BlockPos(mc.player.posX, mc.player.posY + 1.5, mc.player.posZ);
+            setActionBar(true, "&aHolo ON", 1500L);
+        }
+        else
+        {
+            setActionBar(true, "&cHolo OFF", 1500L);
+        }
+    }
+
+    private void runTestChestHoloCommand(MinecraftServer server, ICommandSender sender, String[] args)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null || mc.world == null)
+        {
+            return;
+        }
+        if (args.length == 0)
+        {
+            addTestChestHolo(mc, false, CHEST_HOLO_SCALE, CHEST_HOLO_TEXT_WIDTH, CHEST_HOLO_TEX_SIZE);
+            return;
+        }
+        String arg = args[0].toLowerCase(Locale.ROOT);
+        if ("clear".equals(arg))
+        {
+            testChestHolos.clear();
+            setActionBar(true, "&cChest holo cleared", 1500L);
+            return;
+        }
+        if ("set".equals(arg))
+        {
+            float scale = chestHoloScale;
+            int textWidth = chestHoloTextWidth;
+            int texSize = chestHoloTexSize;
             boolean force = chestHoloForceRerender;
+            boolean useTest = chestHoloUseTestPipeline;
             boolean smoothFont = chestHoloSmoothFont;
+            boolean useGui = chestHoloUseGuiRender;
             for (int i = 1; i < args.length; i++)
             {
                 String opt = args[i];
@@ -2233,6 +2374,25 @@ public class ExampleMod
                 {
                     force = "1".equals(opt.substring(6)) || "true".equalsIgnoreCase(opt.substring(6));
                 }
+                else if (opt.startsWith("mode="))
+                {
+                    String mode = opt.substring(5).toLowerCase(Locale.ROOT);
+                    if ("gui".equals(mode))
+                    {
+                        useGui = true;
+                        useTest = false;
+                    }
+                    else if ("test".equals(mode))
+                    {
+                        useTest = true;
+                        useGui = false;
+                    }
+                    else
+                    {
+                        useTest = false;
+                        useGui = false;
+                    }
+                }
                 else if (opt.startsWith("font="))
                 {
                     String mode = opt.substring(5).toLowerCase(Locale.ROOT);
@@ -2243,645 +2403,211 @@ public class ExampleMod
             chestHoloTextWidth = textWidth;
             chestHoloTexSize = texSize;
             chestHoloForceRerender = force;
+            chestHoloUseTestPipeline = useTest;
             chestHoloSmoothFont = smoothFont;
-            chestHoloUseGuiRender = false;
+            chestHoloUseGuiRender = useGui;
             lastTestScale = scale;
             lastTestTextWidth = textWidth;
             lastTestTexSize = texSize;
             chestPreviewFbos.clear();
-            addTestChestHolo(mc, useFbo, scale, textWidth, texSize);
+            chestTestHolos.clear();
+            setActionBar(true, "&aChest holo set", 1500L);
+            return;
         }
-
-        @Override
-        public int getRequiredPermissionLevel()
+        boolean useFbo = "fbo".equals(arg);
+        float scale = CHEST_HOLO_SCALE;
+        int textWidth = CHEST_HOLO_TEXT_WIDTH;
+        int texSize = CHEST_HOLO_TEX_SIZE;
+        boolean force = chestHoloForceRerender;
+        boolean smoothFont = chestHoloSmoothFont;
+        for (int i = 1; i < args.length; i++)
         {
-            return 0;
+            String opt = args[i];
+            if (opt.startsWith("s="))
+            {
+                try { scale = Float.parseFloat(opt.substring(2)); } catch (Exception e) { }
+            }
+            else if (opt.startsWith("w="))
+            {
+                try { textWidth = Integer.parseInt(opt.substring(2)); } catch (Exception e) { }
+            }
+            else if (opt.startsWith("tex="))
+            {
+                try { texSize = Integer.parseInt(opt.substring(4)); } catch (Exception e) { }
+            }
+            else if (opt.startsWith("force="))
+            {
+                force = "1".equals(opt.substring(6)) || "true".equalsIgnoreCase(opt.substring(6));
+            }
+            else if (opt.startsWith("font="))
+            {
+                String mode = opt.substring(5).toLowerCase(Locale.ROOT);
+                smoothFont = !"nearest".equals(mode);
+            }
         }
+        chestHoloScale = scale;
+        chestHoloTextWidth = textWidth;
+        chestHoloTexSize = texSize;
+        chestHoloForceRerender = force;
+        chestHoloSmoothFont = smoothFont;
+        chestHoloUseGuiRender = false;
+        lastTestScale = scale;
+        lastTestTextWidth = textWidth;
+        lastTestTexSize = texSize;
+        chestPreviewFbos.clear();
+        addTestChestHolo(mc, useFbo, scale, textWidth, texSize);
     }
 
-    private class ConfigDebugCommand extends CommandBase
+    private void runTestShulkerHoloCommand(MinecraftServer server, ICommandSender sender, String[] args)
     {
-        @Override
-        public String getName()
+        if (args.length == 0)
         {
-            return "mpcfg";
+            setActionBar(true, "&eShulker holo s=" + shulkerHoloScale + " y=" + shulkerHoloYOffset
+                + " z=" + shulkerHoloZOffset, 3000L);
+            return;
         }
-
-        @Override
-        public String getUsage(ICommandSender sender)
+        String cmd = args[0].toLowerCase(Locale.ROOT);
+        if ("clear".equals(cmd))
         {
-            return "/mpcfg";
+            shulkerHolos.clear();
+            shulkerHoloDirty = true;
+            setActionBar(true, "&cShulker holos cleared", 1500L);
+            return;
         }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
+        if ("info".equals(cmd))
         {
-            File cfg = config == null ? null : config.getConfigFile();
-            String path = cfg == null ? "null" : cfg.getAbsolutePath();
-            long stamp = cfg == null ? 0L : cfg.lastModified();
-            setActionBar(true, "&eCfg file: " + path, 4000L);
-            setActionBar(false, "&eCfg hotbar=" + enableSecondHotbar + " holo=#"
-                + String.format(Locale.ROOT, "%06X", chestHoloTextColor) + " t=" + stamp, 4000L);
-        }
-
-        @Override
-        public int getRequiredPermissionLevel()
-        {
-            return 0;
-        }
-    }
-
-    private class TestShulkerHoloCommand extends CommandBase
-    {
-        @Override
-        public String getName()
-        {
-            return "testshulkerholo";
-        }
-
-        @Override
-        public String getUsage(ICommandSender sender)
-        {
-            return "/testshulkerholo set [s=0.03] [y=1.15] [z=0.0] | clear | me <text> | mefront <text> | mode [billboard|fixed] | depth [on|off] | cull [on|off] | info";
-        }
-
-        @Override
-        public int getRequiredPermissionLevel()
-        {
-            return 0;
-        }
-
-        @Override
-        public boolean checkPermission(MinecraftServer server, ICommandSender sender)
-        {
-            return true;
-        }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
-        {
-            if (args.length == 0)
+            int count = shulkerHolos.size();
+            StringBuilder sb = new StringBuilder();
+            sb.append("Shulker holos=").append(count);
+            if (count > 0)
             {
-                setActionBar(true, "&eShulker holo s=" + shulkerHoloScale + " y=" + shulkerHoloYOffset
-                    + " z=" + shulkerHoloZOffset, 3000L);
-                return;
+                ShulkerHolo first = shulkerHolos.values().iterator().next();
+                if (first != null && first.pos != null)
+                {
+                    sb.append(" pos=").append(first.pos.getX()).append(",")
+                        .append(first.pos.getY()).append(",").append(first.pos.getZ());
+                }
             }
-            String cmd = args[0].toLowerCase(Locale.ROOT);
-            if ("clear".equals(cmd))
-            {
-                shulkerHolos.clear();
-                shulkerHoloDirty = true;
-                setActionBar(true, "&cShulker holos cleared", 1500L);
-                return;
-            }
-            if ("info".equals(cmd))
-            {
-                int count = shulkerHolos.size();
-                StringBuilder sb = new StringBuilder();
-                sb.append("Shulker holos=").append(count);
-                if (count > 0)
-                {
-                    ShulkerHolo first = shulkerHolos.values().iterator().next();
-                    if (first != null && first.pos != null)
-                    {
-                        sb.append(" pos=").append(first.pos.getX()).append(",")
-                            .append(first.pos.getY()).append(",").append(first.pos.getZ());
-                    }
-                }
-                setActionBar(true, sb.toString(), 3000L);
-                return;
-            }
-            if ("me".equals(cmd))
-            {
-                Minecraft mc = Minecraft.getMinecraft();
-                if (mc == null || mc.player == null)
-                {
-                    setActionBar(true, "&cNo player", 1500L);
-                    return;
-                }
-                if (args.length < 2)
-                {
-                    setActionBar(true, "&cText required", 1500L);
-                    return;
-                }
-                StringBuilder sb = new StringBuilder();
-                for (int i = 1; i < args.length; i++)
-                {
-                    if (i > 1)
-                    {
-                        sb.append(' ');
-                    }
-                    sb.append(args[i]);
-                }
-                BlockPos pos = mc.player.getPosition().up(2);
-                int dim = mc.player.dimension;
-                putShulkerHolo(dim, pos, sb.toString(), 0xFFFFFF);
-                setActionBar(true, "&aShulker holo me", 1500L);
-                return;
-            }
-            if ("mefront".equals(cmd))
-            {
-                Minecraft mc = Minecraft.getMinecraft();
-                if (mc == null || mc.player == null)
-                {
-                    setActionBar(true, "&cNo player", 1500L);
-                    return;
-                }
-                if (args.length < 2)
-                {
-                    setActionBar(true, "&cText required", 1500L);
-                    return;
-                }
-                StringBuilder sb = new StringBuilder();
-                for (int i = 1; i < args.length; i++)
-                {
-                    if (i > 1)
-                    {
-                        sb.append(' ');
-                    }
-                    sb.append(args[i]);
-                }
-                Vec3d look = mc.player.getLookVec();
-                BlockPos pos = new BlockPos(mc.player.posX + look.x * 2.0,
-                    mc.player.posY + look.y * 2.0 + 1.0,
-                    mc.player.posZ + look.z * 2.0);
-                int dim = mc.player.dimension;
-                putShulkerHolo(dim, pos, sb.toString(), 0xFFFFFF);
-                setActionBar(true, "&aShulker holo front", 1500L);
-                return;
-            }
-            if ("set".equals(cmd))
-            {
-                for (int i = 1; i < args.length; i++)
-                {
-                    String token = args[i];
-                    if (token.startsWith("s="))
-                    {
-                        shulkerHoloScale = ExampleMod.parseFloat(token.substring(2), shulkerHoloScale);
-                    }
-                    else if (token.startsWith("y="))
-                    {
-                        shulkerHoloYOffset = ExampleMod.parseDouble(token.substring(2), shulkerHoloYOffset);
-                    }
-                    else if (token.startsWith("z="))
-                    {
-                        shulkerHoloZOffset = ExampleMod.parseDouble(token.substring(2), shulkerHoloZOffset);
-                    }
-                }
-                setActionBar(true, "&aShulker holo set", 1500L);
-                return;
-            }
-            if ("mode".equals(cmd))
-            {
-                if (args.length < 2)
-                {
-                    setActionBar(true, "&eMode=" + (shulkerHoloBillboard ? "billboard" : "fixed"), 1500L);
-                    return;
-                }
-                String mode = args[1].toLowerCase(Locale.ROOT);
-                shulkerHoloBillboard = !"fixed".equals(mode);
-                setActionBar(true, "&aShulker holo mode=" + (shulkerHoloBillboard ? "billboard" : "fixed"), 1500L);
-                return;
-            }
-            if ("depth".equals(cmd))
-            {
-                if (args.length < 2)
-                {
-                    setActionBar(true, "&eDepth=" + (shulkerHoloDepth ? "on" : "off"), 1500L);
-                    return;
-                }
-                String mode = args[1].toLowerCase(Locale.ROOT);
-                shulkerHoloDepth = "on".equals(mode);
-                setActionBar(true, "&aShulker holo depth=" + (shulkerHoloDepth ? "on" : "off"), 1500L);
-                return;
-            }
-            if ("cull".equals(cmd))
-            {
-                if (args.length < 2)
-                {
-                    setActionBar(true, "&eCull=" + (shulkerHoloCull ? "on" : "off"), 1500L);
-                    return;
-                }
-                String mode = args[1].toLowerCase(Locale.ROOT);
-                shulkerHoloCull = "on".equals(mode);
-                setActionBar(true, "&aShulker holo cull=" + (shulkerHoloCull ? "on" : "off"), 1500L);
-                return;
-            }
-            setActionBar(false, "&cUnknown args", 1500L);
+            setActionBar(true, sb.toString(), 3000L);
+            return;
         }
-    }
-
-    private class ApiPortCommand extends CommandBase
-    {
-        @Override
-        public String getName()
-        {
-            return "apiport";
-        }
-
-        @Override
-        public String getUsage(ICommandSender sender)
-        {
-            return "/apiport";
-        }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
+        if ("me".equals(cmd))
         {
             Minecraft mc = Minecraft.getMinecraft();
-            if (mc != null && mc.player != null)
+            if (mc == null || mc.player == null)
             {
-                mc.player.sendMessage(new TextComponentString("API port: " + apiPort));
-            }
-        }
-
-        @Override
-        public int getRequiredPermissionLevel()
-        {
-            return 0;
-        }
-    }
-
-    private class NoteCommand extends CommandBase
-    {
-        @Override
-        public String getName()
-        {
-            return "note";
-        }
-
-        @Override
-        public String getUsage(ICommandSender sender)
-        {
-            return "/note save <text> | /note read";
-        }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
-        {
-            if (args.length == 0)
-            {
-                setActionBar(true, "&e" + getUsage(sender), 3000L);
+                setActionBar(true, "&cNo player", 1500L);
                 return;
             }
-            String sub = args[0].toLowerCase(Locale.ROOT);
-            if ("read".equals(sub))
+            if (args.length < 2)
             {
-                String text = noteText == null ? "" : noteText;
-                if (text.isEmpty())
+                setActionBar(true, "&cText required", 1500L);
+                return;
+            }
+            StringBuilder sb = new StringBuilder();
+            for (int i = 1; i < args.length; i++)
+            {
+                if (i > 1)
                 {
-                    setActionBar(true, "&eNote is empty.", 2000L);
+                    sb.append(' ');
                 }
-                else if (sender != null)
-                {
-                    sender.sendMessage(new TextComponentString(text));
-                }
-                return;
+                sb.append(args[i]);
             }
-            if ("save".equals(sub))
-            {
-                if (args.length < 2)
-                {
-                    setActionBar(true, "&eNote text missing.", 2000L);
-                    return;
-                }
-                StringBuilder sb = new StringBuilder();
-                for (int i = 1; i < args.length; i++)
-                {
-                    if (i > 1)
-                    {
-                        sb.append(' ');
-                    }
-                    sb.append(args[i]);
-                }
-                noteText = sb.toString();
-                saveNote();
-                setActionBar(true, "&aNote saved.", 1500L);
-                return;
-            }
-            setActionBar(true, "&e" + getUsage(sender), 3000L);
+            BlockPos pos = mc.player.getPosition().up(2);
+            int dim = mc.player.dimension;
+            putShulkerHolo(dim, pos, sb.toString(), 0xFFFFFF);
+            setActionBar(true, "&aShulker holo me", 1500L);
+            return;
         }
-
-        @Override
-        public int getRequiredPermissionLevel()
-        {
-            return 0;
-        }
-    }
-
-    private class ScoreLineCommand extends CommandBase
-    {
-        @Override
-        public String getName()
-        {
-            return "scoreline";
-        }
-
-        @Override
-        public String getUsage(ICommandSender sender)
-        {
-            return "/scoreline <score>";
-        }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
-        {
-            if (args.length < 1)
-            {
-                setActionBar(true, "&e" + getUsage(sender), 3000L);
-                return;
-            }
-            int scoreValue;
-            try
-            {
-                scoreValue = Integer.parseInt(args[0]);
-            }
-            catch (NumberFormatException e)
-            {
-                setActionBar(true, "&cInvalid score.", 2000L);
-                return;
-            }
-            String line = getScoreboardLineByScore(scoreValue);
-            if (line == null || line.isEmpty())
-            {
-                setActionBar(true, "&eNo line for score " + scoreValue, 2000L);
-                return;
-            }
-            if (sender != null)
-            {
-                sender.sendMessage(new TextComponentString(line));
-            }
-        }
-
-        @Override
-        public int getRequiredPermissionLevel()
-        {
-            return 0;
-        }
-    }
-
-    private class ScoreTitleCommand extends CommandBase
-    {
-        @Override
-        public String getName()
-        {
-            return "scoretitle";
-        }
-
-        @Override
-        public String getUsage(ICommandSender sender)
-        {
-            return "/scoretitle";
-        }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
-        {
-            String title = getScoreboardTitle();
-            if (title == null || title.isEmpty())
-            {
-                setActionBar(true, "&eNo scoreboard title.", 2000L);
-                return;
-            }
-            if (sender != null)
-            {
-                sender.sendMessage(new TextComponentString(title));
-            }
-        }
-
-        @Override
-        public int getRequiredPermissionLevel()
-        {
-            return 0;
-        }
-    }
-
-    private class GuiExportCommand extends CommandBase
-    {
-        @Override
-        public String getName()
-        {
-            return "guiexport";
-        }
-
-        @Override
-        public String getUsage(ICommandSender sender)
-        {
-            return "/guiexport [raw|clean|both]";
-        }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
+        if ("mefront".equals(cmd))
         {
             Minecraft mc = Minecraft.getMinecraft();
-            if (mc == null || !(mc.currentScreen instanceof GuiContainer))
+            if (mc == null || mc.player == null)
             {
-                setActionBar(true, "&eOpen a GUI container first.", 2000L);
+                setActionBar(true, "&cNo player", 1500L);
                 return;
             }
-            String mode = args.length > 0 ? args[0].toLowerCase(Locale.ROOT) : "both";
-            boolean wantRaw = "raw".equals(mode) || "both".equals(mode);
-            boolean wantClean = "clean".equals(mode) || "both".equals(mode);
-            if (!wantRaw && !wantClean)
+            if (args.length < 2)
             {
-                setActionBar(true, "&e" + getUsage(sender), 3000L);
+                setActionBar(true, "&cText required", 1500L);
                 return;
             }
-            exportGuiToClipboard((GuiContainer) mc.currentScreen, wantRaw, wantClean);
-        }
-
-        @Override
-        public int getRequiredPermissionLevel()
-        {
-            return 0;
-        }
-    }
-
-    private class TestTpLocalCommand extends CommandBase
-    {
-        @Override
-        public String getName()
-        {
-            return "testtplocal";
-        }
-
-        @Override
-        public String getUsage(ICommandSender sender)
-        {
-            return "/testtplocal <dx> <dy> <dz>";
-        }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
-        {
-            Minecraft mc = Minecraft.getMinecraft();
-            if (mc == null || mc.player == null || mc.playerController == null)
+            StringBuilder sb = new StringBuilder();
+            for (int i = 1; i < args.length; i++)
             {
-                return;
-            }
-            if (!mc.playerController.isInCreativeMode()
-                || mc.playerController.getCurrentGameType() != GameType.CREATIVE)
-            {
-                setActionBar(false, "&cCreative only.", 2000L);
-                return;
-            }
-            if (args.length < 3)
-            {
-                setActionBar(true, "&e" + getUsage(sender), 3000L);
-                return;
-            }
-            double dx;
-            double dy;
-            double dz;
-            try
-            {
-                dx = Double.parseDouble(args[0]);
-                dy = Double.parseDouble(args[1]);
-                dz = Double.parseDouble(args[2]);
-            }
-            catch (NumberFormatException e)
-            {
-                setActionBar(true, "&cInvalid offset.", 2000L);
-                return;
-            }
-            double nx = mc.player.posX + dx;
-            double ny = mc.player.posY + dy;
-            double nz = mc.player.posZ + dz;
-            mc.player.setPosition(nx, ny, nz);
-            mc.player.motionX = 0.0;
-            mc.player.motionY = 0.0;
-            mc.player.motionZ = 0.0;
-            setActionBar(true, "&aLocal TP: " + (int) dx + " " + (int) dy + " " + (int) dz, 1500L);
-        }
-
-        @Override
-        public int getRequiredPermissionLevel()
-        {
-            return 0;
-        }
-    }
-
-    private class TpPathCommand extends CommandBase
-    {
-        @Override
-        public String getName()
-        {
-            return "tppath";
-        }
-
-        @Override
-        public String getUsage(ICommandSender sender)
-        {
-            return "/tppath <x> <y> <z>";
-        }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
-        {
-            Minecraft mc = Minecraft.getMinecraft();
-            if (mc == null || mc.player == null || mc.playerController == null)
-            {
-                return;
-            }
-            if (!editorModeActive || !mc.playerController.isInCreativeMode()
-                || mc.playerController.getCurrentGameType() != GameType.CREATIVE)
-            {
-                setActionBar(false, "&cCreative+code only.", 2000L);
-                return;
-            }
-            if (args.length < 3)
-            {
-                setActionBar(true, "&e" + getUsage(sender), 3000L);
-                return;
-            }
-            double tx;
-            double ty;
-            double tz;
-            try
-            {
-                tx = Double.parseDouble(args[0]);
-                ty = Double.parseDouble(args[1]);
-                tz = Double.parseDouble(args[2]);
-            }
-            catch (NumberFormatException e)
-            {
-                setActionBar(true, "&cInvalid coords.", 2000L);
-                return;
-            }
-            buildTpPathQueue(mc.world, mc.player.posX, mc.player.posY, mc.player.posZ, tx, ty, tz);
-        }
-
-        @Override
-        public int getRequiredPermissionLevel()
-        {
-            return 0;
-        }
-    }
-
-    private class SignSearchCommand extends CommandBase
-    {
-        @Override
-        public String getName()
-        {
-            return "tsearch";
-        }
-
-        @Override
-        public String getUsage(ICommandSender sender)
-        {
-            return "/tsearch <text> | /tsearch clear";
-        }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
-        {
-            Minecraft mc = Minecraft.getMinecraft();
-            if (mc == null || mc.world == null)
-            {
-                return;
-            }
-            if (args.length == 0)
-            {
-                setActionBar(true, "&e" + getUsage(sender), 3000L);
-                return;
-            }
-            String first = args[0].toLowerCase(Locale.ROOT);
-            if ("clear".equals(first))
-            {
-                signSearchQuery = null;
-                signSearchMatches.clear();
-                setActionBar(true, "&eSign search cleared", 2000L);
-                return;
-            }
-            String query = String.join(" ", args).trim();
-            if (query.isEmpty())
-            {
-                setActionBar(true, "&cText required", 2000L);
-                return;
-            }
-            signSearchQuery = query.toLowerCase(Locale.ROOT);
-            signSearchDim = mc.world.provider.getDimension();
-            signSearchMatches.clear();
-            for (TileEntity tile : new ArrayList<>(mc.world.loadedTileEntityList))
-            {
-                if (!(tile instanceof TileEntitySign))
+                if (i > 1)
                 {
-                    continue;
+                    sb.append(' ');
                 }
-                TileEntitySign sign = (TileEntitySign) tile;
-                if (signMatchesQuery(sign, signSearchQuery))
+                sb.append(args[i]);
+            }
+            Vec3d look = mc.player.getLookVec();
+            BlockPos pos = new BlockPos(mc.player.posX + look.x * 2.0,
+                mc.player.posY + look.y * 2.0 + 1.0,
+                mc.player.posZ + look.z * 2.0);
+            int dim = mc.player.dimension;
+            putShulkerHolo(dim, pos, sb.toString(), 0xFFFFFF);
+            setActionBar(true, "&aShulker holo front", 1500L);
+            return;
+        }
+        if ("set".equals(cmd))
+        {
+            for (int i = 1; i < args.length; i++)
+            {
+                String token = args[i];
+                if (token.startsWith("s="))
                 {
-                    signSearchMatches.add(sign.getPos());
+                    shulkerHoloScale = ExampleMod.parseFloat(token.substring(2), shulkerHoloScale);
+                }
+                else if (token.startsWith("y="))
+                {
+                    shulkerHoloYOffset = ExampleMod.parseDouble(token.substring(2), shulkerHoloYOffset);
+                }
+                else if (token.startsWith("z="))
+                {
+                    shulkerHoloZOffset = ExampleMod.parseDouble(token.substring(2), shulkerHoloZOffset);
                 }
             }
-            setActionBar(true, "&aSigns: " + signSearchMatches.size(), 2000L);
+            setActionBar(true, "&aShulker holo set", 1500L);
+            return;
         }
-
-        @Override
-        public int getRequiredPermissionLevel()
+        if ("mode".equals(cmd))
         {
-            return 0;
+            if (args.length < 2)
+            {
+                setActionBar(true, "&eMode=" + (shulkerHoloBillboard ? "billboard" : "fixed"), 1500L);
+                return;
+            }
+            String mode = args[1].toLowerCase(Locale.ROOT);
+            shulkerHoloBillboard = !"fixed".equals(mode);
+            setActionBar(true, "&aShulker holo mode=" + (shulkerHoloBillboard ? "billboard" : "fixed"), 1500L);
+            return;
         }
+        if ("depth".equals(cmd))
+        {
+            if (args.length < 2)
+            {
+                setActionBar(true, "&eDepth=" + (shulkerHoloDepth ? "on" : "off"), 1500L);
+                return;
+            }
+            String mode = args[1].toLowerCase(Locale.ROOT);
+            shulkerHoloDepth = "on".equals(mode);
+            setActionBar(true, "&aShulker holo depth=" + (shulkerHoloDepth ? "on" : "off"), 1500L);
+            return;
+        }
+        if ("cull".equals(cmd))
+        {
+            if (args.length < 2)
+            {
+                setActionBar(true, "&eCull=" + (shulkerHoloCull ? "on" : "off"), 1500L);
+                return;
+            }
+            String mode = args[1].toLowerCase(Locale.ROOT);
+            shulkerHoloCull = "on".equals(mode);
+            setActionBar(true, "&aShulker holo cull=" + (shulkerHoloCull ? "on" : "off"), 1500L);
+            return;
+        }
+        setActionBar(false, "&cUnknown args", 1500L);
     }
 
     private void addTestChestHolo(Minecraft mc, boolean useFbo, float scale, int textWidth, int texSize)
@@ -2916,7 +2642,8 @@ public class ExampleMod
         }
     }
 
-    private static void setActionBar(boolean primary, String text, long durationMs)
+    @Override
+    public void setActionBar(boolean primary, String text, long durationMs)
     {
         String formatted = applyColorCodes(text);
         long until = System.currentTimeMillis() + Math.max(0, durationMs);
@@ -4090,7 +3817,14 @@ public class ExampleMod
             return;
         }
         double delta = tpScrollDir * 10.0;
-        mc.player.setPosition(mc.player.posX, mc.player.posY + delta, mc.player.posZ);
+        try
+        {
+            mc.player.setPositionAndUpdate(mc.player.posX, mc.player.posY + delta, mc.player.posZ);
+        }
+        catch (Exception ignore)
+        {
+            mc.player.setPosition(mc.player.posX, mc.player.posY + delta, mc.player.posZ);
+        }
         mc.player.motionX = 0.0;
         mc.player.motionY = 0.0;
         mc.player.motionZ = 0.0;
@@ -4098,7 +3832,8 @@ public class ExampleMod
         tpScrollNextMs = now + 300L;
     }
 
-    private void buildTpPathQueue(World world, double sx, double sy, double sz, double tx, double ty, double tz)
+    @Override
+    public void buildTpPathQueue(World world, double sx, double sy, double sz, double tx, double ty, double tz)
     {
         if (world == null)
         {
@@ -4159,7 +3894,8 @@ public class ExampleMod
             setActionBar(true, "&eTP path empty", 1500L);
             return;
         }
-        tpPathNextMs = System.currentTimeMillis() + 300L;
+        // Allow the first step quickly; subsequent steps are throttled in handleTpPathQueue.
+        tpPathNextMs = System.currentTimeMillis();
         setActionBar(true, "&aTP path steps=" + tpPathQueue.size(), 2000L);
     }
 
@@ -4199,12 +3935,30 @@ public class ExampleMod
         {
             return;
         }
+        // Ensure flight stays enabled during TP path to avoid falling/rubberband.
+        try
+        {
+            mc.player.capabilities.allowFlying = true;
+            mc.player.capabilities.isFlying = true;
+            mc.player.sendPlayerAbilities();
+        }
+        catch (Exception ignore) { }
         double[] step = tpPathQueue.poll();
         if (step == null)
         {
             return;
         }
-        mc.player.setPosition(mc.player.posX + step[0], mc.player.posY + step[1], mc.player.posZ + step[2]);
+        double nx = mc.player.posX + step[0];
+        double ny = mc.player.posY + step[1];
+        double nz = mc.player.posZ + step[2];
+        try
+        {
+            mc.player.setPositionAndUpdate(nx, ny, nz);
+        }
+        catch (Exception ignore)
+        {
+            mc.player.setPosition(nx, ny, nz);
+        }
         mc.player.motionX = 0.0;
         mc.player.motionY = 0.0;
         mc.player.motionZ = 0.0;
@@ -5154,7 +4908,8 @@ public class ExampleMod
         return Integer.toHexString(sb.toString().hashCode());
     }
 
-    private String getItemNameKey(ItemStack stack)
+    @Override
+    public String getItemNameKey(ItemStack stack)
     {
         if (stack == null || stack.isEmpty())
         {
@@ -5169,7 +4924,8 @@ public class ExampleMod
         return cleaned.isEmpty() ? "empty" : cleaned;
     }
 
-    private String normalizeForMatch(String s)
+    @Override
+    public String normalizeForMatch(String s)
     {
         if (s == null)
         {
@@ -5215,7 +4971,8 @@ public class ExampleMod
         }
     }
 
-    private String getGuiTitle(GuiChest chest)
+    @Override
+    public String getGuiTitle(GuiChest chest)
     {
         IInventory inv = getChestInventory(chest);
         if (inv == null || inv.getDisplayName() == null)
@@ -5430,7 +5187,7 @@ public class ExampleMod
         int x = base.xPos;
         int y = base.yPos;
         int[][] offsets = new int[][]{
-            {0, -18}, {0, 18}, {-18, 0}, {18, 0}
+            {0, 18}, {-18, 0}, {18, 0}, {0, -18}
         };
         Slot empty = null;
         Slot fallback = null;
@@ -5585,7 +5342,8 @@ public class ExampleMod
         return lower.contains("\u043c\u0435\u0441\u0442\u043e\u043f\u043e\u043b\u043e\u0436");
     }
 
-    private boolean isGlassPane(ItemStack stack)
+    @Override
+    public boolean isGlassPane(ItemStack stack)
     {
         if (stack == null || stack.isEmpty())
         {
@@ -5594,7 +5352,8 @@ public class ExampleMod
         return stack.getItem() == net.minecraft.item.Item.getItemFromBlock(Blocks.STAINED_GLASS_PANE);
     }
 
-    private void setInputActive(boolean active)
+    @Override
+    public void setInputActive(boolean active)
     {
         inputActive = active;
         if (active)
@@ -5654,7 +5413,8 @@ public class ExampleMod
         return inputField == null ? "" : inputField.getText();
     }
 
-    private void setInputText(String text)
+    @Override
+    public void setInputText(String text)
     {
         ensureInputField();
         if (inputField != null)
@@ -5664,7 +5424,8 @@ public class ExampleMod
         }
     }
 
-    private void startSlotInput(GuiContainer container, Slot target, ItemStack template, int mode, String preset,
+    @Override
+    public void startSlotInput(GuiContainer container, Slot target, ItemStack template, int mode, String preset,
         String title)
     {
         setInputActive(true);
@@ -6039,7 +5800,8 @@ public class ExampleMod
         return sb.toString();
     }
 
-    private String getCodeGlassScopeKey(World world)
+    @Override
+    public String getCodeGlassScopeKey(World world)
     {
         int dim = world == null ? 0 : world.provider.getDimension();
         return normalizeEntryScopeId(getScoreboardIdLine()) + ":" + dim;
@@ -6539,10 +6301,10 @@ public class ExampleMod
             {
                 continue;
             }
-            snapshot.put(key, new CachedMenu(menu.title, menu.size, copyItemStackList(menu.items), menu.hash));
+            snapshot.put(key, new CachedMenu(menu.title, menu.size, ItemStackUtils.copyItemStackList(menu.items), menu.hash));
         }
         final CachedMenu customSnapshot = customMenuCache == null ? null
-            : new CachedMenu(customMenuCache.title, customMenuCache.size, copyItemStackList(customMenuCache.items),
+            : new CachedMenu(customMenuCache.title, customMenuCache.size, ItemStackUtils.copyItemStackList(customMenuCache.items),
                 customMenuCache.hash);
         menuCacheDirty = false;
         menuSaveQueued.set(true);
@@ -6585,7 +6347,7 @@ public class ExampleMod
             {
                 continue;
             }
-            snapshot.put(key, copyItemStackList(items));
+            snapshot.put(key, ItemStackUtils.copyItemStackList(items));
             String loc = clickMenuLocation.get(key);
             if (loc != null && !loc.isEmpty())
             {
@@ -6659,7 +6421,7 @@ public class ExampleMod
             {
                 continue;
             }
-            snapshot.put(id, new ChestCache(cache.dim, cache.pos, copyItemStackList(cache.items),
+            snapshot.put(id, new ChestCache(cache.dim, cache.pos, ItemStackUtils.copyItemStackList(cache.items),
                 System.currentTimeMillis(), cache.label));
         }
         chestIdDirty = false;
@@ -6786,7 +6548,8 @@ public class ExampleMod
         }
     }
 
-    private String extractEntryText(ItemStack stack, int mode)
+    @Override
+    public String extractEntryText(ItemStack stack, int mode)
     {
         if (stack == null || stack.isEmpty())
         {
@@ -7057,20 +6820,6 @@ public class ExampleMod
         return sb.toString();
     }
 
-    private List<ItemStack> copyItemStackList(List<ItemStack> items)
-    {
-        List<ItemStack> copy = new ArrayList<>();
-        if (items == null)
-        {
-            return copy;
-        }
-        for (ItemStack stack : items)
-        {
-            copy.add(stack == null || stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
-        }
-        return copy;
-    }
-
     private void saveChestIdCaches()
     {
         if (chestCacheFile == null)
@@ -7276,357 +7025,51 @@ public class ExampleMod
 
     private void saveMenuCacheSnapshot(File target, Map<String, CachedMenu> snapshot, CachedMenu customSnapshot)
     {
-        if (target == null)
-        {
-            return;
-        }
-        try
-        {
-            NBTTagCompound root = new NBTTagCompound();
-            NBTTagList list = new NBTTagList();
-            for (Map.Entry<String, CachedMenu> entry : snapshot.entrySet())
-            {
-                String key = entry.getKey();
-                CachedMenu menu = entry.getValue();
-                if (key == null || menu == null)
-                {
-                    continue;
-                }
-                NBTTagCompound tag = new NBTTagCompound();
-                tag.setString("Key", key);
-                tag.setString("Title", menu.title == null ? "" : menu.title);
-                tag.setInteger("Size", menu.size);
-                tag.setString("Hash", menu.hash == null ? "" : menu.hash);
-                NBTTagList items = new NBTTagList();
-                for (ItemStack stack : menu.items)
-                {
-                    NBTTagCompound itemTag = new NBTTagCompound();
-                    if (stack != null && !stack.isEmpty())
-                    {
-                        stack.writeToNBT(itemTag);
-                    }
-                    items.appendTag(itemTag);
-                }
-                tag.setTag("Items", items);
-                list.appendTag(tag);
-            }
-            root.setTag("Menus", list);
-            if (customSnapshot != null)
-            {
-                NBTTagCompound custom = new NBTTagCompound();
-                custom.setString("Title", customSnapshot.title == null ? "" : customSnapshot.title);
-                custom.setInteger("Size", customSnapshot.size);
-                custom.setString("Hash", customSnapshot.hash == null ? "" : customSnapshot.hash);
-                NBTTagList items = new NBTTagList();
-                for (ItemStack stack : customSnapshot.items)
-                {
-                    NBTTagCompound itemTag = new NBTTagCompound();
-                    if (stack != null && !stack.isEmpty())
-                    {
-                        stack.writeToNBT(itemTag);
-                    }
-                    items.appendTag(itemTag);
-                }
-                custom.setTag("Items", items);
-                root.setTag("Custom", custom);
-            }
-            CompressedStreamTools.write(root, target);
-        }
-        catch (Exception e)
-        {
-            // ignore
-        }
+        MenuCacheIO.save(target, snapshot, customSnapshot);
     }
 
     private void saveClickMenuSnapshot(File target, Map<String, List<ItemStack>> snapshot, Map<String, String> locSnapshot)
     {
-        if (target == null)
-        {
-            return;
-        }
-        try
-        {
-            NBTTagCompound root = new NBTTagCompound();
-            NBTTagList list = new NBTTagList();
-            for (Map.Entry<String, List<ItemStack>> entry : snapshot.entrySet())
-            {
-                String key = entry.getKey();
-                List<ItemStack> items = entry.getValue();
-                if (key == null || items == null)
-                {
-                    continue;
-                }
-                NBTTagCompound tag = new NBTTagCompound();
-                tag.setString("Key", key);
-                String loc = locSnapshot.get(key);
-                if (loc != null && !loc.isEmpty())
-                {
-                    tag.setString("Loc", loc);
-                }
-                NBTTagList itemsTag = new NBTTagList();
-                for (ItemStack stack : items)
-                {
-                    NBTTagCompound itemTag = new NBTTagCompound();
-                    if (stack != null && !stack.isEmpty())
-                    {
-                        stack.writeToNBT(itemTag);
-                    }
-                    itemsTag.appendTag(itemTag);
-                }
-                tag.setTag("Items", itemsTag);
-                list.appendTag(tag);
-            }
-            root.setTag("ClickMenus", list);
-            CompressedStreamTools.write(root, target);
-        }
-        catch (Exception e)
-        {
-            // ignore
-        }
+        ClickMenuIO.save(target, snapshot, locSnapshot);
     }
 
     private void saveShulkerHoloSnapshot(File target, Map<String, ShulkerHolo> snapshot)
     {
-        if (target == null)
-        {
-            return;
-        }
-        try
-        {
-            NBTTagCompound root = new NBTTagCompound();
-            NBTTagList list = new NBTTagList();
-            for (ShulkerHolo holo : snapshot.values())
-            {
-                if (holo == null || holo.pos == null)
-                {
-                    continue;
-                }
-                NBTTagCompound tag = new NBTTagCompound();
-                tag.setInteger("Dim", holo.dim);
-                tag.setInteger("X", holo.pos.getX());
-                tag.setInteger("Y", holo.pos.getY());
-                tag.setInteger("Z", holo.pos.getZ());
-                tag.setInteger("Color", holo.color);
-                tag.setString("Text", holo.text == null ? "" : holo.text);
-                list.appendTag(tag);
-            }
-            root.setTag("Holos", list);
-            CompressedStreamTools.write(root, target);
-        }
-        catch (Exception e)
-        {
-            // ignore
-        }
+        ShulkerHoloIO.save(target, snapshot);
     }
 
     private void saveCodeBlueGlassSnapshot(File target, Map<String, BlockPos> snapshot)
     {
-        if (target == null)
-        {
-            return;
-        }
-        try
-        {
-            NBTTagCompound root = new NBTTagCompound();
-            NBTTagList list = new NBTTagList();
-            for (Map.Entry<String, BlockPos> entry : snapshot.entrySet())
-            {
-                String key = entry.getKey();
-                BlockPos pos = entry.getValue();
-                if (key == null || pos == null)
-                {
-                    continue;
-                }
-                NBTTagCompound tag = new NBTTagCompound();
-                tag.setString("Key", key);
-                tag.setInteger("X", pos.getX());
-                tag.setInteger("Y", pos.getY());
-                tag.setInteger("Z", pos.getZ());
-                list.appendTag(tag);
-            }
-            root.setTag("Blue", list);
-            CompressedStreamTools.write(root, target);
-        }
-        catch (Exception e)
-        {
-            // ignore
-        }
+        CodeBlueGlassIO.save(target, snapshot);
     }
 
     private void loadShulkerHolos()
     {
-        if (shulkerHoloFile == null || !shulkerHoloFile.exists())
-        {
-            return;
-        }
-        try
-        {
-            NBTTagCompound root = CompressedStreamTools.read(shulkerHoloFile);
-            if (root == null || !root.hasKey("Holos", 9))
-            {
-                return;
-            }
-            NBTTagList list = root.getTagList("Holos", 10);
-            shulkerHolos.clear();
-            for (int i = 0; i < list.tagCount(); i++)
-            {
-                NBTTagCompound tag = list.getCompoundTagAt(i);
-                int dim = tag.hasKey("Dim") ? tag.getInteger("Dim") : 0;
-                int x = tag.hasKey("X") ? tag.getInteger("X") : 0;
-                int y = tag.hasKey("Y") ? tag.getInteger("Y") : 0;
-                int z = tag.hasKey("Z") ? tag.getInteger("Z") : 0;
-                int color = tag.hasKey("Color") ? tag.getInteger("Color") : 0xFFFFFF;
-                String text = tag.getString("Text");
-                BlockPos pos = new BlockPos(x, y, z);
-                String key = dim + ":" + pos.toString();
-                shulkerHolos.put(key, new ShulkerHolo(dim, pos, text, color));
-            }
-        }
-        catch (Exception e)
-        {
-            // ignore
-        }
+        shulkerHolos.clear();
+        shulkerHolos.putAll(ShulkerHoloIO.load(shulkerHoloFile));
     }
 
     private void loadCodeBlueGlass()
     {
-        if (codeBlueGlassFile == null || !codeBlueGlassFile.exists())
-        {
-            return;
-        }
-        try
-        {
-            NBTTagCompound root = CompressedStreamTools.read(codeBlueGlassFile);
-            if (root == null || !root.hasKey("Blue", 9))
-            {
-                return;
-            }
-            NBTTagList list = root.getTagList("Blue", 10);
-            codeBlueGlassById.clear();
-            for (int i = 0; i < list.tagCount(); i++)
-            {
-                NBTTagCompound tag = list.getCompoundTagAt(i);
-                String key = tag.getString("Key");
-                int x = tag.hasKey("X") ? tag.getInteger("X") : 0;
-                int y = tag.hasKey("Y") ? tag.getInteger("Y") : 0;
-                int z = tag.hasKey("Z") ? tag.getInteger("Z") : 0;
-                if (key != null && !key.isEmpty())
-                {
-                    codeBlueGlassById.put(key, new BlockPos(x, y, z));
-                }
-            }
-        }
-        catch (Exception e)
-        {
-            // ignore
-        }
+        codeBlueGlassById.clear();
+        codeBlueGlassById.putAll(CodeBlueGlassIO.load(codeBlueGlassFile));
     }
 
     private void loadMenuCache()
     {
-        if (menuCacheFile == null || !menuCacheFile.exists())
-        {
-            return;
-        }
-        try
-        {
-            NBTTagCompound root = CompressedStreamTools.read(menuCacheFile);
-            if (root == null)
-            {
-                return;
-            }
-            if (root.hasKey("Menus", 9))
-            {
-                NBTTagList list = root.getTagList("Menus", 10);
-                menuCache.clear();
-                for (int i = 0; i < list.tagCount(); i++)
-                {
-                    NBTTagCompound tag = list.getCompoundTagAt(i);
-                    String key = tag.getString("Key");
-                    String title = tag.getString("Title");
-                    int size = tag.getInteger("Size");
-                    String hash = tag.getString("Hash");
-                    NBTTagList itemsTag = tag.getTagList("Items", 10);
-                    List<ItemStack> items = new ArrayList<>();
-                    for (int j = 0; j < itemsTag.tagCount(); j++)
-                    {
-                        NBTTagCompound itemTag = itemsTag.getCompoundTagAt(j);
-                        ItemStack stack = new ItemStack(itemTag);
-                        items.add(stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
-                    }
-                    if (key != null && !key.isEmpty())
-                    {
-                        menuCache.put(key, new CachedMenu(title, size, items, hash));
-                    }
-                }
-            }
-            if (root.hasKey("Custom", 10))
-            {
-                NBTTagCompound custom = root.getCompoundTag("Custom");
-                String title = custom.getString("Title");
-                int size = custom.getInteger("Size");
-                String hash = custom.getString("Hash");
-                NBTTagList itemsTag = custom.getTagList("Items", 10);
-                List<ItemStack> items = new ArrayList<>();
-                for (int j = 0; j < itemsTag.tagCount(); j++)
-                {
-                    NBTTagCompound itemTag = itemsTag.getCompoundTagAt(j);
-                    ItemStack stack = new ItemStack(itemTag);
-                    items.add(stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
-                }
-                customMenuCache = new CachedMenu(title, size, items, hash);
-            }
-        }
-        catch (Exception e)
-        {
-            // ignore
-        }
+        MenuCacheIO.Loaded loaded = MenuCacheIO.load(menuCacheFile);
+        menuCache.clear();
+        menuCache.putAll(loaded.menus);
+        customMenuCache = loaded.custom;
     }
 
     private void loadClickMenu()
     {
-        if (clickMenuFile == null || !clickMenuFile.exists())
-        {
-            return;
-        }
-        try
-        {
-            NBTTagCompound root = CompressedStreamTools.read(clickMenuFile);
-            if (root == null || !root.hasKey("ClickMenus", 9))
-            {
-                return;
-            }
-            NBTTagList list = root.getTagList("ClickMenus", 10);
-            clickMenuMap.clear();
-            clickMenuLocation.clear();
-            for (int i = 0; i < list.tagCount(); i++)
-            {
-                NBTTagCompound tag = list.getCompoundTagAt(i);
-                String key = tag.getString("Key");
-                if (key == null || key.isEmpty())
-                {
-                    continue;
-                }
-                NBTTagList itemsTag = tag.getTagList("Items", 10);
-                List<ItemStack> items = new ArrayList<>();
-                for (int j = 0; j < itemsTag.tagCount(); j++)
-                {
-                    NBTTagCompound itemTag = itemsTag.getCompoundTagAt(j);
-                    ItemStack stack = new ItemStack(itemTag);
-                    items.add(stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
-                }
-                clickMenuMap.put(key, items);
-                String loc = tag.getString("Loc");
-                if (loc != null && !loc.isEmpty())
-                {
-                    clickMenuLocation.put(key, loc);
-                }
-            }
-        }
-        catch (Exception e)
-        {
-            // ignore
-        }
+        ClickMenuIO.Loaded loaded = ClickMenuIO.load(clickMenuFile);
+        clickMenuMap.clear();
+        clickMenuLocation.clear();
+        clickMenuMap.putAll(loaded.menus);
+        clickMenuLocation.putAll(loaded.locs);
     }
 
     private void loadNote()
@@ -8073,7 +7516,8 @@ public class ExampleMod
         return -1;
     }
 
-    private ItemStack templateForMode(int mode)
+    @Override
+    public ItemStack templateForMode(int mode)
     {
         if (mode == INPUT_MODE_NUMBER)
         {
@@ -8548,7 +7992,8 @@ public class ExampleMod
         return sb.toString();
     }
 
-    private void submitInputText(boolean giveExtra)
+    @Override
+    public void submitInputText(boolean giveExtra)
     {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc == null || mc.player == null || mc.playerController == null)
@@ -8778,6 +8223,28 @@ public class ExampleMod
             }
         }
         return null;
+    }
+
+    private int findHotbarSlotForBlock(Minecraft mc, Block block)
+    {
+        if (mc == null || mc.player == null || block == null)
+        {
+            return -1;
+        }
+        Item target = Item.getItemFromBlock(block);
+        if (target == null)
+        {
+            return -1;
+        }
+        for (int i = 0; i < 9; i++)
+        {
+            ItemStack stack = mc.player.inventory.getStackInSlot(i);
+            if (!stack.isEmpty() && stack.getItem() == target)
+            {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private Integer findEmptyInventorySlot(Minecraft mc)
@@ -9640,52 +9107,6 @@ public class ExampleMod
         return new LayoutResult(placed, overflow);
     }
 
-    private static class LabelCandidate
-    {
-        final int slot;
-        final String text;
-        final int w;
-        final int h;
-        final int x;
-        final int y;
-
-        LabelCandidate(int slot, String text, int w, int h, int x, int y)
-        {
-            this.slot = slot;
-            this.text = text;
-            this.w = w;
-            this.h = h;
-            this.x = x;
-            this.y = y;
-        }
-    }
-
-    private static class PlacedLabel
-    {
-        final String text;
-        final int x;
-        final int y;
-
-        PlacedLabel(String text, int x, int y)
-        {
-            this.text = text;
-            this.x = x;
-            this.y = y;
-        }
-    }
-
-    private static class LayoutResult
-    {
-        final List<PlacedLabel> placed;
-        final List<Label> overflow;
-
-        LayoutResult(List<PlacedLabel> placed, List<Label> overflow)
-        {
-            this.placed = placed;
-            this.overflow = overflow;
-        }
-    }
-
     private void renderOverflowLegend(Minecraft mc, List<Label> overflow, int left, int top, int cols, int slot,
         int fontHeight, int guiWidth)
     {
@@ -9708,49 +9129,6 @@ public class ExampleMod
             mc.fontRenderer.drawStringWithShadow(legend, left, legendY + (index - 1) * (fontHeight + 2),
                 chestHoloTextColor);
             index++;
-        }
-    }
-
-    private static class Rect
-    {
-        final int x;
-        final int y;
-        final int w;
-        final int h;
-
-        Rect(int x, int y, int w, int h)
-        {
-            this.x = x;
-            this.y = y;
-            this.w = w;
-            this.h = h;
-        }
-
-        int right()
-        {
-            return x + w;
-        }
-
-        int bottom()
-        {
-            return y + h;
-        }
-
-        boolean intersects(Rect other)
-        {
-            return x < other.right() && right() > other.x && y < other.bottom() && bottom() > other.y;
-        }
-    }
-
-    private static class Label
-    {
-        final int slot;
-        final String text;
-
-        Label(int slot, String text)
-        {
-            this.slot = slot;
-            this.text = text;
         }
     }
 
@@ -10072,142 +9450,13 @@ public class ExampleMod
         }
     }
 
-    private static class CachedMenu
-    {
-        final String title;
-        final int size;
-        final List<ItemStack> items;
-        final String hash;
-
-        CachedMenu(String title, int size, List<ItemStack> items, String hash)
-        {
-            this.title = title == null ? "" : title;
-            this.size = size;
-            this.items = items;
-            this.hash = hash == null ? "" : hash;
-        }
-    }
-
-    private static class ClickAction
-    {
-        final int slotNumber;
-        final int button;
-        final ClickType type;
-
-        ClickAction(int slotNumber, int button, ClickType type)
-        {
-            this.slotNumber = slotNumber;
-            this.button = button;
-            this.type = type;
-        }
-    }
-
-    private static class InputEntry
-    {
-        final int mode;
-        final String text;
-
-        InputEntry(int mode, String text)
-        {
-            this.mode = mode;
-            this.text = text == null ? "" : text;
-        }
-    }
-
-    private static class ExportResult
-    {
-        final String text;
-        final int itemCount;
-
-        ExportResult(String text, int itemCount)
-        {
-            this.text = text == null ? "" : text;
-            this.itemCount = itemCount;
-        }
-    }
-
-    private static class CopiedSlot
-    {
-        final int slotNumber;
-        final ItemStack stack;
-
-        CopiedSlot(int slotNumber, ItemStack stack)
-        {
-            this.slotNumber = slotNumber;
-            this.stack = stack;
-        }
-    }
-
-    private static class ShulkerHolo
-    {
-        final int dim;
-        final BlockPos pos;
-        final String text;
-        final int color;
-
-        ShulkerHolo(int dim, BlockPos pos, String text, int color)
-        {
-            this.dim = dim;
-            this.pos = pos;
-            this.text = text == null ? "" : text;
-            this.color = color;
-        }
-    }
-
-    private static class ChestPreviewFbo
-    {
-        Framebuffer fbo;
-        String lastHash;
-        int lastTexSize;
-        int lastTextWidth;
-    }
-
-    private static class ChestCache
-    {
-        final int dim;
-        final BlockPos pos;
-        final List<ItemStack> items;
-        final long updatedMs;
-        final String label;
-
-        ChestCache(int dim, BlockPos pos, List<ItemStack> items, long updatedMs, String label)
-        {
-            this.dim = dim;
-            this.pos = pos;
-            this.items = items;
-            this.updatedMs = updatedMs;
-            this.label = label == null ? "" : label;
-        }
-    }
-
-    private static class TestChestHolo
-    {
-        final BlockPos pos;
-        final ChestCache cache;
-        final boolean useFbo;
-        final float scale;
-        final int textWidth;
-        final int texSize;
-        Framebuffer fbo;
-        String lastHash;
-
-        TestChestHolo(BlockPos pos, ChestCache cache, boolean useFbo, float scale, int textWidth, int texSize)
-        {
-            this.pos = pos;
-            this.cache = cache;
-            this.useFbo = useFbo;
-            this.scale = scale;
-            this.textWidth = textWidth;
-            this.texSize = texSize;
-        }
-    }
-
 
     // ----------------------------
     // Auto-cache trapped chests
     // ----------------------------
 
-    private boolean isHoldingIronOrGoldIngot(Minecraft mc)
+    @Override
+    public boolean isHoldingIronOrGoldIngot(Minecraft mc)
     {
         if (mc == null || mc.player == null)
         {
@@ -10221,7 +9470,8 @@ public class ExampleMod
             || o == Items.IRON_INGOT || o == Items.GOLD_INGOT;
     }
 
-    private boolean isDevCreativeScoreboard(Minecraft mc)
+    @Override
+    public boolean isDevCreativeScoreboard(Minecraft mc)
     {
         if (mc == null || mc.playerController == null)
         {
@@ -10505,11 +9755,164 @@ public class ExampleMod
 
         if (placeBlocksCurrent != null && placeBlocksCurrent.placedBlock)
         {
-            if (placeBlocksCurrent.awaitingMenu && now - placeBlocksCurrent.menuStartMs > 10000L)
+            // /placeadvanced: after choosing the menu item, some servers spawn a (trap) chest above the block
+            // and require clicking it to open a second GUI with parameters.
+            if (placeBlocksCurrent.awaitingParamsChest)
             {
-                setActionBar(false, "&c/place: menu timeout", 2000L);
-                placeBlocksCurrent = null;
+                if (placeBlocksCurrent.advancedArgs == null || placeBlocksCurrent.advancedArgs.isEmpty())
+                {
+                    placeBlocksCurrent.awaitingParamsChest = false;
+                    placeBlocksCurrent = null;
+                    return;
+                }
+
+                if (placeBlocksCurrent.paramsStartMs <= 0L)
+                {
+                    placeBlocksCurrent.paramsStartMs = now;
+                }
+                if (now - placeBlocksCurrent.paramsStartMs > 15000L)
+                {
+                    setActionBar(false, "&c/placeadvanced: params chest timeout", 2500L);
+                    placeBlocksCurrent = null;
+                    return;
+                }
+                if (placeBlocksCurrent.paramsOpenAttempts > 80)
+                {
+                    setActionBar(false, "&c/placeadvanced: couldn't open params chest", 2500L);
+                    placeBlocksCurrent = null;
+                    return;
+                }
+                if (now < placeBlocksCurrent.nextParamsActionMs)
+                {
+                    return;
+                }
+                placeBlocksCurrent.nextParamsActionMs = now + 250L;
+
+                try
+                {
+                    BlockPos base = placeBlocksCurrent.pos;
+                    if (base == null)
+                    {
+                        placeBlocksCurrent = null;
+                        return;
+                    }
+
+                    BlockPos[] candidates = new BlockPos[]{
+                        base.up(),
+                        base.up().south(),
+                        base.up().north(),
+                        base.up().east(),
+                        base.up().west()
+                    };
+
+                    BlockPos chestPos = null;
+                    for (BlockPos p : candidates)
+                    {
+                        if (p == null)
+                        {
+                            continue;
+                        }
+                        Block b = mc.world.getBlockState(p).getBlock();
+                        if (b == Blocks.TRAPPED_CHEST || b == Blocks.CHEST)
+                        {
+                            chestPos = p;
+                            break;
+                        }
+                    }
+
+                    if (chestPos == null)
+                    {
+                        placeBlocksCurrent.paramsOpenAttempts++;
+                        return;
+                    }
+
+                    if (mc.player.getDistanceSqToCenter(chestPos) > 25.0)
+                    {
+                        placeBlocksCurrent.paramsOpenAttempts++;
+                        return;
+                    }
+
+                    if (debugUi && mc.player != null)
+                    {
+                        mc.player.sendMessage(new TextComponentString(
+                            "/placeadvanced: opening params chest attempt=" + (placeBlocksCurrent.paramsOpenAttempts + 1)));
+                    }
+
+                    placeBlocksCurrent.paramsOpenAttempts++;
+                    placeBlocksCurrent.lastMenuClickMs = now;
+                    mc.playerController.processRightClickBlock(
+                        mc.player, mc.world, chestPos, EnumFacing.UP, new Vec3d(0.5, 0.5, 0.5), EnumHand.MAIN_HAND
+                    );
+                    mc.player.swingArm(EnumHand.MAIN_HAND);
+                }
+                catch (Exception ignore)
+                {
+                    placeBlocksCurrent.paramsOpenAttempts++;
+                }
+                return;
             }
+
+            // If we are waiting for menu but no GUI is open (plugin closed it, lag, etc),
+            // try to re-open the sign menu. This also enables the random fallback search.
+            if (placeBlocksCurrent.awaitingMenu)
+            {
+                long since = now - placeBlocksCurrent.menuStartMs;
+                // Give the server a short grace period to actually open the GUI.
+                if (since < 700L)
+                {
+                    return;
+                }
+                // If menu didn't open for a while, try reopening the sign menu.
+                if (since > 10000L)
+                {
+                    placeBlocksCurrent.needOpenMenu = true;
+                }
+                else
+                {
+                    placeBlocksCurrent.needOpenMenu = true;
+                }
+            }
+
+            if (placeBlocksCurrent.needOpenMenu)
+            {
+                if (placeBlocksCurrent.menuOpenAttempts > 40)
+                {
+                    setActionBar(false, "&c/place: unable to open menu (too many attempts)", 2500L);
+                    placeBlocksCurrent = null;
+                    return;
+                }
+                if (now < placeBlocksCurrent.nextMenuActionMs)
+                {
+                    return;
+                }
+                placeBlocksCurrent.nextMenuActionMs = now + 450L;
+
+                try
+                {
+                    BlockPos signPos = findSignAtZMinus1(mc.world, placeBlocksCurrent.pos);
+                    if (signPos != null && mc.player.getDistanceSqToCenter(signPos) <= 16.0)
+                    {
+                        if (debugUi && mc.player != null)
+                        {
+                            mc.player.sendMessage(new TextComponentString(
+                                "/place: reopening menu attempt=" + (placeBlocksCurrent.menuOpenAttempts + 1)));
+                        }
+                        mc.playerController.processRightClickBlock(
+                            mc.player, mc.world, signPos, EnumFacing.UP, new Vec3d(0.5, 0.5, 0.5), EnumHand.MAIN_HAND
+                        );
+                        mc.player.swingArm(EnumHand.MAIN_HAND);
+                        placeBlocksCurrent.menuStartMs = now;
+                        placeBlocksCurrent.awaitingMenu = true;
+                        placeBlocksCurrent.needOpenMenu = false;
+                        placeBlocksCurrent.menuOpenAttempts++;
+                        placeBlocksCurrent.menuClicksSinceOpen = 0;
+                        placeBlocksCurrent.triedSlots.clear();
+                        placeBlocksCurrent.triedWindowId = -1;
+                    }
+                }
+                catch (Exception ignore) { }
+            }
+
             return;
         }
 
@@ -10531,11 +9934,36 @@ public class ExampleMod
                 setActionBar(true, "&aPlace done", 2000L);
                 return;
             }
+            // "air" entry: just a delay/cooldown step between actions (no placement, no GUI, no movement).
+            if (placeBlocksCurrent.block == Blocks.AIR
+                && (placeBlocksCurrent.searchKey == null || placeBlocksCurrent.searchKey.isEmpty())
+                && (placeBlocksCurrent.advancedArgs == null || placeBlocksCurrent.advancedArgs.isEmpty()))
+            {
+                placeBlocksCurrent.menuStartMs = now;
+                return;
+            }
             // Approach position: -2 on Z from target, Y same as target
             double ax = placeBlocksCurrent.pos.getX() + 0.5;
             double ay = placeBlocksCurrent.pos.getY();
             double az = placeBlocksCurrent.pos.getZ() - 2.0 + 0.5;
             buildTpPathQueue(mc.world, mc.player.posX, mc.player.posY, mc.player.posZ, ax, ay, az);
+            return;
+        }
+
+        // "air" entry: wait then skip.
+        if (placeBlocksCurrent.block == Blocks.AIR
+            && (placeBlocksCurrent.searchKey == null || placeBlocksCurrent.searchKey.isEmpty())
+            && (placeBlocksCurrent.advancedArgs == null || placeBlocksCurrent.advancedArgs.isEmpty()))
+        {
+            if (placeBlocksCurrent.menuStartMs <= 0L)
+            {
+                placeBlocksCurrent.menuStartMs = now;
+            }
+            if (now - placeBlocksCurrent.menuStartMs < 450L)
+            {
+                return;
+            }
+            placeBlocksCurrent = null;
             return;
         }
 
@@ -10548,6 +9976,8 @@ public class ExampleMod
                 if (b == null)
                 {
                     setActionBar(false, "&cBlock not found", 2000L);
+                    abortPlaceBlocks("block_not_found");
+                    return;
                 }
                 else
                 {
@@ -10620,6 +10050,27 @@ public class ExampleMod
                         }
                         mc.player.inventory.currentItem = foundHotbar;
                         mc.playerController.updateController();
+                        if (mc.player != null && mc.player.connection != null)
+                        {
+                            mc.player.connection.sendPacket(new CPacketHeldItemChange(foundHotbar));
+                        }
+                        try
+                        {
+                            Vec3d eyes = mc.player.getPositionEyes(1.0F);
+                            BlockPos target = placeBlocksCurrent.pos.down();
+                            Vec3d center = new Vec3d(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5);
+                            double dx = center.x - eyes.x;
+                            double dy = center.y - eyes.y;
+                            double dz = center.z - eyes.z;
+                            double dist = Math.sqrt(dx * dx + dz * dz);
+                            if (dist > 0.0001)
+                            {
+                                float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
+                                float pitch = (float) (-Math.toDegrees(Math.atan2(dy, dist)));
+                                mc.player.connection.sendPacket(new CPacketPlayer.Rotation(yaw, pitch, mc.player.onGround));
+                            }
+                        }
+                        catch (Exception ignore) { }
                         mc.playerController.processRightClickBlock(
                             mc.player, mc.world, placeBlocksCurrent.pos.down(), EnumFacing.UP,
                             new Vec3d(0.5, 0.5, 0.5), EnumHand.MAIN_HAND
@@ -10629,27 +10080,47 @@ public class ExampleMod
                     else
                     {
                         setActionBar(false, "&cCould not put block into hotbar", 2000L);
+                        abortPlaceBlocks("no_hotbar_slot");
+                        return;
                     }
                 }
             }
             catch (Exception ex)
             {
                 setActionBar(false, "&cPlace failed: " + ex.getMessage(), 2000L);
+                abortPlaceBlocks("place_exception");
+                return;
             }
-            // After placing block, try to find a sign at z-1 and click it to open the menu, then queue the desired slot click
+            // After placing block, open the action menu (usually via sign at z-1).
             try
             {
-                BlockPos signPos = findSignAtZMinus1(mc.world, placeBlocksCurrent.pos);
+                BlockPos placedPos = placeBlocksCurrent.pos;
+                BlockPos signPos = placedPos == null ? null : findSignAtZMinus1(mc.world, placedPos);
                 if (signPos != null)
                 {
                     mc.playerController.processRightClickBlock(
                         mc.player, mc.world, signPos, EnumFacing.UP, new Vec3d(0.5, 0.5, 0.5), EnumHand.MAIN_HAND
                     );
                     mc.player.swingArm(EnumHand.MAIN_HAND);
-                    placeBlocksCurrent.placedBlock = true;
-                    placeBlocksCurrent.awaitingMenu = true;
-                    placeBlocksCurrent.menuStartMs = System.currentTimeMillis();
                 }
+                else if (placedPos != null)
+                {
+                    mc.playerController.processRightClickBlock(
+                        mc.player, mc.world, placedPos, EnumFacing.UP, new Vec3d(0.5, 0.5, 0.5), EnumHand.MAIN_HAND
+                    );
+                    mc.player.swingArm(EnumHand.MAIN_HAND);
+                }
+
+                placeBlocksCurrent.placedBlock = true;
+                placeBlocksCurrent.awaitingMenu = true;
+                placeBlocksCurrent.awaitingParamsChest = false;
+                placeBlocksCurrent.menuStartMs = System.currentTimeMillis();
+                placeBlocksCurrent.needOpenMenu = false;
+                placeBlocksCurrent.menuOpenAttempts = 0;
+                placeBlocksCurrent.nextMenuActionMs = System.currentTimeMillis() + 250L;
+                placeBlocksCurrent.menuClicksSinceOpen = 0;
+                placeBlocksCurrent.triedSlots.clear();
+                placeBlocksCurrent.triedWindowId = -1;
             }
             catch (Exception ex2)
             {
@@ -10668,12 +10139,78 @@ public class ExampleMod
 
     private void handlePlaceMenuNavigation(GuiContainer gui, long nowMs)
     {
-        if (!placeBlocksActive || placeBlocksCurrent == null || !placeBlocksCurrent.awaitingMenu)
+        if (!placeBlocksActive || placeBlocksCurrent == null)
         {
             return;
         }
+        if (placeBlocksCurrent.awaitingParamsChest)
+        {
+            // Wait for a new container to open (should be the params GUI), then start filling args.
+            int windowId = gui.inventorySlots == null ? -1 : gui.inventorySlots.windowId;
+            if (windowId != -1
+                && placeBlocksCurrent.lastMenuWindowId != -1
+                && windowId != placeBlocksCurrent.lastMenuWindowId
+                && nowMs - placeBlocksCurrent.lastMenuClickMs > 450L)
+            {
+                placeBlocksCurrent.awaitingParamsChest = false;
+                placeBlocksCurrent.awaitingArgs = true;
+                placeBlocksCurrent.advancedArgIndex = 0;
+                placeBlocksCurrent.argsStartMs = nowMs;
+                placeBlocksCurrent.lastArgsActionMs = 0L;
+                placeBlocksCurrent.argsMisses = 0;
+                placeBlocksCurrent.usedArgSlots.clear();
+                handlePlaceAdvancedArgs(gui, nowMs);
+            }
+            return;
+        }
+        if (placeBlocksCurrent.awaitingArgs)
+        {
+            handlePlaceAdvancedArgs(gui, nowMs);
+            return;
+        }
+        if (!placeBlocksCurrent.awaitingMenu)
+        {
+            return;
+        }
+        // If the menu is actually open, stop any pending reopen attempts.
+        placeBlocksCurrent.needOpenMenu = false;
         Minecraft mc = Minecraft.getMinecraft();
         if (mc == null || mc.player == null || mc.player.openContainer == null)
+        {
+            return;
+        }
+        // Wait for the server/client to clear the carried stack after previous interactions.
+        // With ping, clicking again while carrying something often causes mis-clicks or skipped items.
+        try
+        {
+            ItemStack carried = mc.player.inventory.getItemStack();
+            if (carried != null && !carried.isEmpty())
+            {
+                return;
+            }
+        }
+        catch (Exception ignore) { }
+        // Wait a bit after opening/reopening so the server has time to populate items.
+        if (nowMs - placeBlocksCurrent.menuStartMs < 300L)
+        {
+            return;
+        }
+        // If the container is still empty (not yet populated), don't start random clicking.
+        int nonEmpty = 0;
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || slot.inventory == mc.player.inventory)
+            {
+                continue;
+            }
+            ItemStack st = slot.getStack();
+            if (st != null && !st.isEmpty())
+            {
+                nonEmpty++;
+                break;
+            }
+        }
+        if (nonEmpty == 0)
         {
             return;
         }
@@ -10686,10 +10223,17 @@ public class ExampleMod
         if (nowMs - placeBlocksCurrent.menuStartMs > 10000L)
         {
             setActionBar(false, "&c/place: menu timeout", 2000L);
-            placeBlocksCurrent = null;
+            abortPlaceBlocks("menu_timeout");
             return;
         }
         int windowId = mc.player.openContainer.windowId;
+        // Slot numbers are not stable across different GUI windows; reset per-window slot tracking.
+        if (placeBlocksCurrent.triedWindowId != windowId)
+        {
+            placeBlocksCurrent.triedSlots.clear();
+            placeBlocksCurrent.triedWindowId = windowId;
+            placeBlocksCurrent.menuClicksSinceOpen = 0;
+        }
         if (placeBlocksCurrent.lastMenuWindowId == windowId && nowMs - placeBlocksCurrent.lastMenuClickMs < 300L)
         {
             return;
@@ -10697,15 +10241,162 @@ public class ExampleMod
         MenuStep step = findMenuStep(gui, placeBlocksCurrent.searchKey);
         if (step == null)
         {
+            // Random exploration fallback: click unseen items until the target appears.
+            if (placeBlocksCurrent.randomClicks > 250)
+            {
+                setActionBar(false, "&c/place: random search exhausted", 2500L);
+                abortPlaceBlocks("random_exhausted");
+                return;
+            }
+            if (nowMs < placeBlocksCurrent.nextMenuActionMs)
+            {
+                return;
+            }
+            placeBlocksCurrent.nextMenuActionMs = nowMs + 220L;
+
+            MenuStep rnd = findRandomMenuStep(gui, placeBlocksCurrent);
+            if (rnd == null)
+            {
+                // No more items to try in this menu.
+                // If we didn't click anything since opening this window, it's likely a true dead-end.
+                // Otherwise, we probably exhausted a sub-menu: close and re-open the root menu to continue searching.
+                if (placeBlocksCurrent.menuClicksSinceOpen == 0)
+                {
+                    if (debugUi && mc.player != null)
+                    {
+                        mc.player.sendMessage(new TextComponentString("/place: random: no candidates in menu, aborting"));
+                    }
+                    setActionBar(false, "&c/place: no path found in GUI", 2000L);
+                    abortPlaceBlocks("no_path_gui");
+                    return;
+                }
+
+                if (debugUi && mc.player != null)
+                {
+                    mc.player.sendMessage(new TextComponentString("/place: random: exhausted sub-menu, reopening root"));
+                }
+                try
+                {
+                    mc.displayGuiScreen(null);
+                }
+                catch (Exception ignore) { }
+                placeBlocksCurrent.needOpenMenu = true;
+                placeBlocksCurrent.awaitingMenu = true;
+                placeBlocksCurrent.menuStartMs = nowMs;
+                placeBlocksCurrent.nextMenuActionMs = nowMs + 450L;
+                placeBlocksCurrent.menuClicksSinceOpen = 0;
+                placeBlocksCurrent.triedSlots.clear();
+                placeBlocksCurrent.triedWindowId = -1;
+                return;
+            }
+            if (debugUi && mc.player != null)
+            {
+                mc.player.sendMessage(new TextComponentString("/place: random click slot=" + rnd.slotNumber));
+            }
+            try
+            {
+                Slot s = gui.inventorySlots.getSlot(rnd.slotNumber);
+                if (s != null)
+                {
+                    ItemStack st = s.getStack();
+                    if (st != null && !st.isEmpty())
+                    {
+                        lastClickedSlotStack = st.copy();
+                        lastClickedSlotNumber = rnd.slotNumber;
+                        lastClickedSlotMs = System.currentTimeMillis();
+                        lastClickedGuiClass = gui.getClass().getSimpleName();
+                        lastClickedGuiTitle = (gui instanceof GuiChest) ? getGuiTitle((GuiChest) gui) : "";
+                    }
+                }
+            }
+            catch (Exception ignore) { }
+            queuedClicks.add(new ClickAction(rnd.slotNumber, 0, ClickType.PICKUP));
+            // Mark as tried only after we actually queued the click.
+            placeBlocksCurrent.triedSlots.add(rnd.slotNumber);
+            try
+            {
+                Slot s = gui.inventorySlots.getSlot(rnd.slotNumber);
+                if (s != null)
+                {
+                    ItemStack st = s.getStack();
+                    if (st != null && !st.isEmpty())
+                    {
+                        String k = normalizeForMatch(getItemNameKey(st));
+                        if (!k.isEmpty())
+                        {
+                            placeBlocksCurrent.triedItemKeys.add(k);
+                        }
+                    }
+                }
+            }
+            catch (Exception ignore) { }
+            placeBlocksCurrent.lastMenuClickMs = nowMs;
+            placeBlocksCurrent.lastMenuWindowId = windowId;
+            placeBlocksCurrent.randomClicks++;
+            placeBlocksCurrent.menuClicksSinceOpen++;
+            placeBlocksCurrent.menuStartMs = nowMs;
             return;
         }
+        try
+        {
+            Slot s = gui.inventorySlots.getSlot(step.slotNumber);
+            if (s != null)
+            {
+                ItemStack st = s.getStack();
+                if (st != null && !st.isEmpty())
+                {
+                    lastClickedSlotStack = st.copy();
+                    lastClickedSlotNumber = step.slotNumber;
+                    lastClickedSlotMs = System.currentTimeMillis();
+                    lastClickedGuiClass = gui.getClass().getSimpleName();
+                    lastClickedGuiTitle = (gui instanceof GuiChest) ? getGuiTitle((GuiChest) gui) : "";
+                }
+            }
+        }
+        catch (Exception ignore) { }
         queuedClicks.add(new ClickAction(step.slotNumber, 0, ClickType.PICKUP));
+        placeBlocksCurrent.triedSlots.add(step.slotNumber);
+        try
+        {
+            Slot s = gui.inventorySlots.getSlot(step.slotNumber);
+            if (s != null)
+            {
+                ItemStack st = s.getStack();
+                if (st != null && !st.isEmpty())
+                {
+                    String k = normalizeForMatch(getItemNameKey(st));
+                    if (!k.isEmpty())
+                    {
+                        placeBlocksCurrent.triedItemKeys.add(k);
+                    }
+                }
+            }
+        }
+        catch (Exception ignore) { }
+        placeBlocksCurrent.menuClicksSinceOpen++;
         placeBlocksCurrent.lastMenuClickMs = nowMs;
         placeBlocksCurrent.lastMenuWindowId = windowId;
         if (step.directHit)
         {
-            placeBlocksCurrent.awaitingMenu = false;
-            placeBlocksCurrent = null;
+            if (placeBlocksCurrent.advancedArgs != null && !placeBlocksCurrent.advancedArgs.isEmpty())
+            {
+                placeBlocksCurrent.awaitingMenu = false;
+                placeBlocksCurrent.awaitingArgs = false;
+                placeBlocksCurrent.awaitingParamsChest = true;
+                placeBlocksCurrent.advancedArgIndex = 0;
+                placeBlocksCurrent.argsStartMs = 0L;
+                placeBlocksCurrent.lastArgsActionMs = 0L;
+                placeBlocksCurrent.argsMisses = 0;
+                placeBlocksCurrent.usedArgSlots.clear();
+                placeBlocksCurrent.paramsStartMs = nowMs;
+                placeBlocksCurrent.nextParamsActionMs = nowMs + 250L;
+                placeBlocksCurrent.paramsOpenAttempts = 0;
+            }
+            else
+            {
+                placeBlocksCurrent.awaitingMenu = false;
+                placeBlocksCurrent = null;
+            }
         }
         else
         {
@@ -10713,16 +10404,284 @@ public class ExampleMod
         }
     }
 
-    private static class MenuStep
+    private void handlePlaceAdvancedArgs(GuiContainer gui, long nowMs)
     {
-        final int slotNumber;
-        final boolean directHit;
-
-        MenuStep(int slotNumber, boolean directHit)
+        if (!placeBlocksActive || placeBlocksCurrent == null || !placeBlocksCurrent.awaitingArgs)
         {
-            this.slotNumber = slotNumber;
-            this.directHit = directHit;
+            return;
         }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null)
+        {
+            return;
+        }
+        if (placeBlocksCurrent.advancedArgs == null || placeBlocksCurrent.advancedArgs.isEmpty())
+        {
+            placeBlocksCurrent.awaitingArgs = false;
+            placeBlocksCurrent = null;
+            return;
+        }
+        if (placeBlocksCurrent.advancedArgIndex >= placeBlocksCurrent.advancedArgs.size())
+        {
+            placeBlocksCurrent.awaitingArgs = false;
+            try
+            {
+                mc.displayGuiScreen(null);
+            }
+            catch (Exception ignore) { }
+            placeBlocksCurrent = null;
+            return;
+        }
+        if (nowMs - placeBlocksCurrent.argsStartMs > 12000L)
+        {
+            setActionBar(false, "&c/placeadvanced: args timeout", 2500L);
+            abortPlaceBlocks("args_timeout");
+            return;
+        }
+        if (inputActive)
+        {
+            return;
+        }
+        if (placeBlocksCurrent.lastArgsActionMs > 0 && nowMs - placeBlocksCurrent.lastArgsActionMs < 180L)
+        {
+            return;
+        }
+
+        PlaceArg arg = placeBlocksCurrent.advancedArgs.get(placeBlocksCurrent.advancedArgIndex);
+        Slot target = findArgTargetSlot(gui, arg, placeBlocksCurrent.usedArgSlots);
+        if (target == null)
+        {
+            placeBlocksCurrent.argsMisses++;
+            if (placeBlocksCurrent.argsMisses > 60)
+            {
+                if (debugUi && mc.player != null)
+                {
+                    mc.player.sendMessage(new TextComponentString(
+                        "/placeadvanced: no matching glass for '" + arg.keyRaw + "' (giving up)"));
+                }
+                setActionBar(false, "&c/placeadvanced: no matching args slot", 2500L);
+                abortPlaceBlocks("no_args_slot");
+            }
+            return;
+        }
+
+        ItemStack presetStack = target.getStack();
+        String preset = presetStack == null || presetStack.isEmpty() ? "" : extractEntryText(presetStack, arg.mode);
+        ItemStack template = templateForMode(arg.mode);
+        if (template.isEmpty())
+        {
+            template = new ItemStack(Items.BOOK, 1);
+        }
+        startSlotInput(gui, target, template, arg.mode, preset, "Arg: " + arg.keyRaw);
+        setInputText(arg.valueRaw);
+        submitInputText(false);
+        placeBlocksCurrent.usedArgSlots.add(target.slotNumber);
+        placeBlocksCurrent.advancedArgIndex++;
+        placeBlocksCurrent.argsMisses = 0;
+        placeBlocksCurrent.lastArgsActionMs = nowMs;
+        if (placeBlocksCurrent.advancedArgIndex >= placeBlocksCurrent.advancedArgs.size())
+        {
+            placeBlocksCurrent.awaitingArgs = false;
+            try
+            {
+                mc.displayGuiScreen(null);
+            }
+            catch (Exception ignore) { }
+            placeBlocksCurrent = null;
+        }
+    }
+
+    private Slot findArgTargetSlot(GuiContainer gui, PlaceArg arg, Set<Integer> used)
+    {
+        if (gui == null || arg == null)
+        {
+            return null;
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null)
+        {
+            return null;
+        }
+        if (arg.keyNorm == null || arg.keyNorm.isEmpty())
+        {
+            return null;
+        }
+
+        List<Slot> bases = new ArrayList<>();
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || slot.inventory == mc.player.inventory)
+            {
+                continue;
+            }
+            ItemStack st = slot.getStack();
+            if (st == null || st.isEmpty() || !isGlassPane(st))
+            {
+                continue;
+            }
+            if (arg.glassMetaFilter != null && st.getMetadata() != arg.glassMetaFilter.intValue())
+            {
+                continue;
+            }
+            String name = normalizeForMatch(TextFormatting.getTextWithoutFormattingCodes(st.getDisplayName()));
+            if (name.isEmpty() || !name.contains(arg.keyNorm))
+            {
+                continue;
+            }
+            bases.add(slot);
+        }
+        if (bases.isEmpty())
+        {
+            return null;
+        }
+        bases.sort(Comparator.comparingInt(a -> a.slotNumber));
+
+        for (Slot base : bases)
+        {
+            Slot candidate = findCandidateSlotForArg(gui, base, arg.mode);
+            if (candidate == null)
+            {
+                continue;
+            }
+            if (used != null && used.contains(candidate.slotNumber))
+            {
+                continue;
+            }
+            return candidate;
+        }
+        return null;
+    }
+
+    private Slot findCandidateSlotForArg(GuiContainer gui, Slot base, int mode)
+    {
+        if (gui == null || base == null)
+        {
+            return null;
+        }
+        net.minecraft.item.Item allowed = itemForMode(mode);
+        int x = base.xPos;
+        int y = base.yPos;
+        int[][] offsets = new int[][]{
+            {0, 18}, {-18, 0}, {18, 0}, {0, -18}
+        };
+
+        Slot bestEmpty = null;
+        for (int[] off : offsets)
+        {
+            Slot slot = findSlotAt(gui, x + off[0], y + off[1]);
+            if (slot == null)
+            {
+                continue;
+            }
+            if (!slot.getHasStack())
+            {
+                if (bestEmpty == null)
+                {
+                    bestEmpty = slot;
+                }
+                continue;
+            }
+            ItemStack st = slot.getStack();
+            if (st == null || st.isEmpty())
+            {
+                continue;
+            }
+            if (isGlassPane(st))
+            {
+                continue;
+            }
+            if (allowed != null && st.getItem() == allowed)
+            {
+                return slot;
+            }
+            int actualMode = getModeForItem(st);
+            if (actualMode == mode)
+            {
+                return slot;
+            }
+        }
+        return bestEmpty;
+    }
+
+    @Override
+    public net.minecraft.item.Item itemForMode(int mode)
+    {
+        if (mode == INPUT_MODE_NUMBER)
+        {
+            return Items.SLIME_BALL;
+        }
+        if (mode == INPUT_MODE_VARIABLE)
+        {
+            return Items.MAGMA_CREAM;
+        }
+        if (mode == INPUT_MODE_ARRAY)
+        {
+            return Items.ITEM_FRAME;
+        }
+        if (mode == INPUT_MODE_LOCATION)
+        {
+            return Items.PAPER;
+        }
+        if (mode == INPUT_MODE_TEXT)
+        {
+            return Items.BOOK;
+        }
+        return Items.BOOK;
+    }
+
+    private MenuStep findRandomMenuStep(GuiContainer gui, PlaceEntry entry)
+    {
+        if (gui == null || entry == null)
+        {
+            return null;
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null)
+        {
+            return null;
+        }
+
+        List<Slot> candidates = new ArrayList<>();
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || slot.inventory == mc.player.inventory)
+            {
+                continue;
+            }
+            if (entry.triedSlots.contains(slot.slotNumber))
+            {
+                continue;
+            }
+            ItemStack stack = slot.getStack();
+            if (stack == null || stack.isEmpty())
+            {
+                continue;
+            }
+            String key = normalizeForMatch(getItemNameKey(stack));
+            if (!key.isEmpty() && entry.triedItemKeys.contains(key))
+            {
+                continue;
+            }
+            candidates.add(slot);
+        }
+
+        if (candidates.isEmpty())
+        {
+            return null;
+        }
+
+        int pick = (int) (Math.random() * candidates.size());
+        if (pick < 0)
+        {
+            pick = 0;
+        }
+        if (pick >= candidates.size())
+        {
+            pick = candidates.size() - 1;
+        }
+        Slot chosen = candidates.get(pick);
+        // Do not mutate tried sets here. Marking happens only after the click is actually queued.
+        return new MenuStep(chosen.slotNumber, false);
     }
 
     private MenuStep findMenuStep(GuiContainer gui, String searchKey)
@@ -10806,144 +10765,6 @@ public class ExampleMod
         return false;
     }
 
-    private class ExportLineCommand extends CommandBase
-    {
-        @Override
-        public String getName()
-        {
-            return "exportline";
-        }
-
-        @Override
-        public String getUsage(ICommandSender sender)
-        {
-            return "/exportline - export logic chain from last glass position";
-        }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
-        {
-            Minecraft mc = Minecraft.getMinecraft();
-            if (mc == null || mc.world == null)
-            {
-                setActionBar(false, "&cNo world", 2000L);
-                return;
-            }
-            
-            // Get last glass position from codeBlueGlassById
-            BlockPos glassPos = null;
-            if (lastGlassPos != null && lastGlassDim == mc.world.provider.getDimension())
-            {
-                glassPos = lastGlassPos;
-            }
-            if (glassPos == null)
-            {
-                String glassKey = getCodeGlassScopeKey(mc.world);
-                if (glassKey != null)
-                {
-                    glassPos = codeBlueGlassById.get(glassKey);
-                }
-            }
-            
-            if (glassPos == null)
-            {
-                setActionBar(false, "&cNo glass position found", 2000L);
-                return;
-            }
-
-            String logicChain = parseLogicChain(mc.world, glassPos);
-            if (logicChain == null || logicChain.isEmpty())
-            {
-                setActionBar(false, "&cNo sign found at (y+1,z-1)", 2000L);
-                return;
-            }
-
-            // Copy to clipboard
-            try
-            {
-                java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(
-                    new java.awt.datatransfer.StringSelection(logicChain),
-                    null
-                );
-                setActionBar(true, "&aCopied: " + (logicChain.length() > 30 ? logicChain.substring(0, 27) + "..." : logicChain), 3000L);
-            }
-            catch (Exception e)
-            {
-                setActionBar(false, "&cFailed to copy: " + e.getMessage(), 2000L);
-            }
-        }
-
-        @Override
-        public int getRequiredPermissionLevel()
-        {
-            return 0;
-        }
-    }
-
-    private class ShowFuncsCommand extends CommandBase
-    {
-        @Override
-        public String getName()
-        {
-            return "showfuncs";
-        }
-
-        @Override
-        public String getUsage(ICommandSender sender)
-        {
-            return "/showfuncs - show assigned functions and recorded GUI items";
-        }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
-        {
-            Minecraft mc = Minecraft.getMinecraft();
-            if (mc == null || mc.player == null)
-            {
-                return;
-            }
-            if (clickFunctionMap.isEmpty())
-            {
-                mc.player.sendMessage(new TextComponentString("No functions assigned."));
-                return;
-            }
-            int shown = 0;
-            for (Map.Entry<String, String> e : clickFunctionMap.entrySet())
-            {
-                String key = e.getKey();
-                String func = e.getValue();
-                String loc = clickMenuLocation.containsKey(key) ? (" " + clickMenuLocation.get(key)) : "";
-                StringBuilder sb = new StringBuilder();
-                sb.append(key).append(" -> ").append(func).append(loc).append(" : ");
-                List<ItemStack> items = clickMenuMap.get(key);
-                if (items == null || items.isEmpty())
-                {
-                    sb.append("(no items)");
-                }
-                else
-                {
-                    int show = Math.min(6, items.size());
-                    for (int i = 0; i < show; i++)
-                    {
-                        ItemStack s = items.get(i);
-                        sb.append(i==0?"":" ,").append(s.isEmpty()?"empty":s.getDisplayName());
-                    }
-                    if (items.size() > show)
-                    {
-                        sb.append(" (+").append(items.size() - show).append(" more)");
-                    }
-                }
-                mc.player.sendMessage(new TextComponentString(sb.toString()));
-                shown++;
-                if (shown >= 50)
-                {
-                    mc.player.sendMessage(new TextComponentString("(truncated, too many entries)"));
-                    break;
-                }
-            }
-        }
-    }
-
     private String parseLogicChain(World world, BlockPos glassPos)
     {
         // Start at y+1 from glass (glass is at y, we search at y+1)
@@ -11000,7 +10821,8 @@ public class ExampleMod
         return text;
     }
     
-    private BlockPos findSignAtZMinus1(World world, BlockPos basePos)
+    @Override
+    public BlockPos findSignAtZMinus1(World world, BlockPos basePos)
     {
         // Try to find sign at z-1 from basePos at various Y levels
         for (int dy = -2; dy <= 0; dy++)
@@ -11110,282 +10932,642 @@ public class ExampleMod
         return sb.toString();
     }
 
-    private class AutoCacheCommand extends CommandBase
+    private void runAutoCacheCommand(MinecraftServer server, ICommandSender sender, String[] args)
     {
-        @Override
-        public String getName()
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.world == null || mc.player == null)
         {
-            return "autocache";
+            return;
         }
 
-        @Override
-        public String getUsage(ICommandSender sender)
+        // Show status from config
+        if (autoCacheEnabled)
         {
-            return "/autocache [info]";
+            setActionBar(true, "&aAutoCache: &eON &8(radius=" + autoCacheRadius + " trapped=" + autoCacheTrappedOnly + ")", 3000L);
         }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
+        else
         {
-            Minecraft mc = Minecraft.getMinecraft();
-            if (mc == null || mc.world == null || mc.player == null)
-            {
-                return;
-            }
-
-            // Show status from config
-            if (autoCacheEnabled)
-            {
-                setActionBar(true, "&aAutoCache: &eON &8(radius=" + autoCacheRadius + " trapped=" + autoCacheTrappedOnly + ")", 3000L);
-            }
-            else
-            {
-                setActionBar(true, "&cAutoCache: OFF &8(enable in mod config)", 3000L);
-            }
-        }
-
-        @Override
-        public int getRequiredPermissionLevel()
-        {
-            return 0;
+            setActionBar(true, "&cAutoCache: OFF &8(enable in mod config)", 3000L);
         }
     }
 
-    private class CacheAllChestsCommand extends CommandBase
+    private void runCacheAllChestsCommand(MinecraftServer server, ICommandSender sender, String[] args)
     {
-        @Override
-        public String getName()
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.world == null || mc.player == null)
         {
-            return "cacheallchests";
+            return;
         }
-
-        @Override
-        public String getUsage(ICommandSender sender)
+        if (args.length > 0 && "stop".equalsIgnoreCase(args[0]))
         {
-            return "/cacheallchests [stop]";
-        }
-
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
-        {
-            Minecraft mc = Minecraft.getMinecraft();
-            if (mc == null || mc.world == null || mc.player == null)
-            {
-                return;
-            }
-            if (args.length > 0 && "stop".equalsIgnoreCase(args[0]))
-            {
-                cacheAllActive = false;
-                cacheAllQueue.clear();
-                cacheAllCurrentTarget = null;
-                setActionBar(true, "&eCacheAll stopped", 2000L);
-                return;
-            }
-            if (!editorModeActive || !isDevCreativeScoreboard(mc))
-            {
-                setActionBar(false, "&cDEV mode only (creative + scoreboard)", 2500L);
-                return;
-            }
-
-            int dim = mc.world.provider.getDimension();
-            LinkedHashSet<BlockPos> found = new LinkedHashSet<>();
-
-            for (TileEntity te : mc.world.loadedTileEntityList)
-            {
-                if (!(te instanceof TileEntityChest))
-                {
-                    continue;
-                }
-                BlockPos p = te.getPos();
-                if (p == null || isChestCached(dim, p) || !isTargetChestBlock(mc.world, p))
-                {
-                    continue;
-                }
-                found.add(p);
-            }
-
+            cacheAllActive = false;
             cacheAllQueue.clear();
-            cacheAllQueue.addAll(found);
             cacheAllCurrentTarget = null;
-            cacheAllActive = !cacheAllQueue.isEmpty();
-            setActionBar(true, "&aCacheAll queued=" + cacheAllQueue.size(), 2500L);
+            setActionBar(true, "&eCacheAll stopped", 2000L);
+            return;
+        }
+        if (!editorModeActive || !isDevCreativeScoreboard(mc))
+        {
+            setActionBar(false, "&cDEV mode only (creative + scoreboard)", 2500L);
+            return;
         }
 
-        @Override
-        public int getRequiredPermissionLevel()
+        int dim = mc.world.provider.getDimension();
+        LinkedHashSet<BlockPos> found = new LinkedHashSet<>();
+
+        for (TileEntity te : mc.world.loadedTileEntityList)
         {
-            return 0;
+            if (!(te instanceof TileEntityChest))
+            {
+                continue;
+            }
+            BlockPos p = te.getPos();
+            if (p == null || isChestCached(dim, p) || !isTargetChestBlock(mc.world, p))
+            {
+                continue;
+            }
+            found.add(p);
         }
+
+        cacheAllQueue.clear();
+        cacheAllQueue.addAll(found);
+        cacheAllCurrentTarget = null;
+        cacheAllActive = !cacheAllQueue.isEmpty();
+        setActionBar(true, "&aCacheAll queued=" + cacheAllQueue.size(), 2500L);
     }
 
-    private class PlaceBlocksCommand extends CommandBase
+    private void runPlaceAdvancedCommand(MinecraftServer server, ICommandSender sender, String[] args)
     {
-        @Override
-        public String getName()
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.world == null || mc.player == null)
         {
-            return "place";
+            setActionBar(false, "&cNo world/player", 2000L);
+            return;
         }
 
-        @Override
-        public String getUsage(ICommandSender sender)
+        if (args == null || args.length == 0)
         {
-            return "/place <block1> [block2] [block3]... - place blocks relative to last blue glass";
+            setActionBar(false, "&cUsage: /placeadvanced <block> <name> <args|no> ...", 3500L);
+            return;
         }
 
-        @Override
-        public void execute(MinecraftServer server, ICommandSender sender, String[] args)
+        if (lastGlassPos == null)
         {
-            Minecraft mc = Minecraft.getMinecraft();
-            if (mc == null || mc.world == null || mc.player == null)
+            String key = getCodeGlassScopeKey(mc.world);
+            if (key != null)
             {
-                setActionBar(false, "&cNo world/player", 2000L);
-                return;
+                lastGlassPos = codeBlueGlassById.get(key);
+                if (lastGlassPos != null)
+                {
+                    lastGlassDim = mc.world.provider.getDimension();
+                }
             }
-
-            if (args == null || args.length == 0)
-            {
-                setActionBar(false, "&cUsage: /place <block1> [block2]...", 3000L);
-                return;
-            }
-
             if (lastGlassPos == null)
-            {
-                String key = getCodeGlassScopeKey(mc.world);
-                if (key != null)
-                {
-                    lastGlassPos = codeBlueGlassById.get(key);
-                    if (lastGlassPos != null)
-                    {
-                        lastGlassDim = mc.world.provider.getDimension();
-                    }
-                }
-                if (lastGlassPos == null)
-                {
-                    setActionBar(false, "&cNo blue glass position recorded", 2000L);
-                    return;
-                }
-            }
-
-            // New: parse alternating pairs: <block> <searchName> [<block> <searchName> ...]
-            String raw = String.join(" ", args).trim();
-            // Tokenize respecting quotes
-            List<String> tokens = new ArrayList<>();
-            StringBuilder cur = new StringBuilder();
-            boolean inQuote = false;
-            for (int i = 0; i < raw.length(); i++)
-            {
-                char c = raw.charAt(i);
-                if (c == '"')
-                {
-                    inQuote = !inQuote;
-                    continue;
-                }
-                if (Character.isWhitespace(c) && !inQuote)
-                {
-                    if (cur.length() > 0)
-                    {
-                        tokens.add(cur.toString());
-                        cur.setLength(0);
-                    }
-                }
-                else
-                {
-                    cur.append(c);
-                }
-            }
-            if (cur.length() > 0)
-            {
-                tokens.add(cur.toString());
-            }
-
-            if (tokens.size() % 2 != 0)
-            {
-                setActionBar(false, "&cUsage: /place <block> <name> [<block> <name> ...]", 4000L);
-                return;
-            }
-
-            BlockPos glass = lastGlassPos;
-            if (glass == null)
             {
                 setActionBar(false, "&cNo blue glass position recorded", 2000L);
                 return;
             }
+        }
 
-            int pairs = tokens.size() / 2;
-            for (int p = 0; p < pairs; p++)
+        List<String> tokens = splitArgsPreserveQuotes(String.join(" ", args));
+
+        BlockPos glass = lastGlassPos;
+        int p = 0;
+        int i = 0;
+        while (i < tokens.size())
+        {
+            String blockTok = tokens.get(i);
+            if ("air".equalsIgnoreCase(blockTok) || "minecraft:air".equalsIgnoreCase(blockTok))
             {
-                String blockTok = tokens.get(p * 2);
-                String nameTok = tokens.get(p * 2 + 1);
-                String blockName = blockTok.contains(":") ? blockTok : ("minecraft:" + blockTok);
-                Block b = Block.getBlockFromName(blockName);
-                if (b == null)
-                {
-                    if (debugUi && mc.player != null)
-                    {
-                        mc.player.sendMessage(new TextComponentString("/place: unknown block '" + blockTok + "'"));
-                    }
-                    continue;
-                }
-                BlockPos target = glass.add(-2 * p, 1, 0);
-                String search = nameTok == null ? "" : nameTok.trim();
-                String norm = normalizeForMatch(search);
-                boolean cachedMatch = false;
-                if (!norm.isEmpty())
-                {
-                    for (List<ItemStack> items : clickMenuMap.values())
-                    {
-                        if (menuContainsSearch(items, norm))
-                        {
-                            cachedMatch = true;
-                            break;
-                        }
-                    }
-                }
-
-                PlaceEntry entry = new PlaceEntry(target, b, norm);
-                entry.searchKey = norm;
-                entry.desiredSlotIndex = -1;
-                if (!cachedMatch && debugUi && mc.player != null)
-                {
-                    mc.player.sendMessage(new TextComponentString(
-                        "/place: no cached menu item matching '" + nameTok + "' (will try live)"));
-                }
-                placeBlocksQueue.add(entry);
+                // Delay-only entry (cooldown between actions).
+                PlaceEntry pause = new PlaceEntry(mc.player.getPosition(), Blocks.AIR, "");
+                pause.searchKey = "";
+                placeBlocksQueue.add(pause);
+                i++;
+                continue;
             }
-            placeBlocksActive = !placeBlocksQueue.isEmpty();
-            setActionBar(true, "&aPlaced queue created: " + placeBlocksQueue.size() + " entries", 2000L);
+            if (i + 2 >= tokens.size())
+            {
+                setActionBar(false,
+                    "&cUsage: /placeadvanced <block> <name> <args|no> ... (you can also insert 'air' as a pause)",
+                    4500L);
+                abortPlaceBlocks("usage");
+                return;
+            }
+
+            String nameTok = tokens.get(i + 1);
+            String argsTok = tokens.get(i + 2);
+            i += 3;
+
+            String blockName = blockTok.contains(":") ? blockTok : ("minecraft:" + blockTok);
+            Block b = Block.getBlockFromName(blockName);
+            if (b == null)
+            {
+                if (debugUi && mc.player != null)
+                {
+                    mc.player.sendMessage(new TextComponentString("/placeadvanced: unknown block '" + blockTok + "'"));
+                }
+                setActionBar(false, "&cUnknown block: " + blockTok, 2500L);
+                abortPlaceBlocks("unknown_block");
+                return;
+            }
+            BlockPos target = glass.add(-2 * p, 1, 0);
+            String search = nameTok == null ? "" : nameTok.trim();
+            String norm = normalizeForMatch(search);
+
+            PlaceEntry entry = new PlaceEntry(target, b, norm);
+            entry.searchKey = norm;
+            entry.desiredSlotIndex = -1;
+
+            if (argsTok != null)
+            {
+                String rawArgs = argsTok.trim();
+                if (!rawArgs.isEmpty() && !"no".equalsIgnoreCase(rawArgs))
+                {
+                    entry.advancedArgsRaw = rawArgs;
+                    entry.advancedArgs = parsePlaceAdvancedArgs(rawArgs);
+                }
+            }
+
+            placeBlocksQueue.add(entry);
+            p++;
+        }
+        placeBlocksActive = !placeBlocksQueue.isEmpty();
+        setActionBar(true, "&aPlaced queue created: " + placeBlocksQueue.size() + " entries", 2000L);
+    }
+
+    private void runTestPlaceCommand(MinecraftServer server, ICommandSender sender, String[] args)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.world == null || mc.player == null || mc.playerController == null)
+        {
+            setActionBar(false, "&cNo world/player", 2000L);
+            return;
+        }
+        if (!editorModeActive || !isDevCreativeScoreboard(mc))
+        {
+            setActionBar(false, "&cTestPlace: only in dev/creative", 2500L);
+            return;
         }
 
-        @Override
-        public int getRequiredPermissionLevel()
+        int method = 1;
+        String blockTok = "diamond_block";
+        if (args != null && args.length > 0)
         {
-            return 0;
+            try
+            {
+                method = Integer.parseInt(args[0]);
+                if (args.length > 1)
+                {
+                    blockTok = args[1];
+                }
+            }
+            catch (Exception ignore)
+            {
+                blockTok = args[0];
+            }
+        }
+        if (method < 1 || method > 10)
+        {
+            method = 1;
+        }
+
+        BlockPos glassPos = lastGlassPos;
+        if (glassPos == null || lastGlassDim != mc.world.provider.getDimension())
+        {
+            String key = getCodeGlassScopeKey(mc.world);
+            if (key != null)
+            {
+                glassPos = codeBlueGlassById.get(key);
+                if (glassPos != null)
+                {
+                    lastGlassPos = glassPos;
+                    lastGlassDim = mc.world.provider.getDimension();
+                }
+            }
+        }
+        if (glassPos == null)
+        {
+            setActionBar(false, "&cTestPlace: no blue glass recorded", 2500L);
+            return;
+        }
+
+        String blockName = blockTok.contains(":") ? blockTok : ("minecraft:" + blockTok);
+        Block block = Block.getBlockFromName(blockName);
+        if (block == null)
+        {
+            setActionBar(false, "&cTestPlace: unknown block " + blockTok, 2500L);
+            return;
+        }
+
+        BlockPos placePos = glassPos.up();
+        BlockPos clickPos = placePos.down();
+
+        int slot = findHotbarSlotForBlock(mc, block);
+        if (slot == -1)
+        {
+            giveItemToHotbar(mc, new ItemStack(block));
+            slot = findHotbarSlotForBlock(mc, block);
+        }
+        if (slot == -1)
+        {
+            setActionBar(false, "&cTestPlace: block not in hotbar", 2500L);
+            return;
+        }
+
+        mc.player.inventory.currentItem = slot;
+        mc.playerController.updateController();
+        if (mc.player.connection != null)
+        {
+            mc.player.connection.sendPacket(new CPacketHeldItemChange(slot));
+        }
+
+        Vec3d hitA = new Vec3d(0.5, 0.5, 0.5);
+        Vec3d hitB = new Vec3d(0.5, 1.0, 0.5);
+        Vec3d hitC = new Vec3d(0.1, 0.9, 0.1);
+
+        try
+        {
+            switch (method)
+            {
+                case 1:
+                    mc.playerController.processRightClickBlock(mc.player, mc.world, clickPos, EnumFacing.UP, hitA, EnumHand.MAIN_HAND);
+                    break;
+                case 2:
+                    sendLookPacket(mc, clickPos);
+                    mc.playerController.processRightClickBlock(mc.player, mc.world, clickPos, EnumFacing.UP, hitA, EnumHand.MAIN_HAND);
+                    break;
+                case 3:
+                    sendLookPacket(mc, clickPos);
+                    sendTryUsePacket(mc, clickPos, hitA);
+                    break;
+                case 4:
+                    sendTryUsePacket(mc, clickPos, hitA);
+                    break;
+                case 5:
+                    sendLookPacket(mc, clickPos);
+                    sendTryUsePacket(mc, clickPos, hitA);
+                    mc.playerController.processRightClickBlock(mc.player, mc.world, clickPos, EnumFacing.UP, hitA, EnumHand.MAIN_HAND);
+                    break;
+                case 6:
+                    mc.playerController.processRightClickBlock(mc.player, mc.world, clickPos, EnumFacing.UP, hitB, EnumHand.MAIN_HAND);
+                    break;
+                case 7:
+                    sendLookPacket(mc, clickPos);
+                    mc.playerController.processRightClickBlock(mc.player, mc.world, clickPos, EnumFacing.UP, hitB, EnumHand.MAIN_HAND);
+                    break;
+                case 8:
+                    mc.playerController.processRightClickBlock(mc.player, mc.world, clickPos, EnumFacing.UP, hitC, EnumHand.MAIN_HAND);
+                    break;
+                case 9:
+                    sendLookPacket(mc, clickPos);
+                    sendTryUsePacket(mc, clickPos, hitC);
+                    break;
+                case 10:
+                    sendTryUsePacket(mc, clickPos, hitC);
+                    mc.playerController.processRightClickBlock(mc.player, mc.world, clickPos, EnumFacing.UP, hitC, EnumHand.MAIN_HAND);
+                    break;
+                default:
+                    mc.playerController.processRightClickBlock(mc.player, mc.world, clickPos, EnumFacing.UP, hitA, EnumHand.MAIN_HAND);
+                    break;
+            }
+        }
+        catch (Exception ignore) { }
+
+        mc.player.swingArm(EnumHand.MAIN_HAND);
+        setActionBar(true, "&aTestPlace method=" + method + " block=" + block.getRegistryName(), 2000L);
+    }
+
+    private void sendLookPacket(Minecraft mc, BlockPos target)
+    {
+        if (mc == null || mc.player == null || mc.player.connection == null || target == null)
+        {
+            return;
+        }
+        Vec3d eyes = mc.player.getPositionEyes(1.0F);
+        Vec3d center = new Vec3d(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5);
+        double dx = center.x - eyes.x;
+        double dy = center.y - eyes.y;
+        double dz = center.z - eyes.z;
+        double dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < 0.0001)
+        {
+            return;
+        }
+        float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
+        float pitch = (float) (-Math.toDegrees(Math.atan2(dy, dist)));
+        mc.player.connection.sendPacket(new CPacketPlayer.Rotation(yaw, pitch, mc.player.onGround));
+    }
+
+    private void sendTryUsePacket(Minecraft mc, BlockPos target, Vec3d hit)
+    {
+        if (mc == null || mc.player == null || mc.player.connection == null || target == null || hit == null)
+        {
+            return;
+        }
+        mc.player.connection.sendPacket(new CPacketPlayerTryUseItemOnBlock(
+            target, EnumFacing.UP, EnumHand.MAIN_HAND, (float) hit.x, (float) hit.y, (float) hit.z
+        ));
+    }
+
+    private void abortPlaceBlocks(String reason)
+    {
+        try
+        {
+            Minecraft mc = Minecraft.getMinecraft();
+            if (mc != null)
+            {
+                mc.displayGuiScreen(null);
+            }
+        }
+        catch (Exception ignore) { }
+
+        placeBlocksActive = false;
+        placeBlocksQueue.clear();
+        placeBlocksCurrent = null;
+        queuedClicks.clear();
+        tpPathQueue.clear();
+        setInputActive(false);
+        if (debugUi)
+        {
+            setActionBar(false, "&c/place aborted: " + reason, 2000L);
         }
     }
-    private static class RegistryEntry
-    {
-        final String name;
-        final int port;
-        final String mode;
-        long lastSeenMs;
 
-        RegistryEntry(String name, int port, String mode)
+    private List<String> splitArgsPreserveQuotes(String raw)
+    {
+        if (raw == null)
         {
-            this.name = name;
-            this.port = port;
-            this.mode = mode == null ? "" : mode;
+            return new ArrayList<>();
         }
+        raw = raw.trim();
+        List<String> tokens = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        boolean inQuote = false;
+        for (int i = 0; i < raw.length(); i++)
+        {
+            char c = raw.charAt(i);
+            if (c == '\"')
+            {
+                inQuote = !inQuote;
+                continue;
+            }
+            if (Character.isWhitespace(c) && !inQuote)
+            {
+                if (cur.length() > 0)
+                {
+                    tokens.add(cur.toString());
+                    cur.setLength(0);
+                }
+            }
+            else
+            {
+                cur.append(c);
+            }
+        }
+        if (cur.length() > 0)
+        {
+            tokens.add(cur.toString());
+        }
+        return tokens;
     }
 
-    private static class CommandResult
+    private List<PlaceArg> parsePlaceAdvancedArgs(String raw)
     {
-        final boolean executed;
-        final String mode;
-
-        CommandResult(boolean executed, String mode)
+        List<PlaceArg> out = new ArrayList<>();
+        if (raw == null)
         {
-            this.executed = executed;
-            this.mode = mode;
+            return out;
         }
+        String s = raw.trim();
+        if (s.isEmpty())
+        {
+            return out;
+        }
+        // Split on commas, but keep parentheses blocks intact (simple depth counter).
+        List<String> parts = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        int depth = 0;
+        for (int i = 0; i < s.length(); i++)
+        {
+            char c = s.charAt(i);
+            if (c == '(')
+            {
+                depth++;
+            }
+            else if (c == ')' && depth > 0)
+            {
+                depth--;
+            }
+            if (c == ',' && depth == 0)
+            {
+                parts.add(cur.toString());
+                cur.setLength(0);
+            }
+            else
+            {
+                cur.append(c);
+            }
+        }
+        if (cur.length() > 0)
+        {
+            parts.add(cur.toString());
+        }
+
+        for (String part : parts)
+        {
+            if (part == null)
+            {
+                continue;
+            }
+            String item = part.trim();
+            if (item.isEmpty())
+            {
+                continue;
+            }
+            int eq = item.indexOf('=');
+            if (eq <= 0 || eq == item.length() - 1)
+            {
+                continue;
+            }
+            String keyRaw = item.substring(0, eq).trim();
+            String expr = item.substring(eq + 1).trim();
+            if (keyRaw.isEmpty() || expr.isEmpty())
+            {
+                continue;
+            }
+
+            Integer meta = null;
+            String keyName = keyRaw;
+            int hash = Math.max(keyRaw.lastIndexOf('#'), keyRaw.lastIndexOf('@'));
+            if (hash > 0 && hash < keyRaw.length() - 1)
+            {
+                String tail = keyRaw.substring(hash + 1).trim();
+                if (tail.matches("\\d{1,2}"))
+                {
+                    try
+                    {
+                        meta = Integer.parseInt(tail);
+                        keyName = keyRaw.substring(0, hash).trim();
+                    }
+                    catch (Exception ignore) { }
+                }
+            }
+
+            int mode = INPUT_MODE_TEXT;
+            String valueRaw = expr;
+
+            String low = expr.toLowerCase(Locale.ROOT);
+            if (low.startsWith("num(") && expr.endsWith(")"))
+            {
+                mode = INPUT_MODE_NUMBER;
+                valueRaw = expr.substring(4, expr.length() - 1);
+            }
+            else if (low.startsWith("var(") && expr.endsWith(")"))
+            {
+                mode = INPUT_MODE_VARIABLE;
+                valueRaw = expr.substring(4, expr.length() - 1);
+            }
+            else if (low.startsWith("text(") && expr.endsWith(")"))
+            {
+                mode = INPUT_MODE_TEXT;
+                valueRaw = expr.substring(5, expr.length() - 1);
+            }
+            else if (expr.matches("-?\\d+(?:\\.\\d+)?"))
+            {
+                mode = INPUT_MODE_NUMBER;
+                valueRaw = expr;
+            }
+            else if (expr.startsWith("%") && expr.endsWith("%"))
+            {
+                mode = INPUT_MODE_VARIABLE;
+                valueRaw = expr;
+            }
+
+            String keyNorm = normalizeForMatch(keyName);
+            out.add(new PlaceArg(keyName, keyNorm, meta, mode, valueRaw));
+        }
+        return out;
+    }
+
+    private void runPlaceBlocksCommand(MinecraftServer server, ICommandSender sender, String[] args)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.world == null || mc.player == null)
+        {
+            setActionBar(false, "&cNo world/player", 2000L);
+            return;
+        }
+
+        if (args == null || args.length == 0)
+        {
+            setActionBar(false, "&cUsage: /place <block1> [block2]...", 3000L);
+            return;
+        }
+
+        if (lastGlassPos == null)
+        {
+            String key = getCodeGlassScopeKey(mc.world);
+            if (key != null)
+            {
+                lastGlassPos = codeBlueGlassById.get(key);
+                if (lastGlassPos != null)
+                {
+                    lastGlassDim = mc.world.provider.getDimension();
+                }
+            }
+            if (lastGlassPos == null)
+            {
+                setActionBar(false, "&cNo blue glass position recorded", 2000L);
+                return;
+            }
+        }
+
+        String raw = String.join(" ", args).trim();
+        List<String> tokens = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        boolean inQuote = false;
+        for (int i = 0; i < raw.length(); i++)
+        {
+            char c = raw.charAt(i);
+            if (c == '\"')
+            {
+                inQuote = !inQuote;
+                continue;
+            }
+            if (Character.isWhitespace(c) && !inQuote)
+            {
+                if (cur.length() > 0)
+                {
+                    tokens.add(cur.toString());
+                    cur.setLength(0);
+                }
+            }
+            else
+            {
+                cur.append(c);
+            }
+        }
+        if (cur.length() > 0)
+        {
+            tokens.add(cur.toString());
+        }
+
+        if (tokens.size() % 2 != 0)
+        {
+            setActionBar(false, "&cUsage: /place <block> <name> [<block> <name> ...]", 4000L);
+            return;
+        }
+
+        BlockPos glass = lastGlassPos;
+        if (glass == null)
+        {
+            setActionBar(false, "&cNo blue glass position recorded", 2000L);
+            return;
+        }
+
+        int pairs = tokens.size() / 2;
+        for (int p = 0; p < pairs; p++)
+        {
+            String blockTok = tokens.get(p * 2);
+            String nameTok = tokens.get(p * 2 + 1);
+            String blockName = blockTok.contains(":") ? blockTok : ("minecraft:" + blockTok);
+            Block b = Block.getBlockFromName(blockName);
+            if (b == null)
+            {
+                if (debugUi && mc.player != null)
+                {
+                    mc.player.sendMessage(new TextComponentString("/place: unknown block '" + blockTok + "'"));
+                }
+                continue;
+            }
+            BlockPos target = glass.add(-2 * p, 1, 0);
+            String search = nameTok == null ? "" : nameTok.trim();
+            String norm = normalizeForMatch(search);
+            boolean cachedMatch = false;
+            if (!norm.isEmpty())
+            {
+                for (List<ItemStack> items : clickMenuMap.values())
+                {
+                    if (menuContainsSearch(items, norm))
+                    {
+                        cachedMatch = true;
+                        break;
+                    }
+                }
+            }
+
+            PlaceEntry entry = new PlaceEntry(target, b, norm);
+            entry.searchKey = norm;
+            entry.desiredSlotIndex = -1;
+            if (!cachedMatch && debugUi && mc.player != null)
+            {
+                mc.player.sendMessage(new TextComponentString(
+                    "/place: no cached menu item matching '" + nameTok + "' (will try live)"));
+            }
+            placeBlocksQueue.add(entry);
+        }
+        placeBlocksActive = !placeBlocksQueue.isEmpty();
+        setActionBar(true, "&aPlaced queue created: " + placeBlocksQueue.size() + " entries", 2000L);
     }
 }    
