@@ -19,6 +19,7 @@ public final class PlaceModule
     public static final int INPUT_MODE_VARIABLE = 2;
     public static final int INPUT_MODE_ARRAY = 3;
     public static final int INPUT_MODE_LOCATION = 4;
+    public static final int INPUT_MODE_APPLE = 5;
 
     private final PlaceModuleHost host;
     private final PlaceState state = new PlaceState();
@@ -210,4 +211,3 @@ public final class PlaceModule
         host.setActionBar(true, "&a/place queued=" + state.queue.size(), 2000L);
     }
 }
-

@@ -194,6 +194,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
     private static final int INPUT_MODE_VARIABLE = 2;
     private static final int INPUT_MODE_ARRAY = 3;
     private static final int INPUT_MODE_LOCATION = 4;
+    private static final int INPUT_MODE_APPLE = 5;
     private static final int INPUT_CONTEXT_SLOT = 0;
     private static final int INPUT_CONTEXT_GIVE = 1;
     private static final int ENTRY_RECENT_LIMIT = 10;
@@ -4249,6 +4250,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
             startGiveInput(stack.copy(), INPUT_MODE_LOCATION, "Location");
             return;
         }
+        if (stack.getItem() == Items.APPLE)
+        {
+            startGiveInput(stack.copy(), INPUT_MODE_APPLE, "GameValue");
+            return;
+        }
 
         Minecraft mc = Minecraft.getMinecraft();
         if (mc == null || mc.player == null || mc.playerController == null)
@@ -4920,7 +4926,29 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
         {
             name = "";
         }
-        String cleaned = net.minecraft.util.text.TextFormatting.getTextWithoutFormattingCodes(name).trim().toLowerCase();
+        String cleaned = net.minecraft.util.text.TextFormatting.getTextWithoutFormattingCodes(name);
+        if (cleaned == null)
+        {
+            cleaned = "";
+        }
+        cleaned = cleaned.trim().toLowerCase(Locale.ROOT);
+        if (cleaned.isEmpty())
+        {
+            List<String> lore = getStackLore(stack, false);
+            for (String line : lore)
+            {
+                if (line == null)
+                {
+                    continue;
+                }
+                String loreClean = line.trim().toLowerCase(Locale.ROOT);
+                if (!loreClean.isEmpty())
+                {
+                    cleaned = loreClean;
+                    break;
+                }
+            }
+        }
         return cleaned.isEmpty() ? "empty" : cleaned;
     }
 
@@ -5390,6 +5418,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
             shulkerEditSlotNumber = -1;
             shulkerEditPos = null;
         }
+    }
+
+    @Override
+    public void setInputSaveVariable(boolean save)
+    {
+        inputSaveVariable = save;
     }
 
     private void ensureInputField()
@@ -6567,6 +6601,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
         {
             return toAmpersandCodes(stack.getDisplayName());
         }
+        if (mode == INPUT_MODE_APPLE)
+        {
+            String loc = getAppleLocName(stack);
+            return toAmpersandCodes(loc);
+        }
         return toAmpersandCodes(stack.getDisplayName());
     }
 
@@ -6738,6 +6777,44 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
         }
         tag.setTag("display", display);
         stack.setTagCompound(tag);
+    }
+
+    private void applyAppleTag(ItemStack stack, String displayText)
+    {
+        if (stack == null || stack.isEmpty())
+        {
+            return;
+        }
+        NBTTagCompound tag = stack.getTagCompound();
+        if (tag == null)
+        {
+            tag = new NBTTagCompound();
+        }
+        NBTTagCompound display = tag.hasKey("display") ? tag.getCompoundTag("display") : new NBTTagCompound();
+        display.setString("LocName", displayText == null ? "" : displayText);
+        tag.setTag("display", display);
+        stack.setTagCompound(tag);
+    }
+
+    private String getAppleLocName(ItemStack stack)
+    {
+        if (stack == null || stack.isEmpty())
+        {
+            return "";
+        }
+        if (stack.hasTagCompound())
+        {
+            NBTTagCompound tag = stack.getTagCompound();
+            if (tag != null && tag.hasKey("display"))
+            {
+                NBTTagCompound display = tag.getCompoundTag("display");
+                if (display.hasKey("LocName"))
+                {
+                    return display.getString("LocName");
+                }
+            }
+        }
+        return stack.getDisplayName();
     }
 
     private void saveNote()
@@ -7350,7 +7427,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
                     ItemStack template = templateForMode(picked);
                     String title = picked == INPUT_MODE_NUMBER ? "Number"
                         : picked == INPUT_MODE_VARIABLE ? "Variable"
-                        : picked == INPUT_MODE_ARRAY ? "Array" : "Text";
+                        : picked == INPUT_MODE_ARRAY ? "Array"
+                        : picked == INPUT_MODE_LOCATION ? "Location"
+                        : picked == INPUT_MODE_APPLE ? "GameValue" : "Text";
                     startSlotInput(gui, slot, template, picked, "", title);
                 }
                 typePickerActive = false;
@@ -7423,6 +7502,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
         {
             preset = normalizePlainName(stack.getDisplayName());
         }
+        else if (mode == INPUT_MODE_APPLE)
+        {
+            preset = toAmpersandCodes(getAppleLocName(stack));
+        }
         else
         {
             preset = toAmpersandCodes(stack.getDisplayName());
@@ -7456,6 +7539,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
         if (entry.mode == INPUT_MODE_VARIABLE && savedVariableNames.contains(entry.text))
         {
             applySavedVariableTag(stack);
+        }
+        if (entry.mode == INPUT_MODE_APPLE)
+        {
+            applyAppleTag(stack, display);
         }
         placeInContainerSlot(mc, gui.inventorySlots, slot.slotNumber, stack);
         recordEntry(entry.mode, entry.text);
@@ -7513,6 +7600,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
         {
             return INPUT_MODE_LOCATION;
         }
+        if (stack.getItem() == Items.APPLE)
+        {
+            return INPUT_MODE_APPLE;
+        }
         return -1;
     }
 
@@ -7543,6 +7634,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
         {
             ItemStack cached = getCachedTemplateForItem(Items.PAPER);
             return cached.isEmpty() ? new ItemStack(Items.PAPER, 1) : cached;
+        }
+        if (mode == INPUT_MODE_APPLE)
+        {
+            ItemStack cached = getCachedTemplateForItem(Items.APPLE);
+            return cached.isEmpty() ? new ItemStack(Items.APPLE, 1) : cached;
         }
         return new ItemStack(Items.BOOK, 1);
     }
@@ -7591,6 +7687,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
         {
             return applyColorCodes("&r" + entry.text);
         }
+        if (entry.mode == INPUT_MODE_APPLE)
+        {
+            return applyColorCodes(entry.text);
+        }
         return normalizeTextName(entry.text);
     }
 
@@ -7599,7 +7699,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
         char label = entry.mode == INPUT_MODE_NUMBER ? 'N'
             : entry.mode == INPUT_MODE_VARIABLE ? 'V'
             : entry.mode == INPUT_MODE_ARRAY ? 'A'
-            : entry.mode == INPUT_MODE_LOCATION ? 'L' : 'T';
+            : entry.mode == INPUT_MODE_LOCATION ? 'L'
+            : entry.mode == INPUT_MODE_APPLE ? 'G' : 'T';
         String display = buildEntryDisplay(entry);
         return "\u00a77[" + label + "]\u00a7r " + display;
     }
@@ -7676,6 +7777,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
         if (mouseY >= y && mouseY <= y + 10)
         {
             return INPUT_MODE_ARRAY;
+        }
+        y += 10;
+        if (mouseY >= y && mouseY <= y + 10)
+        {
+            return INPUT_MODE_APPLE;
         }
         return -1;
     }
@@ -8046,6 +8152,16 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
             }
             display = applyColorCodes("&r" + finalRaw);
         }
+        else if (inputMode == INPUT_MODE_APPLE)
+        {
+            finalRaw = raw.trim();
+            if (finalRaw.isEmpty())
+            {
+                setInputActive(false);
+                return;
+            }
+            display = applyColorCodes(finalRaw);
+        }
         else
         {
             display = normalizeTextName(finalRaw);
@@ -8067,6 +8183,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
             else if (inputMode == INPUT_MODE_VARIABLE)
             {
                 removeSavedVariableTag(give);
+            }
+            if (inputMode == INPUT_MODE_APPLE)
+            {
+                applyAppleTag(give, display);
             }
             giveItemToHotbar(mc, give);
             recordEntry(inputMode, finalRaw);
@@ -8131,6 +8251,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
         else if (inputMode == INPUT_MODE_VARIABLE)
         {
             removeSavedVariableTag(placed);
+        }
+        if (inputMode == INPUT_MODE_APPLE)
+        {
+            applyAppleTag(placed, display);
         }
 
         Integer tempHotbar = findEmptyHotbarSlot(mc);
@@ -11392,13 +11516,65 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
             }
             String keyRaw = item.substring(0, eq).trim();
             String expr = item.substring(eq + 1).trim();
-            if (keyRaw.isEmpty() || expr.isEmpty())
+            if (expr.isEmpty())
             {
                 continue;
             }
 
             Integer meta = null;
-            String keyName = keyRaw;
+            String keyName = stripQuotes(keyRaw);
+            Integer slotIndex = null;
+            boolean clickOnly = false;
+            int forcedClicks = -1;
+            boolean slotGuiIndex = false;
+            String lowKey = keyName.toLowerCase(Locale.ROOT);
+            if (lowKey.startsWith("slot"))
+            {
+                slotGuiIndex = true;
+                if (lowKey.startsWith("slotraw") || lowKey.startsWith("rawslot"))
+                {
+                    slotGuiIndex = false;
+                }
+                String digits = lowKey.replaceAll("[^0-9]", "");
+                if (digits.matches("\\d+"))
+                {
+                    try
+                    {
+                        slotIndex = Integer.parseInt(digits);
+                        keyName = "";
+                    }
+                    catch (Exception ignore) { }
+                }
+            }
+            if (lowKey.startsWith("clicks(") && lowKey.endsWith(")"))
+            {
+                String inner = lowKey.substring(7, lowKey.length() - 1);
+                String[] vals = inner.split(",");
+                if (vals.length >= 1)
+                {
+                    String slotRaw = vals[0].trim().toLowerCase(Locale.ROOT);
+                    String digits = slotRaw.replaceAll("[^0-9]", "");
+                    if (digits.matches("\\d+"))
+                    {
+                        try
+                        {
+                            slotIndex = Integer.parseInt(digits);
+                            slotGuiIndex = !slotRaw.startsWith("raw");
+                        }
+                        catch (Exception ignore) { }
+                    }
+                }
+                if (vals.length >= 2 && vals[1].trim().matches("\\d+"))
+                {
+                    try
+                    {
+                        forcedClicks = Integer.parseInt(vals[1].trim());
+                    }
+                    catch (Exception ignore) { }
+                }
+                clickOnly = true;
+                keyName = "";
+            }
             int hash = Math.max(keyRaw.lastIndexOf('#'), keyRaw.lastIndexOf('@'));
             if (hash > 0 && hash < keyRaw.length() - 1)
             {
@@ -11408,46 +11584,114 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
                     try
                     {
                         meta = Integer.parseInt(tail);
-                        keyName = keyRaw.substring(0, hash).trim();
+                        keyName = stripQuotes(keyRaw.substring(0, hash).trim());
                     }
                     catch (Exception ignore) { }
                 }
             }
 
-            int mode = INPUT_MODE_TEXT;
-            String valueRaw = expr;
+            int clicks = 0;
+            String valueExpr = expr;
+            int semi = expr.indexOf(';');
+            if (semi > -1)
+            {
+                valueExpr = expr.substring(0, semi).trim();
+                String tail = expr.substring(semi + 1).trim();
+                for (String partTail : tail.split(";"))
+                {
+                    String t = partTail.trim();
+                    if (t.startsWith("clicks=") || t.startsWith("click="))
+                    {
+                        String num = t.substring(t.indexOf('=') + 1).trim();
+                        if (num.matches("\\d+"))
+                        {
+                            try
+                            {
+                                clicks = Integer.parseInt(num);
+                            }
+                            catch (Exception ignore) { }
+                        }
+                    }
+                    else if (t.startsWith("slot=") || t.startsWith("slotid="))
+                    {
+                        String num = t.substring(t.indexOf('=') + 1).trim();
+                        if (num.matches("\\d+"))
+                        {
+                            try
+                            {
+                                slotIndex = Integer.parseInt(num);
+                            }
+                            catch (Exception ignore) { }
+                        }
+                    }
+                }
+            }
+            if (forcedClicks > -1)
+            {
+                clicks = forcedClicks;
+            }
 
-            String low = expr.toLowerCase(Locale.ROOT);
-            if (low.startsWith("num(") && expr.endsWith(")"))
+            int mode = INPUT_MODE_TEXT;
+            String valueRaw = valueExpr;
+            boolean saveVariable = false;
+
+            String low = valueExpr.toLowerCase(Locale.ROOT);
+            if (low.startsWith("num(") && valueExpr.endsWith(")"))
             {
                 mode = INPUT_MODE_NUMBER;
-                valueRaw = expr.substring(4, expr.length() - 1);
+                valueRaw = valueExpr.substring(4, valueExpr.length() - 1);
             }
-            else if (low.startsWith("var(") && expr.endsWith(")"))
+            else if (low.startsWith("var_save(") && valueExpr.endsWith(")"))
             {
                 mode = INPUT_MODE_VARIABLE;
-                valueRaw = expr.substring(4, expr.length() - 1);
+                valueRaw = valueExpr.substring(9, valueExpr.length() - 1);
+                saveVariable = true;
             }
-            else if (low.startsWith("text(") && expr.endsWith(")"))
+            else if (low.startsWith("var(") && valueExpr.endsWith(")"))
+            {
+                mode = INPUT_MODE_VARIABLE;
+                valueRaw = valueExpr.substring(4, valueExpr.length() - 1);
+            }
+            else if (low.startsWith("text(") && valueExpr.endsWith(")"))
             {
                 mode = INPUT_MODE_TEXT;
-                valueRaw = expr.substring(5, expr.length() - 1);
+                valueRaw = valueExpr.substring(5, valueExpr.length() - 1);
             }
-            else if (expr.matches("-?\\d+(?:\\.\\d+)?"))
+            else if (low.startsWith("apple(") && valueExpr.endsWith(")"))
+            {
+                mode = INPUT_MODE_APPLE;
+                valueRaw = valueExpr.substring(6, valueExpr.length() - 1);
+            }
+            else if (valueExpr.matches("-?\\d+(?:\\.\\d+)?"))
             {
                 mode = INPUT_MODE_NUMBER;
-                valueRaw = expr;
+                valueRaw = valueExpr;
             }
-            else if (expr.startsWith("%") && expr.endsWith("%"))
+            else if (valueExpr.startsWith("%") && valueExpr.endsWith("%"))
             {
                 mode = INPUT_MODE_VARIABLE;
-                valueRaw = expr;
+                valueRaw = valueExpr;
             }
 
             String keyNorm = normalizeForMatch(keyName);
-            out.add(new PlaceArg(keyName, keyNorm, meta, mode, valueRaw));
+            out.add(new PlaceArg(keyName, keyNorm, meta, mode, valueRaw, clicks, saveVariable, slotIndex, clickOnly,
+                slotGuiIndex));
         }
         return out;
+    }
+
+    private static String stripQuotes(String raw)
+    {
+        if (raw == null)
+        {
+            return "";
+        }
+        String s = raw.trim();
+        if (s.length() >= 2 && s.startsWith("\"") && s.endsWith("\""))
+        {
+            return s.substring(1, s.length() - 1);
+        }
+        return s;
     }
 
     private void runPlaceBlocksCommand(MinecraftServer server, ICommandSender sender, String[] args)

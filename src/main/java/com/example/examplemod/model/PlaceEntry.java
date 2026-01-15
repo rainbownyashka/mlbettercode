@@ -40,6 +40,9 @@ public class PlaceEntry
     public long lastArgsActionMs;
     public int argsMisses;
     public final Set<Integer> usedArgSlots = new HashSet<>();
+    public int pendingArgClickSlot;
+    public int pendingArgClicks;
+    public long pendingArgNextMs;
 
     // /placeadvanced: after selecting the menu item, some servers open a parameter GUI via a spawned chest.
     public boolean awaitingParamsChest;
@@ -70,6 +73,9 @@ public class PlaceEntry
         this.argsStartMs = 0L;
         this.lastArgsActionMs = 0L;
         this.argsMisses = 0;
+        this.pendingArgClickSlot = -1;
+        this.pendingArgClicks = 0;
+        this.pendingArgNextMs = 0L;
         this.awaitingParamsChest = false;
         this.needOpenParamsChest = false;
         this.paramsOpenAttempts = 0;
@@ -103,6 +109,9 @@ public class PlaceEntry
         this.argsStartMs = 0L;
         this.lastArgsActionMs = 0L;
         this.argsMisses = 0;
+        this.pendingArgClickSlot = -1;
+        this.pendingArgClicks = 0;
+        this.pendingArgNextMs = 0L;
         this.awaitingParamsChest = false;
         this.needOpenParamsChest = false;
         this.paramsOpenAttempts = 0;

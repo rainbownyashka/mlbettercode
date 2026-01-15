@@ -1,0 +1,54 @@
+{
+  "name": "mldsl-helper",
+  "displayName": "MLDSL Helper",
+  "description": "Completion/hover/definition for MLDSL based on generated api_aliases.json",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:mldsl"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "mldsl",
+        "aliases": [
+          "MLDSL"
+        ],
+        "extensions": [
+          ".mldsl"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "mldsl",
+        "scopeName": "source.mldsl",
+        "path": "./syntaxes/mldsl.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "MLDSL Helper",
+      "properties": {
+        "mldsl.apiAliasesPath": {
+          "type": "string",
+          "default": "C:\\\\Users\\\\ASUS\\\\Documents\\\\mlctmodified\\\\out\\\\api_aliases.json",
+          "description": "Path to generated api_aliases.json"
+        },
+        "mldsl.docsRoot": {
+          "type": "string",
+          "default": "C:\\\\Users\\\\ASUS\\\\Documents\\\\mlctmodified\\\\out\\\\docs",
+          "description": "Root folder with generated markdown docs"
+        }
+      }
+    }
+  }
+}
+

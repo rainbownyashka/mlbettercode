@@ -1,0 +1,29 @@
+{
+  "scopeName": "source.mldsl",
+  "patterns": [
+    {
+      "name": "comment.line.number-sign.mldsl",
+      "match": "#.*$"
+    },
+    {
+      "name": "keyword.control.mldsl",
+      "match": "\\b(event|if|else|loop|function|return|pass)\\b"
+    },
+    {
+      "name": "string.quoted.double.mldsl",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.mldsl",
+          "match": "\\\\."
+        }
+      ]
+    },
+    {
+      "name": "constant.numeric.mldsl",
+      "match": "\\b\\d+(?:\\.\\d+)?\\b"
+    }
+  ]
+}
+

@@ -34,6 +34,7 @@ public interface PlaceModuleHost
 
     void closeCurrentScreen();
     void setInputActive(boolean active);
+    void setInputSaveVariable(boolean save);
 
     void startSlotInput(GuiContainer container, Slot target, ItemStack template, int mode, String preset, String title);
     void setInputText(String text);
@@ -58,4 +59,3 @@ public interface PlaceModuleHost
 
     Map<String, List<ItemStack>> getClickMenuMap();
 }
-

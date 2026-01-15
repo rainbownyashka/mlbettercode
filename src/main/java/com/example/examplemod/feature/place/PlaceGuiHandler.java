@@ -243,17 +243,15 @@ final class PlaceGuiHandler
                 entry.awaitingMenu = false;
                 entry.awaitingArgs = false;
                 entry.awaitingParamsChest = true;
-                entry.needOpenParamsChest = true;
+                entry.needOpenParamsChest = false;
                 entry.advancedArgIndex = 0;
                 entry.argsStartMs = 0L;
                 entry.lastArgsActionMs = 0L;
                 entry.argsMisses = 0;
                 entry.usedArgSlots.clear();
-                entry.paramsStartMs = nowMs;
-                entry.nextParamsActionMs = nowMs + 350L;
+                entry.paramsStartMs = 0L;
+                entry.nextParamsActionMs = 0L;
                 entry.paramsOpenAttempts = 0;
-                // Close the current GUI so the params chest GUI can open.
-                host.closeCurrentScreen();
             }
             else
             {
@@ -408,6 +406,30 @@ final class PlaceGuiHandler
         {
             return;
         }
+        if (entry.pendingArgClicks > 0)
+        {
+            try
+            {
+                ItemStack carried = mc.player.inventory.getItemStack();
+                if (carried != null && !carried.isEmpty())
+                {
+                    return;
+                }
+            }
+            catch (Exception ignore) { }
+            if (nowMs >= entry.pendingArgNextMs && entry.pendingArgClickSlot >= 0)
+            {
+                host.queueClick(new ClickAction(entry.pendingArgClickSlot, 0, ClickType.PICKUP));
+                entry.pendingArgClicks--;
+                entry.pendingArgNextMs = nowMs + 500L;
+                entry.lastArgsActionMs = nowMs;
+                if (entry.pendingArgClicks <= 0)
+                {
+                    entry.pendingArgClickSlot = -1;
+                }
+            }
+            return;
+        }
         if (entry.advancedArgs == null || entry.advancedArgs.isEmpty())
         {
             entry.awaitingArgs = false;
@@ -437,10 +459,64 @@ final class PlaceGuiHandler
         }
 
         PlaceArg arg = entry.advancedArgs.get(entry.advancedArgIndex);
+        if (arg.clickOnly)
+        {
+            if (arg.slotIndex == null)
+            {
+                entry.argsMisses++;
+                return;
+            }
+            if (entry.argsStartMs > 0 && nowMs - entry.argsStartMs < 250L)
+            {
+                return;
+            }
+            if (countNonPlayerSlots(gui) == 0)
+            {
+                return;
+            }
+            int clickSlot = resolveClickSlotIndex(gui, arg);
+            if (clickSlot < 0)
+            {
+                if (host.isDebugUi() && entry.argsMisses % 10 == 0)
+                {
+                    host.debugChat(String.format("placeadvanced clickOnly: resolve failed slot=%s guiIndex=%s nonPlayer=%d window=%d",
+                        String.valueOf(arg.slotIndex),
+                        String.valueOf(arg.slotGuiIndex),
+                        countNonPlayerSlots(gui),
+                        gui.inventorySlots.windowId));
+                }
+                entry.argsMisses++;
+                return;
+            }
+            if (host.isDebugUi())
+            {
+                host.debugChat(String.format("placeadvanced clickOnly: slot=%d guiIndex=%s clicks=%d window=%d",
+                    clickSlot,
+                    String.valueOf(arg.slotGuiIndex),
+                    arg.clicks > 0 ? arg.clicks : 1,
+                    gui.inventorySlots.windowId));
+            }
+            entry.usedArgSlots.add(clickSlot);
+            entry.pendingArgClickSlot = clickSlot;
+            entry.pendingArgClicks = arg.clicks > 0 ? arg.clicks : 1;
+            entry.pendingArgNextMs = nowMs + 500L;
+            entry.lastArgsActionMs = nowMs;
+            entry.advancedArgIndex++;
+            return;
+        }
         Slot target = findArgTargetSlot(host, gui, arg, entry.usedArgSlots);
         if (target == null)
         {
             entry.argsMisses++;
+            if (host.isDebugUi() && entry.argsMisses % 10 == 0)
+            {
+                host.debugChat(String.format("placeadvanced: no slot key='%s' slot=%s guiIndex=%s meta=%s misses=%d",
+                    arg.keyRaw,
+                    String.valueOf(arg.slotIndex),
+                    String.valueOf(arg.slotGuiIndex),
+                    String.valueOf(arg.glassMetaFilter),
+                    entry.argsMisses));
+            }
             if (entry.argsMisses > 60)
             {
                 host.setActionBar(false, "&c/placeadvanced: no matching args slot", 2500L);
@@ -452,12 +528,19 @@ final class PlaceGuiHandler
         ItemStack presetStack = target.getStack();
         String preset = presetStack == null || presetStack.isEmpty() ? "" : host.extractEntryText(presetStack, arg.mode);
         ItemStack template = host.templateForMode(arg.mode);
+        host.setInputSaveVariable(arg.saveVariable);
         host.startSlotInput(gui, target, template, arg.mode, preset, "Arg: " + arg.keyRaw);
         host.setInputText(arg.valueRaw);
         host.submitInputText(false);
 
         entry.usedArgSlots.add(target.slotNumber);
         entry.advancedArgIndex++;
+        if (arg.clicks > 0)
+        {
+            entry.pendingArgClickSlot = target.slotNumber;
+            entry.pendingArgClicks = arg.clicks;
+            entry.pendingArgNextMs = nowMs + 500L;
+        }
         entry.argsMisses = 0;
         entry.lastArgsActionMs = nowMs;
         if (entry.advancedArgIndex >= entry.advancedArgs.size())
@@ -475,9 +558,33 @@ final class PlaceGuiHandler
         {
             return null;
         }
+        if (arg.slotIndex != null)
+        {
+            try
+            {
+                Slot slot = resolveArgSlot(gui, arg);
+                if (slot == null || slot.inventory == mc.player.inventory)
+                {
+                    return null;
+                }
+                if (used != null && used.contains(slot.slotNumber))
+                {
+                    return null;
+                }
+                return slot;
+            }
+            catch (Exception ignore)
+            {
+                return null;
+            }
+        }
         if (arg.keyNorm == null || arg.keyNorm.isEmpty())
         {
-            return null;
+            if (arg.glassMetaFilter == null)
+            {
+                // Allow empty key to match any glass target.
+                // Keep going and only filter by glass meta or availability.
+            }
         }
 
         List<Slot> bases = new ArrayList<>();
@@ -492,14 +599,21 @@ final class PlaceGuiHandler
             {
                 continue;
             }
+            if (st.getMetadata() == 15)
+            {
+                continue;
+            }
             if (arg.glassMetaFilter != null && st.getMetadata() != arg.glassMetaFilter.intValue())
             {
                 continue;
             }
-            String name = host.normalizeForMatch(TextFormatting.getTextWithoutFormattingCodes(st.getDisplayName()));
-            if (name.isEmpty() || !name.contains(arg.keyNorm))
+            if (arg.keyNorm != null && !arg.keyNorm.isEmpty())
             {
-                continue;
+                String name = host.normalizeForMatch(TextFormatting.getTextWithoutFormattingCodes(st.getDisplayName()));
+                if (name.isEmpty() || !name.contains(arg.keyNorm))
+                {
+                    continue;
+                }
             }
             bases.add(slot);
         }
@@ -511,7 +625,7 @@ final class PlaceGuiHandler
 
         for (Slot base : bases)
         {
-            Slot candidate = findCandidateSlotForArg(gui, base);
+            Slot candidate = findCandidateSlotForArg(host, gui, base);
             if (candidate == null)
             {
                 continue;
@@ -525,7 +639,7 @@ final class PlaceGuiHandler
         return null;
     }
 
-    private static Slot findCandidateSlotForArg(GuiContainer gui, Slot base)
+    private static Slot findCandidateSlotForArg(PlaceModuleHost host, GuiContainer gui, Slot base)
     {
         int x = base.xPos;
         int y = base.yPos;
@@ -549,6 +663,10 @@ final class PlaceGuiHandler
             ItemStack st = slot.getStack();
             if (st != null && !st.isEmpty())
             {
+                if (host.isGlassPane(st))
+                {
+                    continue;
+                }
                 return slot;
             }
         }
@@ -565,5 +683,100 @@ final class PlaceGuiHandler
             }
         }
         return null;
+    }
+
+    private static Slot resolveArgSlot(GuiContainer gui, PlaceArg arg)
+    {
+        if (gui == null || gui.inventorySlots == null || arg == null || arg.slotIndex == null)
+        {
+            return null;
+        }
+        if (!arg.slotGuiIndex)
+        {
+            try
+            {
+                return gui.inventorySlots.getSlot(arg.slotIndex);
+            }
+            catch (Exception ignore)
+            {
+                return null;
+            }
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null)
+        {
+            return null;
+        }
+        int idx = 0;
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || slot.inventory == mc.player.inventory)
+            {
+                continue;
+            }
+            if (idx == arg.slotIndex)
+            {
+                return slot;
+            }
+            idx++;
+        }
+        try
+        {
+            return gui.inventorySlots.getSlot(arg.slotIndex);
+        }
+        catch (Exception ignore)
+        {
+            return null;
+        }
+    }
+
+    private static int resolveClickSlotIndex(GuiContainer gui, PlaceArg arg)
+    {
+        if (gui == null || gui.inventorySlots == null || arg == null || arg.slotIndex == null)
+        {
+            return -1;
+        }
+        if (!arg.slotGuiIndex)
+        {
+            return arg.slotIndex;
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null)
+        {
+            return -1;
+        }
+        int idx = 0;
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || slot.inventory == mc.player.inventory)
+            {
+                continue;
+            }
+            if (idx == arg.slotIndex)
+            {
+                return slot.slotNumber;
+            }
+            idx++;
+        }
+        return arg.slotIndex;
+    }
+
+    private static int countNonPlayerSlots(GuiContainer gui)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (gui == null || gui.inventorySlots == null || mc == null || mc.player == null)
+        {
+            return 0;
+        }
+        int count = 0;
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || slot.inventory == mc.player.inventory)
+            {
+                continue;
+            }
+            count++;
+        }
+        return count;
     }
 }

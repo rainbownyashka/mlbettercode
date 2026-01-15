@@ -81,6 +81,13 @@ final class PlaceTickHandler
 
         if (entry.placedBlock)
         {
+            if (entry.awaitingParamsChest && !entry.needOpenParamsChest && mc.currentScreen == null)
+            {
+                entry.needOpenParamsChest = true;
+                entry.paramsStartMs = nowMs;
+                entry.nextParamsActionMs = nowMs + 350L;
+                entry.paramsOpenAttempts = 0;
+            }
             if (entry.awaitingMenu && entry.needOpenMenu)
             {
                 if (nowMs < entry.nextMenuActionMs)

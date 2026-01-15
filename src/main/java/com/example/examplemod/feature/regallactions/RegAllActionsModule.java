@@ -28,16 +28,23 @@ import java.io.FileInputStream;
 import java.io.OutputStreamWriter;
 import java.io.InputStreamReader;
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class RegAllActionsModule
 {
     private final RegAllActionsHost host;
     private final RegAllActionsState state = new RegAllActionsState();
+    private final Map<String, String> signAliases = new HashMap<>();
+    private boolean signAliasesLoaded = false;
     private static final Logger LOGGER = LogManager.getLogger("BetterCode-RegAllActions");
 
     public RegAllActionsModule(RegAllActionsHost host)
@@ -108,8 +115,6 @@ public final class RegAllActionsModule
             return;
         }
 
-        ensureImportLoaded(mc);
-
         BlockPos base = host.getLastClickedPos();
         BlockPos signPos = null;
         if (base != null)
@@ -154,6 +159,7 @@ public final class RegAllActionsModule
         }
 
         reset();
+        ensureImportLoaded(mc);
         state.active = true;
         state.signPos = signPos;
         state.nextActionMs = 0L;
@@ -233,15 +239,31 @@ public final class RegAllActionsModule
             return;
         }
 
-        if (state.awaitingSubClickClose)
+        if (state.pendingClick)
         {
-            if (nowMs - state.subClickMs < 300L)
+            if (state.pendingIsReplay)
             {
+                debugLog("replay click closed gui (abort)");
+                state.pendingClick = false;
+                state.pendingIsReplay = false;
+                state.replaying = false;
+                state.waitingForCursorClear = false;
+                state.cursorClearSinceMs = 0L;
+                state.nextActionMs = nowMs + actionDelayMs();
                 return;
             }
-            state.awaitingSubClickClose = false;
+            state.currentActionStack = state.pendingClickStack.copy();
+            state.currentActionGuiTitle = state.pendingGuiTitle;
+            state.pendingClick = false;
+            state.pendingClickMs = 0L;
+            state.pendingClickKey = null;
+            state.pendingClickStack = ItemStack.EMPTY;
+            state.pendingGuiTitle = "";
+            state.waitingForCursorClear = false;
+            state.cursorClearSinceMs = 0L;
             state.waitingForChest = true;
             state.nextActionMs = nowMs + actionDelayMs();
+            debugBar("action -> wait chest");
             return;
         }
 
@@ -252,13 +274,8 @@ public final class RegAllActionsModule
 
         if (state.openingChest && nowMs > state.chestOpenDeadlineMs)
         {
-            if (state.currentCategoryKey != null && state.currentSubItemKey != null)
-            {
-                state.records.add(buildRecord(false, null));
-            }
-            state.openingChest = false;
-            state.menuLevel = 0;
-            state.nextActionMs = nowMs + 250L;
+            state.records.add(buildRecord(false, null));
+            finishActionAndReplay(nowMs);
             return;
         }
 
@@ -275,10 +292,7 @@ public final class RegAllActionsModule
             if (mc.world.getBlockState(chestPos).getBlock() != Blocks.TRAPPED_CHEST)
             {
                 state.records.add(buildRecord(false, null));
-                state.menuLevel = 0;
-                state.waitingForChest = false;
-                state.openingChest = false;
-                state.nextActionMs = nowMs + actionDelayMs();
+                finishActionAndReplay(nowMs);
                 debugBar("no chest");
                 return;
             }
@@ -341,11 +355,6 @@ public final class RegAllActionsModule
             return;
         }
 
-        if (state.awaitingSubClickClose)
-        {
-            return;
-        }
-
         if (state.waitingForCursorClear)
         {
             boolean empty = true;
@@ -373,10 +382,60 @@ public final class RegAllActionsModule
             }
             state.waitingForCursorClear = false;
             state.cursorClearSinceMs = 0L;
+            if (state.pendingClick)
+            {
+                if (state.pendingIsReplay)
+                {
+                    state.pendingClick = false;
+                    state.pendingIsReplay = false;
+                    state.pendingClickMs = 0L;
+                    state.replayIndex++;
+                    state.menuReadySinceMs = 0L;
+                    state.menuReadyWindowId = -1;
+                    state.nextActionMs = nowMs + actionDelayMs();
+                    debugBar("replay ok");
+                    return;
+                }
+                String key = state.pendingClickKey;
+                ItemStack st = state.pendingClickStack.copy();
+                state.pendingClick = false;
+                state.pendingClickMs = 0L;
+                state.pendingClickKey = null;
+                state.pendingClickStack = ItemStack.EMPTY;
+                state.pendingGuiTitle = "";
+                state.menuPathKeys.add(key);
+                state.menuPathStacks.add(st);
+                state.pathCount++;
+                state.menuReadySinceMs = 0L;
+                state.menuReadyWindowId = -1;
+                state.nextActionMs = nowMs + actionDelayMs();
+                debugBar("category");
+                debugLog("category key=" + key
+                    + " rawName='" + st.getDisplayName() + "' rawLore='" + readLore(st)
+                    + "' path=" + RegAllActionsState.pathKey(state.menuPathKeys));
+                return;
+            }
         }
 
         if (nowMs < state.nextActionMs)
         {
+            return;
+        }
+
+        if (state.pendingClick && !state.pendingIsReplay)
+        {
+            if (nowMs - state.pendingClickMs > 1500L)
+            {
+                debugLog("click timeout key=" + state.pendingClickKey);
+                state.pendingClick = false;
+                state.pendingClickKey = null;
+                state.pendingClickStack = ItemStack.EMPTY;
+                state.pendingGuiTitle = "";
+                state.pendingClickMs = 0L;
+                state.waitingForCursorClear = false;
+                state.cursorClearSinceMs = 0L;
+                state.nextActionMs = nowMs + actionDelayMs();
+            }
             return;
         }
 
@@ -402,8 +461,7 @@ public final class RegAllActionsModule
             state.cachedCount++;
             state.openingChest = false;
             host.closeCurrentScreen();
-            state.menuLevel = 0;
-            state.nextActionMs = nowMs + actionDelayMs();
+            finishActionAndReplay(nowMs);
             debugBar("cached chest");
             return;
         }
@@ -418,75 +476,78 @@ public final class RegAllActionsModule
         }
         state.openingSign = false;
 
-        if (state.menuLevel == 0)
+        if (state.replaying)
         {
-            Slot categorySlot = findCategorySlot(gui);
-            if (categorySlot == null)
+            if (state.replayIndex >= state.menuPathKeys.size())
+            {
+                state.replaying = false;
+                state.replayIndex = 0;
+                state.nextActionMs = nowMs + actionDelayMs();
+                return;
+            }
+            String key = state.menuPathKeys.get(state.replayIndex);
+            Slot slot = findSlotByKey(gui, key);
+            if (slot == null)
+            {
+                debugLog("replay slot missing key=" + key + " path=" + RegAllActionsState.pathKey(state.menuPathKeys));
+                state.replaying = false;
+                state.replayIndex = 0;
+                state.nextActionMs = nowMs + actionDelayMs();
+                return;
+            }
+            ItemStack st = slot.getStack();
+            state.pendingClick = true;
+            state.pendingIsReplay = true;
+            state.pendingClickKey = key;
+            state.pendingClickStack = st.copy();
+            state.pendingClickMs = nowMs;
+            state.pendingGuiTitle = getGuiTitleSafe(gui);
+            host.queueClick(new ClickAction(slot.slotNumber, 0, ClickType.PICKUP));
+            state.waitingForCursorClear = true;
+            state.cursorClearSinceMs = 0L;
+            state.nextActionMs = nowMs + actionDelayMs();
+            debugBar("replay click");
+            return;
+        }
+
+        String pathKey = RegAllActionsState.pathKey(state.menuPathKeys);
+        Set<String> done = doneSetForPath(pathKey);
+        Slot next = findNextMenuSlot(gui, pathKey, done);
+        if (next == null)
+        {
+            if (state.menuPathKeys.isEmpty())
             {
                 state.active = false;
                 host.closeCurrentScreen();
                 host.setActionBar(true, "&aRegAllActions done (cached=" + state.cachedCount + ")", 3500L);
-                debugLog("done: no category slots left");
+                debugLog("done: no slots left");
                 return;
             }
-            ItemStack stack = categorySlot.getStack();
-            String key = buildMenuItemKey(stack, categorySlot.slotNumber);
-            if (key == null || key.trim().isEmpty())
-            {
-                host.closeCurrentScreen();
-                state.nextActionMs = nowMs + actionDelayMs();
-                return;
-            }
-            state.currentCategoryKey = key;
-            state.currentCategoryStack = stack.copy();
-            state.menuLevel = 1;
-            host.queueClick(new ClickAction(categorySlot.slotNumber, 0, ClickType.PICKUP));
-            state.waitingForCursorClear = true;
-            state.cursorClearSinceMs = 0L;
+            popMenuPath();
+            state.replaying = true;
+            state.replayIndex = 0;
+            host.closeCurrentScreen();
             state.nextActionMs = nowMs + actionDelayMs();
-            debugBar("click category");
-            debugLog("click category key=" + key
-                + " rawName='" + stack.getDisplayName() + "' rawLore='" + readLore(stack) + "' slot=" + categorySlot.slotNumber
-                + " doneCategories=" + state.doneCategories.toString());
+            debugBar("menu done");
             return;
         }
-
-        if (state.menuLevel == 1)
-        {
-            Slot subItemSlot = findSubItemSlot(gui);
-            if (subItemSlot == null)
-            {
-                if (state.currentCategoryKey != null)
-                {
-                    state.doneCategories.add(state.currentCategoryKey);
-                }
-                state.currentCategoryKey = null;
-                state.currentCategoryStack = ItemStack.EMPTY;
-                state.menuLevel = 0;
-                host.closeCurrentScreen();
-                state.nextActionMs = nowMs + 250L;
-                return;
-            }
-            ItemStack stack = subItemSlot.getStack();
-            String key = buildMenuItemKey(stack, subItemSlot.slotNumber);
-            if (key == null || key.trim().isEmpty())
-            {
-                state.nextActionMs = nowMs + actionDelayMs();
-                return;
-            }
-            state.currentSubItemKey = key;
-            state.currentSubItemStack = stack.copy();
-            markSubItemDone(key);
-            host.queueClick(new ClickAction(subItemSlot.slotNumber, 0, ClickType.PICKUP));
-            state.awaitingSubClickClose = true;
-            state.subClickMs = nowMs;
-            state.nextActionMs = nowMs + actionDelayMs();
-            debugBar("click subitem");
-            Set<String> done = state.doneSubItemsByCategory.get(state.currentCategoryKey);
-            debugLog("click subitem key=" + key
-                + " rawName='" + stack.getDisplayName() + "' rawLore='" + readLore(stack) + "' slot=" + subItemSlot.slotNumber
-                + " doneSubItems=" + (done == null ? "[]" : done.toString()));
-        }
+        ItemStack stack = next.getStack();
+        String key = buildMenuItemKey(stack, next.slotNumber);
+        done.add(key);
+        state.pendingClick = true;
+        state.pendingIsReplay = false;
+        state.pendingClickKey = key;
+        state.pendingClickStack = stack.copy();
+        state.pendingClickMs = nowMs;
+        state.pendingGuiTitle = getGuiTitleSafe(gui);
+        host.queueClick(new ClickAction(next.slotNumber, 0, ClickType.PICKUP));
+        state.waitingForCursorClear = true;
+        state.cursorClearSinceMs = 0L;
+        state.nextActionMs = nowMs + actionDelayMs();
+        debugBar("click item");
+        debugLog("click item key=" + key
+            + " rawName='" + stack.getDisplayName() + "' rawLore='" + readLore(stack) + "' slot=" + next.slotNumber
+            + " done=" + done.toString());
     }
 
     private boolean hasTopInventory(GuiContainer gui)
@@ -519,6 +580,88 @@ public final class RegAllActionsModule
             return false;
         }
         return nowMs - state.menuReadySinceMs >= 250L;
+    }
+
+    private String getGuiTitleSafe(GuiContainer gui)
+    {
+        if (gui instanceof GuiChest)
+        {
+            return host.getGuiTitle((GuiChest) gui);
+        }
+        return "";
+    }
+
+    private Set<String> doneSetForPath(String pathKey)
+    {
+        Set<String> done = state.doneByPath.get(pathKey);
+        if (done == null)
+        {
+            done = new HashSet<>();
+            state.doneByPath.put(pathKey, done);
+        }
+        return done;
+    }
+
+    private Slot findNextMenuSlot(GuiContainer gui, String pathKey, Set<String> done)
+    {
+        if (gui == null || done == null)
+        {
+            return null;
+        }
+        String guiTitle = getGuiTitleSafe(gui);
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || host.isPlayerInventorySlot(gui, slot))
+            {
+                continue;
+            }
+            ItemStack st = slot.getStack();
+            if (st == null || st.isEmpty())
+            {
+                continue;
+            }
+            String k = buildMenuItemKey(st, slot.slotNumber);
+            if (k == null || k.trim().isEmpty())
+            {
+                continue;
+            }
+            if (isImportedRecord(pathKey, guiTitle, st))
+            {
+                done.add(k);
+                debugLog("skip item (imported) key=" + k + " rawName='" + st.getDisplayName() + "'");
+                continue;
+            }
+            if (!done.contains(k))
+            {
+                return slot;
+            }
+        }
+        return null;
+    }
+
+    private void popMenuPath()
+    {
+        if (!state.menuPathKeys.isEmpty())
+        {
+            state.menuPathKeys.remove(state.menuPathKeys.size() - 1);
+        }
+        if (!state.menuPathStacks.isEmpty())
+        {
+            state.menuPathStacks.remove(state.menuPathStacks.size() - 1);
+        }
+    }
+
+    private void finishActionAndReplay(long nowMs)
+    {
+        state.waitingForChest = false;
+        state.openingChest = false;
+        state.chestReadySinceMs = 0L;
+        state.chestReadyWindowId = -1;
+        state.replaying = !state.menuPathKeys.isEmpty();
+        state.replayIndex = 0;
+        state.currentActionStack = ItemStack.EMPTY;
+        state.currentActionGuiTitle = "";
+        state.nextActionMs = nowMs + actionDelayMs();
     }
 
     private Slot findSlotByKey(GuiContainer gui, String key)
@@ -614,7 +757,7 @@ public final class RegAllActionsModule
             {
                 continue;
             }
-            if (isImportedRecord(state.currentCategoryStack, st))
+            if (isImportedRecord(RegAllActionsState.pathKey(state.menuPathKeys), "", st))
             {
                 done.add(k);
                 debugLog("skip subitem (imported) key=" + k + " rawName='" + st.getDisplayName() + "'");
@@ -647,9 +790,17 @@ public final class RegAllActionsModule
     {
         RegAllRecord record = new RegAllRecord();
         record.hasChest = hasChest;
-        record.categoryItem = formatItemStack(state.currentCategoryStack);
-        record.subItem = formatItemStack(state.currentSubItemStack);
-        record.guiTitle = (gui != null) ? host.getGuiTitle(gui) : "";
+        record.categoryPath = RegAllActionsState.pathKey(state.menuPathKeys);
+        if (!state.menuPathStacks.isEmpty())
+        {
+            record.categoryItem = formatItemStack(state.menuPathStacks.get(state.menuPathStacks.size() - 1));
+        }
+        else
+        {
+            record.categoryItem = "";
+        }
+        record.subItem = formatItemStack(state.currentActionStack);
+        record.guiTitle = (gui != null) ? host.getGuiTitle(gui) : state.currentActionGuiTitle;
         record.signLines = readSignLines();
         if (hasChest && gui != null)
         {
@@ -689,6 +840,127 @@ public final class RegAllActionsModule
             without = s;
         }
         return without.replace('\u00A0', ' ').replaceAll("\\s+", " ").trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeSignLineForKey(String s)
+    {
+        if (s == null)
+        {
+            return "";
+        }
+        ensureSignAliasesLoaded(Minecraft.getMinecraft());
+        String without = net.minecraft.util.text.TextFormatting.getTextWithoutFormattingCodes(s);
+        String aliased = s;
+        if (signAliases.containsKey(s))
+        {
+            aliased = signAliases.get(s);
+        }
+        else if (without != null && signAliases.containsKey(without))
+        {
+            aliased = signAliases.get(without);
+        }
+        return normalizeForKey(aliased);
+    }
+
+    private void ensureSignAliasesLoaded(Minecraft mc)
+    {
+        if (signAliasesLoaded)
+        {
+            return;
+        }
+        signAliasesLoaded = true;
+        signAliases.put("Выбрать обьект", "Выбрать объект");
+        signAliases.put("Массивы", "Работа с массивами");
+        signAliases.put("Присв. переменную", "Установить переменную");
+        signAliases.put("Если переменная", "Если значение");
+        loadAliasesFromResource();
+        if (mc != null && mc.mcDataDir != null)
+        {
+            File file = new File(mc.mcDataDir, "regallactions_aliases.json");
+            loadAliasesFromFile(file);
+        }
+    }
+
+    private void loadAliasesFromResource()
+    {
+        try (InputStream in = RegAllActionsModule.class.getClassLoader()
+            .getResourceAsStream("regallactions_aliases.json"))
+        {
+            if (in == null)
+            {
+                return;
+            }
+            parseAliasesJson(readAll(in));
+        }
+        catch (Exception ignore) { }
+    }
+
+    private void loadAliasesFromFile(File file)
+    {
+        if (file == null || !file.exists())
+        {
+            return;
+        }
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), "UTF-8")))
+        {
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null)
+            {
+                sb.append(line).append("\n");
+            }
+            parseAliasesJson(sb.toString());
+        }
+        catch (Exception ignore) { }
+    }
+
+    private void parseAliasesJson(String json)
+    {
+        if (json == null)
+        {
+            return;
+        }
+        Pattern section = Pattern.compile("\"sign1\"\\s*:\\s*\\{(.*?)\\}", Pattern.DOTALL);
+        Matcher secMatch = section.matcher(json);
+        if (!secMatch.find())
+        {
+            return;
+        }
+        String body = secMatch.group(1);
+        Pattern pair = Pattern.compile("\"([^\"]+)\"\\s*:\\s*\"([^\"]*)\"");
+        Matcher m = pair.matcher(body);
+        while (m.find())
+        {
+            String key = unescapeJson(m.group(1));
+            String val = unescapeJson(m.group(2));
+            if (!key.isEmpty())
+            {
+                signAliases.put(key, val);
+            }
+        }
+    }
+
+    private String unescapeJson(String s)
+    {
+        if (s == null)
+        {
+            return "";
+        }
+        return s.replace("\\\\n", "\n").replace("\\\\\"", "\"").replace("\\\\\\\\", "\\");
+    }
+
+    private String readAll(InputStream in) throws Exception
+    {
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, "UTF-8")))
+        {
+            String line;
+            while ((line = reader.readLine()) != null)
+            {
+                sb.append(line).append("\n");
+            }
+        }
+        return sb.toString();
     }
 
     private long actionDelayMs()
@@ -776,33 +1048,74 @@ public final class RegAllActionsModule
         return "[" + reg + " meta=" + stack.getMetadata() + "] " + name + (lore.isEmpty() ? "" : " | " + lore);
     }
 
-    private String buildRecordKey(String categoryItem, String subItem, String[] signLines)
+    private String buildRecordKey(String categoryPath, String categoryItem, String subItem, String guiTitle, String[] signLines)
     {
         StringBuilder sb = new StringBuilder();
+        sb.append(normalizeForKey(categoryPath)).append("|");
         sb.append(normalizeForKey(categoryItem)).append("|");
         sb.append(normalizeForKey(subItem)).append("|");
+        sb.append(normalizeForKey(guiTitle)).append("|");
         if (signLines != null)
         {
             for (int i = 0; i < signLines.length; i++)
             {
                 if (i > 0) sb.append("|");
-                sb.append(normalizeForKey(signLines[i]));
+                sb.append(normalizeSignLineForKey(signLines[i]));
             }
         }
         return sb.toString();
     }
 
-    private boolean isImportedRecord(ItemStack categoryStack, ItemStack subItemStack)
+    private String buildLooseRecordKey(String categoryItem, String subItem, String guiTitle, String[] signLines)
+    {
+        StringBuilder sb = new StringBuilder();
+        sb.append(normalizeForKey(categoryItem)).append("|");
+        sb.append(normalizeForKey(subItem)).append("|");
+        sb.append(normalizeForKey(guiTitle)).append("|");
+        if (signLines != null)
+        {
+            for (int i = 0; i < signLines.length; i++)
+            {
+                if (i > 0) sb.append("|");
+                sb.append(normalizeSignLineForKey(signLines[i]));
+            }
+        }
+        return sb.toString();
+    }
+
+    private String buildVeryLooseRecordKey(String categoryItem, String subItem)
+    {
+        StringBuilder sb = new StringBuilder();
+        sb.append(normalizeForKey(categoryItem)).append("|");
+        sb.append(normalizeForKey(subItem));
+        return sb.toString();
+    }
+
+    private boolean isImportedRecord(String pathKey, String guiTitle, ItemStack subItemStack)
     {
         if (state.importedRecordKeys.isEmpty())
         {
             return false;
         }
         String[] signLines = readSignLines();
-        String categoryItem = formatItemStack(categoryStack);
+        String categoryItem = "";
+        if (!state.menuPathStacks.isEmpty())
+        {
+            categoryItem = formatItemStack(state.menuPathStacks.get(state.menuPathStacks.size() - 1));
+        }
         String subItem = formatItemStack(subItemStack);
-        String key = buildRecordKey(categoryItem, subItem, signLines);
-        return state.importedRecordKeys.contains(key);
+        String key = buildRecordKey(pathKey, categoryItem, subItem, guiTitle, signLines);
+        if (state.importedRecordKeys.contains(key))
+        {
+            return true;
+        }
+        String looseKey = buildLooseRecordKey(categoryItem, subItem, guiTitle, signLines);
+        if (state.importedLooseKeys.contains(looseKey))
+        {
+            return true;
+        }
+        String veryLooseKey = buildVeryLooseRecordKey(categoryItem, subItem);
+        return state.importedVeryLooseKeys.contains(veryLooseKey);
     }
 
     private String readLore(ItemStack stack)
@@ -847,8 +1160,10 @@ public final class RegAllActionsModule
             state.importLoaded = true;
             return;
         }
+        String categoryPath = null;
         String category = null;
         String subItem = null;
+        String guiTitle = null;
         String[] signLines = new String[]{"", "", "", ""};
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(inFile), "UTF-8")))
         {
@@ -859,13 +1174,23 @@ public final class RegAllActionsModule
                 {
                     if (category != null && subItem != null)
                     {
-                        String key = buildRecordKey(category, subItem, signLines);
+                        String key = buildRecordKey(categoryPath, category, subItem, guiTitle, signLines);
                         state.importedRecordKeys.add(key);
+                        String loose = buildLooseRecordKey(category, subItem, guiTitle, signLines);
+                        state.importedLooseKeys.add(loose);
+                        String veryLoose = buildVeryLooseRecordKey(category, subItem);
+                        state.importedVeryLooseKeys.add(veryLoose);
                     }
+                    categoryPath = null;
                     category = null;
                     subItem = null;
+                    guiTitle = null;
                     signLines = new String[]{"", "", "", ""};
                     continue;
+                }
+                if (line.startsWith("path="))
+                {
+                    categoryPath = line.substring("path=".length());
                 }
                 if (line.startsWith("category="))
                 {
@@ -891,19 +1216,31 @@ public final class RegAllActionsModule
                 {
                     signLines[3] = line.substring("sign4=".length());
                 }
+                else if (line.startsWith("gui="))
+                {
+                    guiTitle = line.substring("gui=".length());
+                }
             }
             if (category != null && subItem != null)
             {
-                String key = buildRecordKey(category, subItem, signLines);
+                String key = buildRecordKey(categoryPath, category, subItem, guiTitle, signLines);
                 state.importedRecordKeys.add(key);
+                String loose = buildLooseRecordKey(category, subItem, guiTitle, signLines);
+                state.importedLooseKeys.add(loose);
             }
             state.importLoaded = true;
-            debugLog("imported records=" + state.importedRecordKeys.size());
+            String msg = "imported records=" + state.importedRecordKeys.size()
+                + " loose=" + state.importedLooseKeys.size()
+                + " veryLoose=" + state.importedVeryLooseKeys.size();
+            LOGGER.info("RegAllActions {}", msg);
+            debugLog(msg);
         }
         catch (Exception e)
         {
             state.importLoaded = true;
-            debugLog("import failed: " + e.getClass().getSimpleName());
+            String msg = "import failed: " + e.getClass().getSimpleName();
+            LOGGER.warn("RegAllActions {}", msg);
+            debugLog(msg);
         }
     }
 
@@ -915,13 +1252,36 @@ public final class RegAllActionsModule
             return;
         }
         File outFile = new File(mc.mcDataDir, "regallactions_export.txt");
+        List<RegAllRecord> outRecords = new ArrayList<>();
+        Set<String> seenKeys = new HashSet<>();
+        if (outFile.exists())
+        {
+            List<RegAllRecord> existing = readExportFile(outFile);
+            for (RegAllRecord r : existing)
+            {
+                String key = buildRecordKey(r.categoryPath, r.categoryItem, r.subItem, r.guiTitle, r.signLines);
+                if (seenKeys.add(key))
+                {
+                    outRecords.add(r);
+                }
+            }
+        }
+        for (RegAllRecord r : state.records)
+        {
+            String key = buildRecordKey(r.categoryPath, r.categoryItem, r.subItem, r.guiTitle, r.signLines);
+            if (seenKeys.add(key))
+            {
+                outRecords.add(r);
+            }
+        }
         try (OutputStreamWriter writer = new OutputStreamWriter(new FileOutputStream(outFile), "UTF-8"))
         {
-            writer.write("records=" + state.records.size() + "\n");
-            for (int i = 0; i < state.records.size(); i++)
+            writer.write("records=" + outRecords.size() + "\n");
+            for (int i = 0; i < outRecords.size(); i++)
             {
-                RegAllRecord r = state.records.get(i);
+                RegAllRecord r = outRecords.get(i);
                 writer.write("\n# record " + (i + 1) + "\n");
+                writer.write("path=" + r.categoryPath + "\n");
                 writer.write("category=" + r.categoryItem + "\n");
                 writer.write("subitem=" + r.subItem + "\n");
                 writer.write("gui=" + r.guiTitle + "\n");
@@ -936,11 +1296,118 @@ public final class RegAllActionsModule
                 }
             }
             writer.flush();
-            host.setActionBar(true, "&aExported " + state.records.size() + " records", 3500L);
+            host.setActionBar(true, "&aExported " + outRecords.size() + " records", 3500L);
         }
         catch (Exception e)
         {
             host.setActionBar(false, "&cExport failed: " + e.getClass().getSimpleName(), 3500L);
         }
+    }
+
+    private List<RegAllRecord> readExportFile(File inFile)
+    {
+        List<RegAllRecord> out = new ArrayList<>();
+        if (inFile == null || !inFile.exists())
+        {
+            return out;
+        }
+        String categoryPath = "";
+        String category = null;
+        String subItem = null;
+        String guiTitle = "";
+        String[] signLines = new String[]{"", "", "", ""};
+        boolean hasChest = false;
+        List<String> chestItems = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(inFile), "UTF-8")))
+        {
+            String line;
+            while ((line = reader.readLine()) != null)
+            {
+                if (line.startsWith("# record"))
+                {
+                    if (category != null && subItem != null)
+                    {
+                        RegAllRecord r = new RegAllRecord();
+                        r.categoryPath = categoryPath;
+                        r.categoryItem = category;
+                        r.subItem = subItem;
+                        r.guiTitle = guiTitle;
+                        r.signLines = signLines;
+                        r.hasChest = hasChest;
+                        r.chestItems.addAll(chestItems);
+                        out.add(r);
+                    }
+                    categoryPath = "";
+                    category = null;
+                    subItem = null;
+                    guiTitle = "";
+                    signLines = new String[]{"", "", "", ""};
+                    hasChest = false;
+                    chestItems.clear();
+                    continue;
+                }
+                if (line.startsWith("records="))
+                {
+                    continue;
+                }
+                if (line.startsWith("path="))
+                {
+                    categoryPath = line.substring("path=".length());
+                }
+                else if (line.startsWith("category="))
+                {
+                    category = line.substring("category=".length());
+                }
+                else if (line.startsWith("subitem="))
+                {
+                    subItem = line.substring("subitem=".length());
+                }
+                else if (line.startsWith("gui="))
+                {
+                    guiTitle = line.substring("gui=".length());
+                }
+                else if (line.startsWith("sign1="))
+                {
+                    signLines[0] = line.substring("sign1=".length());
+                }
+                else if (line.startsWith("sign2="))
+                {
+                    signLines[1] = line.substring("sign2=".length());
+                }
+                else if (line.startsWith("sign3="))
+                {
+                    signLines[2] = line.substring("sign3=".length());
+                }
+                else if (line.startsWith("sign4="))
+                {
+                    signLines[3] = line.substring("sign4=".length());
+                }
+                else if (line.startsWith("hasChest="))
+                {
+                    hasChest = Boolean.parseBoolean(line.substring("hasChest=".length()));
+                }
+                else if (line.startsWith("item="))
+                {
+                    chestItems.add(line.substring("item=".length()));
+                }
+            }
+            if (category != null && subItem != null)
+            {
+                RegAllRecord r = new RegAllRecord();
+                r.categoryPath = categoryPath;
+                r.categoryItem = category;
+                r.subItem = subItem;
+                r.guiTitle = guiTitle;
+                r.signLines = signLines;
+                r.hasChest = hasChest;
+                r.chestItems.addAll(chestItems);
+                out.add(r);
+            }
+        }
+        catch (Exception e)
+        {
+            LOGGER.warn("RegAllActions export read failed: {}", e.getClass().getSimpleName());
+        }
+        return out;
     }
 }

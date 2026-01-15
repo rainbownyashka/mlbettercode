@@ -6,6 +6,7 @@ import java.util.List;
 final class RegAllRecord
 {
     String categoryItem = "";
+    String categoryPath = "";
     String subItem = "";
     String guiTitle = "";
     String[] signLines = new String[]{"", "", "", ""};
