@@ -357,6 +357,25 @@ final class PlaceGuiHandler
 
     private static MenuStep findDirectMenuMatch(PlaceModuleHost host, GuiContainer gui, EntityPlayer player, String normSearch)
     {
+        // Prefer exact match to avoid ambiguous contains() cases like:
+        // "Сравнить числа" vs "Сравнить числа (Облегчённая версия)".
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || slot.inventory == player.inventory)
+            {
+                continue;
+            }
+            ItemStack stack = slot.getStack();
+            if (stack == null || stack.isEmpty())
+            {
+                continue;
+            }
+            String key = host.normalizeForMatch(host.getItemNameKey(stack));
+            if (!key.isEmpty() && key.equals(normSearch))
+            {
+                return new MenuStep(slot.slotNumber, true);
+            }
+        }
         for (Slot slot : gui.inventorySlots.inventorySlots)
         {
             if (slot == null || slot.inventory == player.inventory)
@@ -382,6 +401,18 @@ final class PlaceGuiHandler
         if (items == null || normSearch == null || normSearch.isEmpty())
         {
             return false;
+        }
+        for (ItemStack stack : items)
+        {
+            if (stack == null || stack.isEmpty())
+            {
+                continue;
+            }
+            String key = host.normalizeForMatch(host.getItemNameKey(stack));
+            if (!key.isEmpty() && key.equals(normSearch))
+            {
+                return true;
+            }
         }
         for (ItemStack stack : items)
         {

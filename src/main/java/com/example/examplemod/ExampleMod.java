@@ -8406,6 +8406,107 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         sendCreativeSlotUpdate(mc, slot, stack);
     }
 
+    private int giveItemToHotbarSlot(Minecraft mc, ItemStack stack)
+    {
+        Integer slot = findEmptyHotbarSlot(mc);
+        if (slot == null)
+        {
+            // fallback: overwrite the currently held hotbar slot
+            slot = mc == null || mc.player == null ? null : mc.player.inventory.currentItem;
+        }
+        if (slot == null)
+        {
+            slot = 0;
+        }
+        mc.player.inventory.setInventorySlotContents(slot, stack);
+        sendCreativeSlotUpdate(mc, slot, stack);
+        return slot;
+    }
+
+    @Override
+    public int giveQuickInputItemToHotbar(int mode, String raw, boolean saveVar)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null || mc.playerController == null)
+        {
+            return -1;
+        }
+        if (!mc.playerController.isInCreativeMode() || mc.playerController.getCurrentGameType() != GameType.CREATIVE)
+        {
+            return -1;
+        }
+        if (raw == null)
+        {
+            return -1;
+        }
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty())
+        {
+            return -1;
+        }
+
+        String finalRaw = trimmed;
+        String display;
+        if (mode == INPUT_MODE_NUMBER)
+        {
+            String number = extractNumber(trimmed);
+            if (number.isEmpty())
+            {
+                return -1;
+            }
+            finalRaw = number;
+            display = applyColorCodes("&c" + number);
+        }
+        else if (mode == INPUT_MODE_LOCATION)
+        {
+            display = finalRaw;
+        }
+        else if (mode == INPUT_MODE_VARIABLE || mode == INPUT_MODE_ARRAY)
+        {
+            finalRaw = normalizePlainName(trimmed);
+            if (finalRaw.isEmpty())
+            {
+                return -1;
+            }
+            display = applyColorCodes("&r" + finalRaw);
+        }
+        else if (mode == INPUT_MODE_APPLE)
+        {
+            display = applyColorCodes(finalRaw);
+        }
+        else
+        {
+            // text
+            display = normalizeTextName(finalRaw);
+        }
+
+        ItemStack template = templateForMode(mode);
+        ItemStack give = template == null || template.isEmpty() ? new ItemStack(Items.BOOK, 1) : template.copy();
+        give.setCount(1);
+        give.setStackDisplayName(display);
+        if (mode == INPUT_MODE_VARIABLE)
+        {
+            if (saveVar || savedVariableNames.contains(finalRaw))
+            {
+                applySavedVariableTag(give);
+                if (saveVar)
+                {
+                    savedVariableNames.add(finalRaw);
+                }
+            }
+            else
+            {
+                removeSavedVariableTag(give);
+            }
+        }
+        if (mode == INPUT_MODE_APPLE)
+        {
+            applyAppleTag(give, display);
+        }
+
+        return giveItemToHotbarSlot(mc, give);
+    }
+
     private void giveExtraIfMissing(Minecraft mc, ItemStack stack, String display)
     {
         if (!inventoryHasDisplayName(mc, display))

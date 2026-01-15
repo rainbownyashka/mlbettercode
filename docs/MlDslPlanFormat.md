@@ -52,3 +52,10 @@ Alternative format:
   ]
 }
 ```
+
+## DSL blocks -> plan rows
+
+The MLDSL compiler emits one row per top-level block:
+- `event(name) { ... }` -> row starts with `diamond_block` and `name` (e.g. `вход`)
+- `func name { ... }` -> row starts with `lapis_block` and `name`
+- `loop name ticks { ... }` -> row starts with `emerald_block`, sets its name, then sets tick period (min 5)

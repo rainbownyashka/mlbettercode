@@ -81,6 +81,94 @@ final class PlaceTickHandler
 
         if (entry.placedBlock)
         {
+            // Post-place sign interactions (functions/cycles). These don't use menus/containers.
+            if (entry.postPlaceKind != PlaceEntry.POST_PLACE_NONE && entry.postPlaceStage < 3)
+            {
+                if (nowMs < entry.postPlaceNextMs)
+                {
+                    return;
+                }
+
+                BlockPos signPos = host.findSignAtZMinus1(mc.world, entry.pos);
+                BlockPos clickPos = signPos != null ? signPos : entry.pos;
+                if (clickPos == null)
+                {
+                    host.setActionBar(false, "&c/placeadvanced: no sign pos", 2500L);
+                    state.reset();
+                    return;
+                }
+
+                if (entry.postPlaceStage == 0)
+                {
+                    if (entry.postPlaceName == null || entry.postPlaceName.trim().isEmpty())
+                    {
+                        host.setActionBar(false, "&c/placeadvanced: missing name", 2500L);
+                        state.reset();
+                        return;
+                    }
+                    int slot = host.giveQuickInputItemToHotbar(PlaceModule.INPUT_MODE_TEXT, entry.postPlaceName, false);
+                    if (slot >= 0 && slot < 9 && mc.player.inventory.currentItem != slot)
+                    {
+                        mc.player.inventory.currentItem = slot;
+                        if (mc.playerController != null)
+                        {
+                            mc.playerController.updateController();
+                        }
+                        if (mc.player != null && mc.player.connection != null)
+                        {
+                            mc.player.connection.sendPacket(new CPacketHeldItemChange(slot));
+                        }
+                    }
+                    try
+                    {
+                        Vec3d hit = new Vec3d(0.5, 0.5, 0.5);
+                        runPlaceClick(mc, clickPos, hit);
+                        mc.player.swingArm(EnumHand.MAIN_HAND);
+                    }
+                    catch (Exception ignore) { }
+
+                    entry.postPlaceStage = 1;
+                    entry.postPlaceNextMs = nowMs + 550L;
+                    return;
+                }
+
+                if (entry.postPlaceStage == 1 && entry.postPlaceKind == PlaceEntry.POST_PLACE_CYCLE)
+                {
+                    int ticks = Math.max(5, entry.postPlaceCycleTicks);
+                    int slot = host.giveQuickInputItemToHotbar(PlaceModule.INPUT_MODE_NUMBER, String.valueOf(ticks), false);
+                    if (slot >= 0 && slot < 9 && mc.player.inventory.currentItem != slot)
+                    {
+                        mc.player.inventory.currentItem = slot;
+                        if (mc.playerController != null)
+                        {
+                            mc.playerController.updateController();
+                        }
+                        if (mc.player != null && mc.player.connection != null)
+                        {
+                            mc.player.connection.sendPacket(new CPacketHeldItemChange(slot));
+                        }
+                    }
+                    try
+                    {
+                        Vec3d hit = new Vec3d(0.5, 0.5, 0.5);
+                        runPlaceClick(mc, clickPos, hit);
+                        mc.player.swingArm(EnumHand.MAIN_HAND);
+                    }
+                    catch (Exception ignore) { }
+
+                    entry.postPlaceStage = 2;
+                    entry.postPlaceNextMs = nowMs + 550L;
+                    return;
+                }
+
+                // Done: advance to next entry.
+                entry.awaitingMenu = false;
+                entry.awaitingParamsChest = false;
+                entry.awaitingArgs = false;
+                state.current = null;
+                return;
+            }
+
             if (entry.awaitingParamsChest && !entry.needOpenParamsChest && mc.currentScreen == null)
             {
                 entry.needOpenParamsChest = true;
@@ -156,6 +244,25 @@ final class PlaceTickHandler
             return;
         }
 
+        if (entry.moveOnly)
+        {
+            double dx = entry.pos.getX() + 0.5;
+            double dy = entry.pos.getY();
+            double dz = entry.pos.getZ() - 2.0 + 0.5;
+
+            if (mc.player.getDistanceSq(dx, dy, dz) <= 6.0)
+            {
+                state.current = null;
+                return;
+            }
+            if (!host.tpPathQueueIsEmpty())
+            {
+                return;
+            }
+            host.buildTpPathQueue(mc.world, mc.player.posX, mc.player.posY, mc.player.posZ, dx, dy, dz);
+            return;
+        }
+
         double dx = entry.pos.getX() + 0.5;
         double dy = entry.pos.getY();
         double dz = entry.pos.getZ() - 2.0 + 0.5;
@@ -200,16 +307,26 @@ final class PlaceTickHandler
                 }
 
                 entry.placedBlock = true;
-                entry.awaitingMenu = true;
-                entry.menuStartMs = System.currentTimeMillis();
-                entry.needOpenMenu = true;
-                entry.menuOpenAttempts = 0;
-                entry.nextMenuActionMs = System.currentTimeMillis() + 350L;
-                entry.menuClicksSinceOpen = 0;
-                entry.menuNonEmptySinceMs = 0L;
-                entry.menuNonEmptyWindowId = -1;
-                entry.triedSlots.clear();
-                entry.triedWindowId = -1;
+                if (entry.postPlaceKind != PlaceEntry.POST_PLACE_NONE)
+                {
+                    entry.awaitingMenu = false;
+                    entry.needOpenMenu = false;
+                    entry.postPlaceStage = 0;
+                    entry.postPlaceNextMs = System.currentTimeMillis() + 450L;
+                }
+                else
+                {
+                    entry.awaitingMenu = true;
+                    entry.menuStartMs = System.currentTimeMillis();
+                    entry.needOpenMenu = true;
+                    entry.menuOpenAttempts = 0;
+                    entry.nextMenuActionMs = System.currentTimeMillis() + 350L;
+                    entry.menuClicksSinceOpen = 0;
+                    entry.menuNonEmptySinceMs = 0L;
+                    entry.menuNonEmptyWindowId = -1;
+                    entry.triedSlots.clear();
+                    entry.triedWindowId = -1;
+                }
             }
             catch (Exception ignore) { }
             return;

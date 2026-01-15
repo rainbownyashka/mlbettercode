@@ -129,15 +129,34 @@ public final class PlaceModule
             String norm = host.normalizeForMatch(search);
 
             PlaceEntry entry = new PlaceEntry(target, b, norm);
-            entry.searchKey = norm;
 
-            if (!"no".equalsIgnoreCase(argsTok))
+            // Special blocks:
+            // - lapis_block: Function (name is set by right-clicking its sign with a TEXT item in hand)
+            // - emerald_block: Cycle (name set like function, then right-click with NUMBER item to set tick period)
+            if (b == Blocks.LAPIS_BLOCK)
             {
-                entry.advancedArgsRaw = argsTok;
-                List<PlaceArg> parsed = PlaceParser.parsePlaceAdvancedArgs(argsTok, host);
-                if (parsed != null && !parsed.isEmpty())
+                entry.searchKey = "";
+                entry.postPlaceKind = PlaceEntry.POST_PLACE_SIGN_NAME;
+                entry.postPlaceName = search;
+            }
+            else if (b == Blocks.EMERALD_BLOCK)
+            {
+                entry.searchKey = "";
+                entry.postPlaceKind = PlaceEntry.POST_PLACE_CYCLE;
+                entry.postPlaceName = search;
+                entry.postPlaceCycleTicks = parseCycleTicks(argsTok);
+            }
+            else
+            {
+                entry.searchKey = norm;
+                if (!"no".equalsIgnoreCase(argsTok))
                 {
-                    entry.advancedArgs = parsed;
+                    entry.advancedArgsRaw = argsTok;
+                    List<PlaceArg> parsed = PlaceParser.parsePlaceAdvancedArgs(argsTok, host);
+                    if (parsed != null && !parsed.isEmpty())
+                    {
+                        entry.advancedArgs = parsed;
+                    }
                 }
             }
 
@@ -207,17 +226,39 @@ public final class PlaceModule
         final class Step
         {
             boolean isPause;
+            boolean isSkip;
             Block block;
             String name;
             String argsRaw;
             List<PlaceArg> parsedArgs;
         }
 
+        // Multi-row support: "newline" token splits the plan into separate code rows.
+        // Each row gets its own allocated free blue-glass start, while preserving the -2X chain inside that row.
+        List<List<Step>> rows = new ArrayList<>();
         List<Step> steps = new ArrayList<>();
         int i = 0;
         while (i < tokens.size())
         {
             String blockTok = tokens.get(i);
+            if ("newline".equalsIgnoreCase(blockTok) || "row".equalsIgnoreCase(blockTok))
+            {
+                if (!steps.isEmpty())
+                {
+                    rows.add(steps);
+                    steps = new ArrayList<>();
+                }
+                i++;
+                continue;
+            }
+            if ("skip".equalsIgnoreCase(blockTok))
+            {
+                Step s = new Step();
+                s.isSkip = true;
+                steps.add(s);
+                i++;
+                continue;
+            }
             if ("air".equalsIgnoreCase(blockTok) || "minecraft:air".equalsIgnoreCase(blockTok))
             {
                 Step s = new Step();
@@ -262,6 +303,15 @@ public final class PlaceModule
             }
             steps.add(s);
         }
+        if (!steps.isEmpty())
+        {
+            rows.add(steps);
+        }
+        if (rows.isEmpty())
+        {
+            host.setActionBar(false, "&cEmpty plan", 2000L);
+            return;
+        }
 
         List<BlockPos> scanned = BlueGlassCodeMap.scan(mc.world, java.util.Collections.singleton(seed));
         if (scanned.isEmpty())
@@ -270,66 +320,127 @@ public final class PlaceModule
             return;
         }
 
-        // Choose a single FREE start glass closest to the player.
-        List<BlockPos> free = new ArrayList<>();
-        for (BlockPos p : scanned)
+        List<BlockPos> starts = BlueGlassCodeMap.allocateNearestContiguousOrNearest(
+            mc.world,
+            scanned,
+            rows.size(),
+            mc.player.posX,
+            mc.player.posY,
+            mc.player.posZ,
+            BlueGlassCodeMap.DEFAULT_STEP_Z);
+        if (starts.isEmpty())
         {
-            if (BlueGlassCodeMap.isFree(mc.world, p))
-            {
-                free.add(p);
-            }
-        }
-        if (free.isEmpty())
-        {
-            host.setActionBar(false, "&cNo free blue glass found (need at least 1)", 4500L);
+            host.setActionBar(false, "&cNo free blue glass found (need at least " + rows.size() + ")", 4500L);
             reset();
             return;
         }
 
-        free.sort(java.util.Comparator.comparingDouble(p -> {
-            double dx = p.getX() + 0.5 - mc.player.posX;
-            double dy = p.getY() + 0.5 - mc.player.posY;
-            double dz = p.getZ() + 0.5 - mc.player.posZ;
-            return dx * dx + dy * dy + dz * dz;
-        }));
-        BlockPos startGlass = free.get(0);
+        BlockPos startGlass = starts.get(0);
         host.setLastGlassPos(startGlass, mc.world.provider.getDimension());
 
-        // Build execution queue.
-        BlockPos glass = startGlass;
-        int p = 0; // -2X offset index for non-air entries (same as /placeadvanced)
-        for (Step s : steps)
+        // Build execution queue: append rows sequentially.
+        for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++)
         {
-            if (s.isPause)
+            BlockPos glass = starts.get(rowIndex);
+            int p = 0; // reset per row
+            for (Step s : rows.get(rowIndex))
             {
-                PlaceEntry pause = new PlaceEntry(mc.player.getPosition(), Blocks.AIR, "");
-                pause.searchKey = "";
-                state.queue.add(pause);
-                continue;
-            }
+                if (s.isPause)
+                {
+                    PlaceEntry pause = new PlaceEntry(mc.player.getPosition(), Blocks.AIR, "");
+                    pause.searchKey = "";
+                    state.queue.add(pause);
+                    continue;
+                }
+                if (s.isSkip)
+                {
+                    BlockPos target = glass.add(-2 * p, 1, 0);
+                    PlaceEntry move = new PlaceEntry(target, Blocks.AIR, "");
+                    move.searchKey = "";
+                    move.moveOnly = true;
+                    state.queue.add(move);
+                    p++;
+                    continue;
+                }
 
-            BlockPos target = glass.add(-2 * p, 1, 0);
+                BlockPos target = glass.add(-2 * p, 1, 0);
 
-            String norm = host.normalizeForMatch(s.name == null ? "" : s.name);
-            PlaceEntry entry = new PlaceEntry(target, s.block, norm);
-            entry.searchKey = norm;
-            if (s.argsRaw != null)
-            {
-                entry.advancedArgsRaw = s.argsRaw;
+                String name = s.name == null ? "" : s.name;
+                String norm = host.normalizeForMatch(name);
+                PlaceEntry entry = new PlaceEntry(target, s.block, norm);
+
+                if (s.block == Blocks.LAPIS_BLOCK)
+                {
+                    entry.searchKey = "";
+                    entry.postPlaceKind = PlaceEntry.POST_PLACE_SIGN_NAME;
+                    entry.postPlaceName = name;
+                }
+                else if (s.block == Blocks.EMERALD_BLOCK)
+                {
+                    entry.searchKey = "";
+                    entry.postPlaceKind = PlaceEntry.POST_PLACE_CYCLE;
+                    entry.postPlaceName = name;
+                    entry.postPlaceCycleTicks = parseCycleTicks(s.argsRaw == null ? "no" : s.argsRaw);
+                }
+                else
+                {
+                    entry.searchKey = norm;
+                    if (s.argsRaw != null)
+                    {
+                        entry.advancedArgsRaw = s.argsRaw;
+                    }
+                    if (s.parsedArgs != null && !s.parsedArgs.isEmpty())
+                    {
+                        entry.advancedArgs = s.parsedArgs;
+                    }
+                }
+                state.queue.add(entry);
+                p++;
             }
-            if (s.parsedArgs != null && !s.parsedArgs.isEmpty())
-            {
-                entry.advancedArgs = s.parsedArgs;
-            }
-            state.queue.add(entry);
-            p++;
         }
 
         state.active = !state.queue.isEmpty();
         state.current = null;
         host.setActionBar(true,
-            "&a/mldsl queued=" + state.queue.size() + " start=" + startGlass.getX() + "," + startGlass.getY() + "," + startGlass.getZ(),
+            "&a/mldsl queued=" + state.queue.size() + " rows=" + rows.size(),
             3500L);
+    }
+
+    private static int parseCycleTicks(String raw)
+    {
+        if (raw == null)
+        {
+            return 5;
+        }
+        String t = raw.trim();
+        if (t.isEmpty() || "no".equalsIgnoreCase(t))
+        {
+            return 5;
+        }
+        // Allow "ticks=20" or raw "20"
+        String digits = t;
+        int eq = t.indexOf('=');
+        if (eq >= 0)
+        {
+            String key = t.substring(0, eq).trim().toLowerCase();
+            if (key.contains("tick"))
+            {
+                digits = t.substring(eq + 1).trim();
+            }
+        }
+        digits = digits.replaceAll("[^0-9]", "");
+        if (digits.isEmpty())
+        {
+            return 5;
+        }
+        try
+        {
+            return Math.max(5, Integer.parseInt(digits));
+        }
+        catch (Exception ignore)
+        {
+            return 5;
+        }
     }
 
     public void runPlaceBlocksCommand(MinecraftServer server, ICommandSender sender, String[] args)

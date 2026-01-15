@@ -45,6 +45,8 @@ public interface PlaceModuleHost
     ItemStack templateForMode(int mode);
     String extractEntryText(ItemStack stack, int mode);
 
+    int giveQuickInputItemToHotbar(int mode, String raw, boolean saveVar);
+
     String normalizeForMatch(String s);
     String getItemNameKey(ItemStack stack);
     String getGuiTitle(GuiChest gui);

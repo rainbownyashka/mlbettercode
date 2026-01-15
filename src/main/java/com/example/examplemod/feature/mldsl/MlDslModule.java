@@ -126,12 +126,18 @@ public final class MlDslModule
         {
             return new File(gameDir, "plan.json");
         }
-        File f = new File(raw);
+        String s = raw.trim();
+        // Minecraft command args may keep quotes; treat "C:\x\y" as a real absolute path.
+        if ((s.startsWith("\"") && s.endsWith("\"")) || (s.startsWith("'") && s.endsWith("'")))
+        {
+            s = s.substring(1, s.length() - 1).trim();
+        }
+        File f = new File(s);
         if (f.isAbsolute())
         {
             return f;
         }
-        return new File(gameDir, raw);
+        return new File(gameDir, s);
     }
 
     private static List<String> loadPlaceAdvancedArgs(File file) throws Exception
@@ -163,7 +169,13 @@ public final class MlDslModule
                 return buildPlaceAdvancedArgsFromEntries(obj.getAsJsonArray("steps"));
             }
 
-            throw new JsonParseException("missing placeadvanced/entries/steps");
+            // Option D: {"rows":[ [...tokens...], [...tokens...] ]}
+            if (obj.has("rows") && obj.get("rows").isJsonArray())
+            {
+                return buildPlaceAdvancedArgsFromRows(obj.getAsJsonArray("rows"));
+            }
+
+            throw new JsonParseException("missing placeadvanced/entries/steps/rows");
         }
     }
 
@@ -182,9 +194,19 @@ public final class MlDslModule
             {
                 continue;
             }
+            if ("newline".equalsIgnoreCase(block) || "row".equalsIgnoreCase(block))
+            {
+                out.add("newline");
+                continue;
+            }
             if ("air".equalsIgnoreCase(block) || "minecraft:air".equalsIgnoreCase(block))
             {
                 out.add("air");
+                continue;
+            }
+            if ("skip".equalsIgnoreCase(block))
+            {
+                out.add("skip");
                 continue;
             }
             String name = getString(e, "name");
@@ -207,6 +229,35 @@ public final class MlDslModule
             out.add(quoteIfNeeded(block));
             out.add(quoteIfNeeded(name));
             out.add(quoteIfNeeded(args));
+        }
+        return out;
+    }
+
+    private static List<String> buildPlaceAdvancedArgsFromRows(JsonArray rows)
+    {
+        List<String> out = new ArrayList<>();
+        if (rows == null)
+        {
+            return out;
+        }
+        boolean first = true;
+        for (JsonElement el : rows)
+        {
+            if (el == null || !el.isJsonArray())
+            {
+                continue;
+            }
+            List<String> toks = readStringArray(el.getAsJsonArray());
+            if (toks.isEmpty())
+            {
+                continue;
+            }
+            if (!first)
+            {
+                out.add("newline");
+            }
+            out.addAll(toks);
+            first = false;
         }
         return out;
     }

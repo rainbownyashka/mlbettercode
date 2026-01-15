@@ -9,6 +9,10 @@ import net.minecraft.util.math.BlockPos;
 
 public class PlaceEntry
 {
+    public static final int POST_PLACE_NONE = 0;
+    public static final int POST_PLACE_SIGN_NAME = 1; // right-click sign with TEXT item
+    public static final int POST_PLACE_CYCLE = 2; // sign name + tick period (NUMBER)
+
     public BlockPos pos;
     public Block block;
     public String searchKey;
@@ -51,6 +55,16 @@ public class PlaceEntry
     public long paramsStartMs;
     public long nextParamsActionMs;
 
+    // Post-place configuration (functions/cycles).
+    public int postPlaceKind = POST_PLACE_NONE;
+    public String postPlaceName;
+    public int postPlaceCycleTicks = -1;
+    public int postPlaceStage = 0;
+    public long postPlaceNextMs = 0L;
+
+    // Move-only step (no placement, only TP path advance).
+    public boolean moveOnly = false;
+
     public PlaceEntry(BlockPos pos, Block block)
     {
         this.pos = pos;
@@ -85,6 +99,14 @@ public class PlaceEntry
         this.menuClicksSinceOpen = 0;
         this.menuNonEmptySinceMs = 0L;
         this.menuNonEmptyWindowId = -1;
+
+        this.postPlaceKind = POST_PLACE_NONE;
+        this.postPlaceName = null;
+        this.postPlaceCycleTicks = -1;
+        this.postPlaceStage = 0;
+        this.postPlaceNextMs = 0L;
+
+        this.moveOnly = false;
     }
 
     public PlaceEntry(BlockPos pos, Block block, String searchKey)
@@ -121,5 +143,13 @@ public class PlaceEntry
         this.menuClicksSinceOpen = 0;
         this.menuNonEmptySinceMs = 0L;
         this.menuNonEmptyWindowId = -1;
+
+        this.postPlaceKind = POST_PLACE_NONE;
+        this.postPlaceName = null;
+        this.postPlaceCycleTicks = -1;
+        this.postPlaceStage = 0;
+        this.postPlaceNextMs = 0L;
+
+        this.moveOnly = false;
     }
 }
