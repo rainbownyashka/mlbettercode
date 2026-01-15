@@ -175,7 +175,7 @@ import java.util.concurrent.TimeUnit;
 
 @Mod(modid = ExampleMod.MODID, name = ExampleMod.NAME, version = ExampleMod.VERSION,
     guiFactory = "com.example.examplemod.ModGuiFactory")
-public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
+public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.example.examplemod.feature.mldsl.MlDslHost
 {
     public static final String MODID = "bettercode";
     public static final String NAME = "Creative+ BetterCode";
@@ -379,6 +379,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
     private final Map<String, String> clickFunctionMap = new HashMap<>();
     // Place blocks (/place, /placeadvanced) module
     private final PlaceModule placeModule = new PlaceModule(this);
+    // MVP plan runner (/mldsl run plan.json) that drives PlaceModule
+    private final com.example.examplemod.feature.mldsl.MlDslModule mlDslModule =
+        new com.example.examplemod.feature.mldsl.MlDslModule(this, placeModule);
     // Discover/crawl menus into clickMenuMap
     private final RegAllActionsModule regAllActionsModule = new RegAllActionsModule(this);
     // Legacy state (kept temporarily while migrating code out of this class).
@@ -2224,6 +2227,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost
             "/place <block1> [block2] [block3]... - place blocks relative to last blue glass", placeModule::runPlaceBlocksCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("placeadvanced",
             "/placeadvanced <block> <name> <args|no> [<block> <name> <args|no> ...]", placeModule::runPlaceAdvancedCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("mldsl",
+            "/mldsl run [path] [--start N] - run plan.json via placeadvanced", mlDslModule::runCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("testplace",
             "/testplace <method 1-10> [block]", this::runTestPlaceCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("regallactions",

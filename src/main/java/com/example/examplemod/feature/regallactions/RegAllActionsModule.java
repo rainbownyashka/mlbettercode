@@ -6,10 +6,12 @@ import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.inventory.GuiChest;
 import net.minecraft.client.gui.inventory.GuiContainer;
 import net.minecraft.command.ICommandSender;
-import net.minecraft.init.Blocks;
-import net.minecraft.inventory.ClickType;
-import net.minecraft.inventory.Slot;
-import net.minecraft.item.ItemStack;
+import net.minecraft.init.Blocks; 
+import net.minecraft.inventory.ContainerChest;
+import net.minecraft.inventory.ClickType; 
+import net.minecraft.inventory.IInventory;
+import net.minecraft.inventory.Slot; 
+import net.minecraft.item.ItemStack; 
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.server.MinecraftServer;
@@ -29,9 +31,10 @@ import java.io.OutputStreamWriter;
 import java.io.InputStreamReader;
 import java.io.BufferedReader;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.ArrayList; 
+import java.util.Arrays;
+import java.util.HashMap; 
+import java.util.HashSet; 
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -46,6 +49,7 @@ public final class RegAllActionsModule
     private final Map<String, String> signAliases = new HashMap<>();
     private boolean signAliasesLoaded = false;
     private static final Logger LOGGER = LogManager.getLogger("BetterCode-RegAllActions");
+    private static final Pattern FORMATTED_ITEM_RE = Pattern.compile("^\\[([^\\s]+) meta=(\\d+)\\]\\s*(.*)$");
 
     public RegAllActionsModule(RegAllActionsHost host)
     {
@@ -109,6 +113,45 @@ public final class RegAllActionsModule
             return;
         }
 
+        boolean resaveMode = false;
+        boolean resaveCategoryMode = false;
+        String resaveQuery = "";
+        if (args != null && args.length > 0)
+        {
+            if ("resavecat".equalsIgnoreCase(args[0]) || "resavecategory".equalsIgnoreCase(args[0]))
+            {
+                resaveMode = true;
+                resaveCategoryMode = true;
+                resaveQuery = sanitizeResaveQuery(joinArgs(args, 1));
+            }
+            else if ("resave".equalsIgnoreCase(args[0]) || "recache".equalsIgnoreCase(args[0]))
+            {
+                resaveMode = true;
+                if (args.length >= 2)
+                {
+                    String mode = args[1].toLowerCase(Locale.ROOT);
+                    if ("category".equals(mode) || "cat".equals(mode) || "\u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f".equals(mode))
+                    {
+                        resaveCategoryMode = true;
+                        resaveQuery = sanitizeResaveQuery(joinArgs(args, 2));
+                    }
+                    else
+                    {
+                        resaveQuery = sanitizeResaveQuery(joinArgs(args, 1));
+                    }
+                }
+                else
+                {
+                    resaveQuery = sanitizeResaveQuery(joinArgs(args, 1));
+                }
+            }
+        }
+        if (resaveMode && (resaveQuery == null || resaveQuery.trim().isEmpty()))
+        {
+            host.setActionBar(false, "&cUsage: /regallactions resave <text>  or  /regallactions resave category <text>", 4000L);
+            return;
+        }
+
         if (!host.isEditorModeActive() || !host.isDevCreativeScoreboard(mc))
         {
             host.setActionBar(false, "&cNot in DEV creative mode", 2500L);
@@ -168,12 +211,60 @@ public final class RegAllActionsModule
         state.currentSubItemKey = null;
         state.currentCategoryStack = ItemStack.EMPTY;
         state.currentSubItemStack = ItemStack.EMPTY;
+        state.resaveMode = resaveMode;
+        state.resaveCategoryMode = resaveCategoryMode;
+        state.resaveQueryNorm = resaveMode ? normalizeForKey(resaveQuery) : null;
+        state.resaveReplaceLooseKeys.clear();
 
-        host.setActionBar(true, "&aRegAllActions started", 2000L);
+        if (state.resaveMode && state.resaveQueryNorm != null && !state.resaveQueryNorm.isEmpty())
+        {
+            String mode = state.resaveCategoryMode ? "category" : "action";
+            host.setActionBar(true, "&eRegAllActions resave (" + mode + "): " + resaveQuery, 3500L);
+        }
+        else
+        {
+            host.setActionBar(true, "&aRegAllActions started", 2000L);
+        }
         if (host.isDebugUi())
         {
             host.debugChat("/regallactions: sign=" + signPos.toString());
         }
+    }
+
+    private static String joinArgs(String[] args, int start)
+    {
+        if (args == null || args.length <= start)
+        {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = start; i < args.length; i++)
+        {
+            if (i > start) sb.append(" ");
+            sb.append(args[i]);
+        }
+        return sb.toString().trim();
+    }
+
+    private static String sanitizeResaveQuery(String s)
+    {
+        if (s == null)
+        {
+            return "";
+        }
+        String t = s.trim();
+        // Minecraft client commands don't parse quotes; they come through as literal characters.
+        // Accept both: /regallactions resave сообщение  and /regallactions resave "Отправить сообщение"
+        if (t.length() >= 2)
+        {
+            if ((t.startsWith("\"") && t.endsWith("\"")) || (t.startsWith("'") && t.endsWith("'")))
+            {
+                t = t.substring(1, t.length() - 1).trim();
+            }
+        }
+        // Remove any remaining quote characters (user may have mixed quoting across args).
+        t = t.replace("\"", "").replace("'", "").trim();
+        return t;
     }
 
     private BlockPos findNearestSign(Minecraft mc, int radius)
@@ -252,6 +343,28 @@ public final class RegAllActionsModule
                 state.nextActionMs = nowMs + actionDelayMs();
                 return;
             }
+
+            // In resave mode, do not record/cache actions that don't match the query.
+            // This prevents "first random action got resaved" when the server closes the menu quickly.
+            if (state.resaveMode && state.resaveQueryNorm != null && !state.resaveQueryNorm.isEmpty())
+            {
+                if (!matchesResaveQuery(state.pendingClickStack))
+                {
+                    debugLog("resave skip non-matching action rawName='" + state.pendingClickStack.getDisplayName()
+                        + "' rawLore='" + readLore(state.pendingClickStack) + "'");
+                    state.pendingClick = false;
+                    state.pendingClickMs = 0L;
+                    state.pendingClickKey = null;
+                    state.pendingClickStack = ItemStack.EMPTY;
+                    state.pendingGuiTitle = "";
+                    state.waitingForCursorClear = false;
+                    state.cursorClearSinceMs = 0L;
+                    finishActionAndReplay(nowMs);
+                    debugBar("resave skip");
+                    return;
+                }
+            }
+
             state.currentActionStack = state.pendingClickStack.copy();
             state.currentActionGuiTitle = state.pendingGuiTitle;
             state.pendingClick = false;
@@ -262,6 +375,8 @@ public final class RegAllActionsModule
             state.waitingForCursorClear = false;
             state.cursorClearSinceMs = 0L;
             state.waitingForChest = true;
+            state.chestSpawnStartMs = nowMs;
+            state.chestSpawnDeadlineMs = nowMs + 4000L;
             state.nextActionMs = nowMs + actionDelayMs();
             debugBar("action -> wait chest");
             return;
@@ -274,7 +389,12 @@ public final class RegAllActionsModule
 
         if (state.openingChest && nowMs > state.chestOpenDeadlineMs)
         {
-            state.records.add(buildRecord(false, null));
+            RegAllRecord record = buildRecord(false, null);
+            state.records.add(record);
+            if (onRecordAdded(mc, record))
+            {
+                return;
+            }
             finishActionAndReplay(nowMs);
             return;
         }
@@ -291,10 +411,40 @@ public final class RegAllActionsModule
             BlockPos chestPos = signPos.add(0, 1, 1);
             if (mc.world.getBlockState(chestPos).getBlock() != Blocks.TRAPPED_CHEST)
             {
-                state.records.add(buildRecord(false, null));
+                if (state.chestSpawnStartMs == 0L)
+                {
+                    state.chestSpawnStartMs = nowMs;
+                    state.chestSpawnDeadlineMs = nowMs + 4000L;
+                }
+                if (nowMs < state.chestSpawnDeadlineMs)
+                {
+                    if (host.isDebugUi())
+                    {
+                        String blk = "";
+                        try
+                        {
+                            blk = String.valueOf(mc.world.getBlockState(chestPos).getBlock().getRegistryName());
+                        }
+                        catch (Exception ignore) { }
+                        debugLog("waiting chest spawn at " + chestPos + " block=" + blk
+                            + " elapsedMs=" + (nowMs - state.chestSpawnStartMs));
+                    }
+                    state.nextActionMs = nowMs + 120L;
+                    return;
+                }
+                RegAllRecord record = buildRecord(false, null);
+                state.records.add(record);
+                if (onRecordAdded(mc, record))
+                {
+                    return;
+                }
                 finishActionAndReplay(nowMs);
                 debugBar("no chest");
                 return;
+            }
+            if (host.isDebugUi())
+            {
+                debugLog("chest spawned at " + chestPos + " afterMs=" + (nowMs - state.chestSpawnStartMs));
             }
             try
             {
@@ -313,6 +463,8 @@ public final class RegAllActionsModule
             state.chestOpenDeadlineMs = nowMs + 2000L;
             state.chestReadySinceMs = 0L;
             state.chestReadyWindowId = -1;
+            state.chestSpawnStartMs = 0L;
+            state.chestSpawnDeadlineMs = 0L;
             state.nextActionMs = nowMs + actionDelayMs();
             debugBar("open chest");
             return;
@@ -413,6 +565,17 @@ public final class RegAllActionsModule
                 debugLog("category key=" + key
                     + " rawName='" + st.getDisplayName() + "' rawLore='" + readLore(st)
                     + "' path=" + RegAllActionsState.pathKey(state.menuPathKeys));
+                if (state.resaveMode && state.resaveCategoryMode)
+                {
+                    state.resaveCaptureMenu = true;
+                    state.resaveCaptureStartMs = nowMs;
+                    try
+                    {
+                        state.resaveCaptureSourceWindowId = mc.player.openContainer.windowId;
+                    }
+                    catch (Exception ignore) { }
+                    debugBar("resave cat: wait menu");
+                }
                 return;
             }
         }
@@ -456,9 +619,19 @@ public final class RegAllActionsModule
             {
                 return;
             }
-            RegAllRecord record = buildRecord(true, (GuiChest) gui);
+            GuiChest chestGui = (GuiChest) gui;
+            boolean params = isParamsChestGui(chestGui);
+            if (!params)
+            {
+                debugLog("opened non-params GUI after action; treating as no-chest. title=" + getGuiTitleSafe(gui));
+            }
+            RegAllRecord record = buildRecord(params, chestGui);
             state.records.add(record);
             state.cachedCount++;
+            if (onRecordAdded(mc, record))
+            {
+                return;
+            }
             state.openingChest = false;
             host.closeCurrentScreen();
             finishActionAndReplay(nowMs);
@@ -475,6 +648,43 @@ public final class RegAllActionsModule
             return;
         }
         state.openingSign = false;
+
+        if (state.resaveMode && state.resaveCategoryMode && state.resaveCaptureMenu)
+        {
+            if (!(gui instanceof GuiChest))
+            {
+                return;
+            }
+            int windowId = mc.player.openContainer.windowId;
+            if (state.resaveCaptureSourceWindowId == windowId && nowMs - state.resaveCaptureStartMs < 2500L)
+            {
+                state.nextActionMs = nowMs + 120L;
+                return;
+            }
+            if (nowMs - state.resaveCaptureStartMs > 3500L)
+            {
+                host.setActionBar(false, "&cResave category failed: menu did not open", 3000L);
+                reset();
+                return;
+            }
+            GuiChest chestGui = (GuiChest) gui;
+            if (looksLikeCategoryRootMenu(chestGui))
+            {
+                state.nextActionMs = nowMs + 120L;
+                return;
+            }
+            RegAllRecord record = buildCategoryMenuRecord(chestGui);
+            state.records.add(record);
+            state.cachedCount++;
+            state.resaveCaptureMenu = false;
+            if (onRecordAdded(mc, record))
+            {
+                return;
+            }
+            host.closeCurrentScreen();
+            reset();
+            return;
+        }
 
         if (state.replaying)
         {
@@ -517,6 +727,13 @@ public final class RegAllActionsModule
         {
             if (state.menuPathKeys.isEmpty())
             {
+                if (state.resaveMode)
+                {
+                    host.closeCurrentScreen();
+                    host.setActionBar(false, "&cResave target not found", 3500L);
+                    reset();
+                    return;
+                }
                 state.active = false;
                 host.closeCurrentScreen();
                 host.setActionBar(true, "&aRegAllActions done (cached=" + state.cachedCount + ")", 3500L);
@@ -609,6 +826,86 @@ public final class RegAllActionsModule
             return null;
         }
         String guiTitle = getGuiTitleSafe(gui);
+        // In resave mode we should avoid clicking unrelated actions.
+        // However, menus can contain nested categories; don't prune those.
+        // Heuristic: if the menu looks like an action list ("Данное действие/событие..."), we only click matching items.
+        // If there are no matching items in such a menu, return null to back out to the previous menu.
+        boolean resaveActive = state.resaveMode && state.resaveQueryNorm != null && !state.resaveQueryNorm.isEmpty();
+        if (resaveActive && state.resaveCategoryMode)
+        {
+            // Resave-category should ONLY click category items, never actions.
+            // Categories can exist at multiple nesting levels; we treat any action-list menu as terminal.
+            if (looksLikeActionListMenu(gui))
+            {
+                debugLog("resave(category): reached action-list menu; backing out. title=" + guiTitle
+                    + " path=" + RegAllActionsState.pathKey(state.menuPathKeys));
+                return null;
+            }
+
+            boolean anyMatch = false;
+            for (Slot slot : gui.inventorySlots.inventorySlots)
+            {
+                if (slot == null || host.isPlayerInventorySlot(gui, slot))
+                {
+                    continue;
+                }
+                ItemStack st = slot.getStack();
+                if (st == null || st.isEmpty())
+                {
+                    continue;
+                }
+                String k = buildMenuItemKey(st, slot.slotNumber);
+                if (k == null || k.trim().isEmpty())
+                {
+                    continue;
+                }
+                if (!matchesResaveQuery(st))
+                {
+                    done.add(k);
+                    continue;
+                }
+                anyMatch = true;
+                if (!done.contains(k))
+                {
+                    return slot;
+                }
+            }
+            if (!anyMatch)
+            {
+                debugLog("resave(category): no matches in category menu; backing out. title=" + guiTitle
+                    + " path=" + RegAllActionsState.pathKey(state.menuPathKeys));
+            }
+            return null;
+        }
+        boolean restrictToMatches = false;
+        if (resaveActive && looksLikeActionListMenu(gui))
+        {
+            boolean anyMatch = false;
+            for (Slot slot : gui.inventorySlots.inventorySlots)
+            {
+                if (slot == null || host.isPlayerInventorySlot(gui, slot))
+                {
+                    continue;
+                }
+                ItemStack st = slot.getStack();
+                if (st == null || st.isEmpty())
+                {
+                    continue;
+                }
+                if (matchesResaveQuery(st))
+                {
+                    anyMatch = true;
+                    break;
+                }
+            }
+            if (!anyMatch)
+            {
+                debugLog("resave: no matches in action-list menu; backing out. title=" + guiTitle
+                    + " path=" + RegAllActionsState.pathKey(state.menuPathKeys));
+                return null;
+            }
+            restrictToMatches = true;
+        }
         for (Slot slot : gui.inventorySlots.inventorySlots)
         {
             if (slot == null || host.isPlayerInventorySlot(gui, slot))
@@ -625,11 +922,19 @@ public final class RegAllActionsModule
             {
                 continue;
             }
-            if (isImportedRecord(pathKey, guiTitle, st))
+            if (restrictToMatches && !matchesResaveQuery(st))
             {
                 done.add(k);
-                debugLog("skip item (imported) key=" + k + " rawName='" + st.getDisplayName() + "'");
                 continue;
+            }
+            if (isImportedRecord(pathKey, guiTitle, st))
+            {
+                if (!state.resaveMode)
+                {
+                    done.add(k);
+                    debugLog("skip item (imported) key=" + k + " rawName='" + st.getDisplayName() + "'");
+                    continue;
+                }
             }
             if (!done.contains(k))
             {
@@ -637,6 +942,43 @@ public final class RegAllActionsModule
             }
         }
         return null;
+    }
+
+    private boolean looksLikeActionListMenu(GuiContainer gui)
+    {
+        if (!(gui instanceof GuiChest))
+        {
+            return false;
+        }
+        GuiChest chest = (GuiChest) gui;
+        // Root category menus are not action lists (they contain mostly navigation).
+        if (looksLikeCategoryRootMenu(chest))
+        {
+            return false;
+        }
+        // Detect common RU phrases from action items.
+        // Use unicode escapes so this heuristic is not broken by source/console encoding issues.
+        final String PHRASE_ACTION = "\u0434\u0430\u043d\u043d\u043e\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435"; // "данное действие"
+        final String PHRASE_EVENT = "\u0434\u0430\u043d\u043d\u043e\u0435 \u0441\u043e\u0431\u044b\u0442\u0438\u0435";   // "данное событие"
+        final String PHRASE_RUNS_CODE = "\u0432\u044b\u043f\u043e\u043b\u043d\u044f\u0435\u0442 \u043a\u043e\u0434";     // "выполняет код"
+        for (Slot slot : chest.inventorySlots.inventorySlots)
+        {
+            if (slot == null || host.isPlayerInventorySlot(chest, slot))
+            {
+                continue;
+            }
+            ItemStack st = slot.getStack();
+            if (st == null || st.isEmpty())
+            {
+                continue;
+            }
+            String lore = normalizeForKey(readLore(st));
+            if (lore.contains(PHRASE_ACTION) || lore.contains(PHRASE_EVENT) || lore.contains(PHRASE_RUNS_CODE))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void popMenuPath()
@@ -655,6 +997,8 @@ public final class RegAllActionsModule
     {
         state.waitingForChest = false;
         state.openingChest = false;
+        state.chestSpawnStartMs = 0L;
+        state.chestSpawnDeadlineMs = 0L;
         state.chestReadySinceMs = 0L;
         state.chestReadyWindowId = -1;
         state.replaying = !state.menuPathKeys.isEmpty();
@@ -757,11 +1101,22 @@ public final class RegAllActionsModule
             {
                 continue;
             }
+            if (state.resaveMode && state.resaveQueryNorm != null && !state.resaveQueryNorm.isEmpty())
+            {
+                if (!matchesResaveQuery(st))
+                {
+                    done.add(k);
+                    continue;
+                }
+            }
             if (isImportedRecord(RegAllActionsState.pathKey(state.menuPathKeys), "", st))
             {
-                done.add(k);
-                debugLog("skip subitem (imported) key=" + k + " rawName='" + st.getDisplayName() + "'");
-                continue;
+                if (!state.resaveMode)
+                {
+                    done.add(k);
+                    debugLog("skip subitem (imported) key=" + k + " rawName='" + st.getDisplayName() + "'");
+                    continue;
+                }
             }
             if (!done.contains(k))
             {
@@ -769,6 +1124,79 @@ public final class RegAllActionsModule
             }
         }
         return null;
+    }
+
+    private boolean matchesResaveQuery(ItemStack st)
+    {
+        if (st == null || st.isEmpty() || state.resaveQueryNorm == null || state.resaveQueryNorm.isEmpty())
+        {
+            return false;
+        }
+        String name = normalizeForKey(host.getItemNameKey(st));
+        String lore = normalizeForKey(readLore(st));
+        String q = state.resaveQueryNorm;
+        if (matchesResaveQueryText(name, lore, q))
+        {
+            return true;
+        }
+        // Fuzzy: many actions are referred to with extra verbs ("отправить сообщение" vs "сообщение").
+        String q2 = stripCommonRuVerbs(q);
+        return !q2.isEmpty() && !q2.equals(q) && matchesResaveQueryText(name, lore, q2);
+    }
+
+    private boolean matchesResaveQueryText(String name, String lore, String q)
+    {
+        // IMPORTANT: match only on the clicked item's own text.
+        // Using GUI title or sign text makes the match unstable (shared across many items)
+        // and was causing resave to ignore the filter and resave the first random action.
+        return (!name.isEmpty() && name.contains(q))
+            || (!lore.isEmpty() && lore.contains(q));
+    }
+
+    private String stripCommonRuVerbs(String q)
+    {
+        if (q == null || q.isEmpty())
+        {
+            return "";
+        }
+        // Lower-cased already.
+        String out = q;
+        String[] remove = new String[]{
+            "отправить",
+            "выдать",
+            "установить",
+            "создать",
+            "получить",
+            "поставить",
+            "запустить",
+            "остановить",
+            "добавить",
+            "удалить",
+            "очистить"
+        };
+        for (String r : remove)
+        {
+            out = out.replace(r, "");
+        }
+        out = out.replaceAll("\\s+", " ").trim();
+        return out;
+    }
+
+    private boolean onRecordAdded(Minecraft mc, RegAllRecord record)
+    {
+        if (record == null || !state.resaveMode)
+        {
+            return false;
+        }
+        state.resaveReplaceLooseKeys.add(buildLooseRecordKey(record.categoryItem, record.subItem, record.guiTitle, record.signLines));
+        state.resaveReplaceVeryLooseKeys.add(buildVeryLooseRecordKey(record.categoryItem, record.subItem));
+        state.resaveReplaceStableKeys.add(buildStableRecordKeyFromFormatted(record.categoryItem, record.subItem));
+
+        // Resave is intended to patch a specific broken entry quickly.
+        exportRecords(mc);
+        host.setActionBar(true, "&aResaved", 2000L);
+        reset();
+        return true;
     }
 
     private void markSubItemDone(String key)
@@ -811,6 +1239,160 @@ public final class RegAllActionsModule
             record.chestItems.add("no items");
         }
         return record;
+    }
+
+    private RegAllRecord buildCategoryMenuRecord(GuiChest gui)
+    {
+        RegAllRecord record = new RegAllRecord();
+        record.hasChest = true;
+
+        // Capture a category submenu snapshot (the menu that appears AFTER clicking a category).
+        // Make the key match the parent-menu click moment:
+        // - categoryPath: parent path (excluding clicked category)
+        // - categoryItem: parent category item (if any)
+        // - subItem: clicked category item
+        int n = state.menuPathKeys.size();
+        if (n > 1)
+        {
+            record.categoryPath = RegAllActionsState.pathKey(state.menuPathKeys.subList(0, n - 1));
+        }
+        else
+        {
+            record.categoryPath = "";
+        }
+
+        int m = state.menuPathStacks.size();
+        if (m >= 2)
+        {
+            record.categoryItem = formatItemStack(state.menuPathStacks.get(m - 2));
+        }
+        else
+        {
+            record.categoryItem = "";
+        }
+        if (m >= 1)
+        {
+            record.subItem = formatItemStack(state.menuPathStacks.get(m - 1));
+        }
+        else
+        {
+            record.subItem = "";
+        }
+
+        record.guiTitle = (gui != null) ? host.getGuiTitle(gui) : "";
+        record.signLines = readSignLines();
+        if (gui != null)
+        {
+            record.chestItems.addAll(snapshotTopInventorySlots(gui));
+        }
+        else
+        {
+            record.chestItems.add("no items");
+        }
+        return record;
+    }
+
+    private boolean isParamsChestGui(GuiChest gui)
+    {
+        if (gui == null || gui.inventorySlots == null)
+        {
+            return false;
+        }
+        final String PHRASE_PUT_HERE = "\u043f\u043e\u043b\u043e\u0436\u0438\u0442\u0435 \u0441\u044e\u0434\u0430";         // "положите сюда"
+        final String PHRASE_PLACE_HERE = "\u043f\u043e\u043c\u0435\u0441\u0442\u0438\u0442\u0435 \u0441\u044e\u0434\u0430"; // "поместите сюда"
+        // Avoid caching category root menus as "params chests".
+        if (looksLikeCategoryRootMenu(gui))
+        {
+            return false;
+        }
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || host.isPlayerInventorySlot(gui, slot))
+            {
+                continue;
+            }
+            ItemStack st = slot.getStack();
+            if (st == null || st.isEmpty())
+            {
+                continue;
+            }
+            String reg = st.getItem().getRegistryName() == null ? "" : st.getItem().getRegistryName().toString();
+            if ("minecraft:stained_glass_pane".equals(reg))
+            {
+                return true;
+            }
+            // Param GUIs typically use instructional lore like "Положите сюда ...".
+            String lore = normalizeForKey(readLore(st));
+            if (!lore.isEmpty() && (lore.contains(PHRASE_PUT_HERE) || lore.contains(PHRASE_PLACE_HERE)))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean looksLikeCategoryRootMenu(GuiChest gui)
+    {
+        if (gui == null || gui.inventorySlots == null)
+        {
+            return false;
+        }
+        int topSize = 0;
+        try
+        {
+            if (gui.inventorySlots instanceof ContainerChest)
+            {
+                IInventory inv = ((ContainerChest) gui.inventorySlots).getLowerChestInventory();
+                if (inv != null)
+                {
+                    topSize = inv.getSizeInventory();
+                }
+            }
+        }
+        catch (Exception ignore) { }
+        if (topSize != 9)
+        {
+            return false;
+        }
+
+        // Known "category picker" icons (the ones reported by the user).
+        Set<String> allow = new HashSet<>(Arrays.asList(
+            "minecraft:chest",
+            "minecraft:beacon",
+            "minecraft:painting",
+            "minecraft:leather_boots",
+            "minecraft:apple",
+            "minecraft:nether_star",
+            "minecraft:anvil",
+            "minecraft:armor_stand",
+            "minecraft:emerald"
+        ));
+
+        int nonEmpty = 0;
+        int allowedHits = 0;
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || host.isPlayerInventorySlot(gui, slot))
+            {
+                continue;
+            }
+            if (slot.slotNumber < 0 || slot.slotNumber >= 9)
+            {
+                continue;
+            }
+            ItemStack st = slot.getStack();
+            if (st == null || st.isEmpty())
+            {
+                continue;
+            }
+            nonEmpty++;
+            String reg = st.getItem().getRegistryName() == null ? "" : st.getItem().getRegistryName().toString();
+            if (allow.contains(reg))
+            {
+                allowedHits++;
+            }
+        }
+        return nonEmpty >= 6 && allowedHits == nonEmpty;
     }
 
     private String buildMenuItemKey(ItemStack stack, int slotNumber)
@@ -1091,6 +1673,46 @@ public final class RegAllActionsModule
         return sb.toString();
     }
 
+    private String buildStableRecordKeyFromFormatted(String categoryItem, String subItem)
+    {
+        return stableItemSigFromFormatted(categoryItem) + "|" + stableItemSigFromFormatted(subItem);
+    }
+
+    private String stableItemSigFromFormatted(String formatted)
+    {
+        if (formatted == null)
+        {
+            return "";
+        }
+        Matcher m = FORMATTED_ITEM_RE.matcher(formatted.trim());
+        if (!m.matches())
+        {
+            return normalizeForKey(formatted);
+        }
+        String reg = m.group(1) == null ? "" : m.group(1).trim();
+        String meta = m.group(2) == null ? "0" : m.group(2).trim();
+        String rest = m.group(3) == null ? "" : m.group(3);
+        String name = rest;
+        int idx = rest.indexOf(" | ");
+        if (idx >= 0)
+        {
+            name = rest.substring(0, idx);
+        }
+        return reg + ":" + meta + ":" + normalizeForKey(name);
+    }
+
+    private String stableItemSig(ItemStack stack)
+    {
+        if (stack == null || stack.isEmpty())
+        {
+            return "";
+        }
+        String reg = stack.getItem().getRegistryName() == null ? "" : stack.getItem().getRegistryName().toString();
+        String meta = Integer.toString(stack.getMetadata());
+        String name = normalizeForKey(stack.getDisplayName());
+        return reg + ":" + meta + ":" + name;
+    }
+
     private boolean isImportedRecord(String pathKey, String guiTitle, ItemStack subItemStack)
     {
         if (state.importedRecordKeys.isEmpty())
@@ -1115,7 +1737,15 @@ public final class RegAllActionsModule
             return true;
         }
         String veryLooseKey = buildVeryLooseRecordKey(categoryItem, subItem);
-        return state.importedVeryLooseKeys.contains(veryLooseKey);
+        if (state.importedVeryLooseKeys.contains(veryLooseKey))
+        {
+            return true;
+        }
+        ItemStack catStack = state.menuPathStacks.isEmpty()
+            ? ItemStack.EMPTY
+            : state.menuPathStacks.get(state.menuPathStacks.size() - 1);
+        String stableKey = stableItemSig(catStack) + "|" + stableItemSig(subItemStack);
+        return state.importedStableKeys.contains(stableKey);
     }
 
     private String readLore(ItemStack stack)
@@ -1160,10 +1790,11 @@ public final class RegAllActionsModule
             state.importLoaded = true;
             return;
         }
-        String categoryPath = null;
+
+        String categoryPath = "";
         String category = null;
         String subItem = null;
-        String guiTitle = null;
+        String guiTitle = "";
         String[] signLines = new String[]{"", "", "", ""};
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(inFile), "UTF-8")))
         {
@@ -1176,29 +1807,37 @@ public final class RegAllActionsModule
                     {
                         String key = buildRecordKey(categoryPath, category, subItem, guiTitle, signLines);
                         state.importedRecordKeys.add(key);
-                        String loose = buildLooseRecordKey(category, subItem, guiTitle, signLines);
-                        state.importedLooseKeys.add(loose);
-                        String veryLoose = buildVeryLooseRecordKey(category, subItem);
-                        state.importedVeryLooseKeys.add(veryLoose);
+                        state.importedLooseKeys.add(buildLooseRecordKey(category, subItem, guiTitle, signLines));
+                        state.importedVeryLooseKeys.add(buildVeryLooseRecordKey(category, subItem));
+                        state.importedStableKeys.add(buildStableRecordKeyFromFormatted(category, subItem));
                     }
-                    categoryPath = null;
+                    categoryPath = "";
                     category = null;
                     subItem = null;
-                    guiTitle = null;
+                    guiTitle = "";
                     signLines = new String[]{"", "", "", ""};
+                    continue;
+                }
+
+                if (line.startsWith("records="))
+                {
                     continue;
                 }
                 if (line.startsWith("path="))
                 {
                     categoryPath = line.substring("path=".length());
                 }
-                if (line.startsWith("category="))
+                else if (line.startsWith("category="))
                 {
                     category = line.substring("category=".length());
                 }
                 else if (line.startsWith("subitem="))
                 {
                     subItem = line.substring("subitem=".length());
+                }
+                else if (line.startsWith("gui="))
+                {
+                    guiTitle = line.substring("gui=".length());
                 }
                 else if (line.startsWith("sign1="))
                 {
@@ -1216,22 +1855,22 @@ public final class RegAllActionsModule
                 {
                     signLines[3] = line.substring("sign4=".length());
                 }
-                else if (line.startsWith("gui="))
-                {
-                    guiTitle = line.substring("gui=".length());
-                }
             }
+
             if (category != null && subItem != null)
             {
                 String key = buildRecordKey(categoryPath, category, subItem, guiTitle, signLines);
                 state.importedRecordKeys.add(key);
-                String loose = buildLooseRecordKey(category, subItem, guiTitle, signLines);
-                state.importedLooseKeys.add(loose);
+                state.importedLooseKeys.add(buildLooseRecordKey(category, subItem, guiTitle, signLines));
+                state.importedVeryLooseKeys.add(buildVeryLooseRecordKey(category, subItem));
+                state.importedStableKeys.add(buildStableRecordKeyFromFormatted(category, subItem));
             }
+
             state.importLoaded = true;
             String msg = "imported records=" + state.importedRecordKeys.size()
                 + " loose=" + state.importedLooseKeys.size()
-                + " veryLoose=" + state.importedVeryLooseKeys.size();
+                + " veryLoose=" + state.importedVeryLooseKeys.size()
+                + " stable=" + state.importedStableKeys.size();
             LOGGER.info("RegAllActions {}", msg);
             debugLog(msg);
         }
@@ -1264,6 +1903,20 @@ public final class RegAllActionsModule
                 {
                     outRecords.add(r);
                 }
+            }
+        }
+        if (!state.resaveReplaceLooseKeys.isEmpty()
+            || !state.resaveReplaceVeryLooseKeys.isEmpty()
+            || !state.resaveReplaceStableKeys.isEmpty())
+        {
+            outRecords.removeIf(r -> state.resaveReplaceLooseKeys.contains(
+                buildLooseRecordKey(r.categoryItem, r.subItem, r.guiTitle, r.signLines))
+                || state.resaveReplaceVeryLooseKeys.contains(buildVeryLooseRecordKey(r.categoryItem, r.subItem))
+                || state.resaveReplaceStableKeys.contains(buildStableRecordKeyFromFormatted(r.categoryItem, r.subItem)));
+            seenKeys.clear();
+            for (RegAllRecord r : outRecords)
+            {
+                seenKeys.add(buildRecordKey(r.categoryPath, r.categoryItem, r.subItem, r.guiTitle, r.signLines));
             }
         }
         for (RegAllRecord r : state.records)

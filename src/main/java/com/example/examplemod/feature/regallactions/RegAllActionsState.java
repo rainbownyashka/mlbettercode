@@ -57,6 +57,8 @@ final class RegAllActionsState
     String currentActionGuiTitle = "";
     boolean waitingForChest = false;
     boolean openingChest = false;
+    long chestSpawnStartMs = 0L;
+    long chestSpawnDeadlineMs = 0L;
     long chestWaitStartMs = 0L;
     long chestOpenDeadlineMs = 0L;
     long chestReadySinceMs = 0L;
@@ -72,7 +74,18 @@ final class RegAllActionsState
     final Set<String> importedRecordKeys = new HashSet<>();
     final Set<String> importedLooseKeys = new HashSet<>();
     final Set<String> importedVeryLooseKeys = new HashSet<>();
+    final Set<String> importedStableKeys = new HashSet<>();
     final List<RegAllRecord> records = new ArrayList<>();
+
+    boolean resaveMode = false;
+    String resaveQueryNorm = null;
+    boolean resaveCategoryMode = false;
+    boolean resaveCaptureMenu = false;
+    long resaveCaptureStartMs = 0L;
+    int resaveCaptureSourceWindowId = -1;
+    final Set<String> resaveReplaceLooseKeys = new HashSet<>();
+    final Set<String> resaveReplaceVeryLooseKeys = new HashSet<>();
+    final Set<String> resaveReplaceStableKeys = new HashSet<>();
 
     int cachedCount = 0;
     int pathCount = 0;
@@ -123,6 +136,8 @@ final class RegAllActionsState
         currentActionGuiTitle = "";
         waitingForChest = false;
         openingChest = false;
+        chestSpawnStartMs = 0L;
+        chestSpawnDeadlineMs = 0L;
         chestWaitStartMs = 0L;
         chestOpenDeadlineMs = 0L;
         chestReadySinceMs = 0L;
@@ -135,6 +150,15 @@ final class RegAllActionsState
         waitingForCursorClear = false;
         cursorClearSinceMs = 0L;
         records.clear();
+        resaveMode = false;
+        resaveQueryNorm = null;
+        resaveCategoryMode = false;
+        resaveCaptureMenu = false;
+        resaveCaptureStartMs = 0L;
+        resaveCaptureSourceWindowId = -1;
+        resaveReplaceLooseKeys.clear();
+        resaveReplaceVeryLooseKeys.clear();
+        resaveReplaceStableKeys.clear();
         cachedCount = 0;
         pathCount = 0;
         clickCount = 0;

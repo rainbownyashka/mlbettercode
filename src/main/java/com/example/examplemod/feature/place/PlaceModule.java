@@ -1,5 +1,6 @@
 package com.example.examplemod.feature.place;
 
+import com.example.examplemod.feature.codemap.BlueGlassCodeMap;
 import com.example.examplemod.model.PlaceArg;
 import com.example.examplemod.model.PlaceEntry;
 import net.minecraft.block.Block;
@@ -10,7 +11,9 @@ import net.minecraft.init.Blocks;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.math.BlockPos;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 public final class PlaceModule
 {
@@ -145,6 +148,188 @@ public final class PlaceModule
         state.active = !state.queue.isEmpty();
         state.current = null;
         host.setActionBar(true, "&a/placeadvanced queued=" + state.queue.size(), 2000L);
+    }
+
+    /**
+     * Plan-run variant of /placeadvanced: allocates free blue-glass slots (scan: ±4Z, ±10Y) and places entries there.
+     * Keeps manual /placeadvanced behavior unchanged.
+     */
+    public void runPlaceAdvancedPlanCommand(MinecraftServer server, ICommandSender sender, String[] args)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.world == null || mc.player == null)
+        {
+            host.setActionBar(false, "&cNo world/player", 2000L);
+            return;
+        }
+
+        if (args == null || args.length == 0)
+        {
+            host.setActionBar(false, "&cUsage: /mldsl run [path] [--start N]", 3500L);
+            return;
+        }
+
+        BlockPos seed = host.getLastGlassPos();
+        int seedDim = host.getLastGlassDim();
+        if (seed == null || seedDim != mc.world.provider.getDimension())
+        {
+            String key = host.getCodeGlassScopeKey(mc.world);
+            if (key != null)
+            {
+                seed = host.getCodeBlueGlassById().get(key);
+                if (seed != null)
+                {
+                    host.setLastGlassPos(seed, mc.world.provider.getDimension());
+                }
+            }
+        }
+        if (seed == null)
+        {
+            host.setActionBar(false, "&cNo blue glass position recorded", 2500L);
+            return;
+        }
+
+        List<String> tokens = PlaceParser.splitArgsPreserveQuotes(String.join(" ", args));
+        if (tokens.isEmpty())
+        {
+            host.setActionBar(false, "&cEmpty plan", 2000L);
+            return;
+        }
+
+        // IMPORTANT:
+        // Plan-run must preserve the original /placeadvanced spatial behavior (one line placed from ONE start glass,
+        // using -2X offsets). The blue-glass scan is only used to choose a suitable free START glass.
+        //
+        // The previous implementation allocated a separate blue-glass slot PER entry, which caused "event -> jump to next"
+        // behavior and broke server-side expectations (actions that must follow a specific event/block chain).
+
+        // Parse steps first (so we know how many "real" placements we need and can validate tokens).
+        final class Step
+        {
+            boolean isPause;
+            Block block;
+            String name;
+            String argsRaw;
+            List<PlaceArg> parsedArgs;
+        }
+
+        List<Step> steps = new ArrayList<>();
+        int i = 0;
+        while (i < tokens.size())
+        {
+            String blockTok = tokens.get(i);
+            if ("air".equalsIgnoreCase(blockTok) || "minecraft:air".equalsIgnoreCase(blockTok))
+            {
+                Step s = new Step();
+                s.isPause = true;
+                steps.add(s);
+                i++;
+                continue;
+            }
+            if (i + 2 >= tokens.size())
+            {
+                host.setActionBar(false,
+                    "&cPlan token error (expected <block> <name> <args|no> ...)", 4500L);
+                reset();
+                return;
+            }
+
+            String nameTok = tokens.get(i + 1);
+            String argsTok = tokens.get(i + 2);
+            i += 3;
+
+            String blockName = blockTok.contains(":") ? blockTok : ("minecraft:" + blockTok);
+            Block b = Block.getBlockFromName(blockName);
+            if (b == null)
+            {
+                host.setActionBar(false, "&cUnknown block: " + blockTok, 2500L);
+                reset();
+                return;
+            }
+
+            Step s = new Step();
+            s.isPause = false;
+            s.block = b;
+            s.name = nameTok == null ? "" : nameTok.trim();
+            if (!"no".equalsIgnoreCase(argsTok))
+            {
+                s.argsRaw = argsTok;
+                List<PlaceArg> parsed = PlaceParser.parsePlaceAdvancedArgs(argsTok, host);
+                if (parsed != null && !parsed.isEmpty())
+                {
+                    s.parsedArgs = parsed;
+                }
+            }
+            steps.add(s);
+        }
+
+        List<BlockPos> scanned = BlueGlassCodeMap.scan(mc.world, java.util.Collections.singleton(seed));
+        if (scanned.isEmpty())
+        {
+            host.setActionBar(false, "&cNo blue glass found near seed", 2500L);
+            return;
+        }
+
+        // Choose a single FREE start glass closest to the player.
+        List<BlockPos> free = new ArrayList<>();
+        for (BlockPos p : scanned)
+        {
+            if (BlueGlassCodeMap.isFree(mc.world, p))
+            {
+                free.add(p);
+            }
+        }
+        if (free.isEmpty())
+        {
+            host.setActionBar(false, "&cNo free blue glass found (need at least 1)", 4500L);
+            reset();
+            return;
+        }
+
+        free.sort(java.util.Comparator.comparingDouble(p -> {
+            double dx = p.getX() + 0.5 - mc.player.posX;
+            double dy = p.getY() + 0.5 - mc.player.posY;
+            double dz = p.getZ() + 0.5 - mc.player.posZ;
+            return dx * dx + dy * dy + dz * dz;
+        }));
+        BlockPos startGlass = free.get(0);
+        host.setLastGlassPos(startGlass, mc.world.provider.getDimension());
+
+        // Build execution queue.
+        BlockPos glass = startGlass;
+        int p = 0; // -2X offset index for non-air entries (same as /placeadvanced)
+        for (Step s : steps)
+        {
+            if (s.isPause)
+            {
+                PlaceEntry pause = new PlaceEntry(mc.player.getPosition(), Blocks.AIR, "");
+                pause.searchKey = "";
+                state.queue.add(pause);
+                continue;
+            }
+
+            BlockPos target = glass.add(-2 * p, 1, 0);
+
+            String norm = host.normalizeForMatch(s.name == null ? "" : s.name);
+            PlaceEntry entry = new PlaceEntry(target, s.block, norm);
+            entry.searchKey = norm;
+            if (s.argsRaw != null)
+            {
+                entry.advancedArgsRaw = s.argsRaw;
+            }
+            if (s.parsedArgs != null && !s.parsedArgs.isEmpty())
+            {
+                entry.advancedArgs = s.parsedArgs;
+            }
+            state.queue.add(entry);
+            p++;
+        }
+
+        state.active = !state.queue.isEmpty();
+        state.current = null;
+        host.setActionBar(true,
+            "&a/mldsl queued=" + state.queue.size() + " start=" + startGlass.getX() + "," + startGlass.getY() + "," + startGlass.getZ(),
+            3500L);
     }
 
     public void runPlaceBlocksCommand(MinecraftServer server, ICommandSender sender, String[] args)
