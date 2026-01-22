@@ -760,9 +760,12 @@ public final class CopyCodeModule
         {
             return;
         }
-        // Stand at z+2 (as requested) and same x/y.
-        double tx = target.getX() + 0.5;
-        double ty = target.getY();
+        // Avoid teleporting "inside" blocks (server rubberband). Stand to the side and 1 block above.
+        // - X+1 to not collide with the target column
+        // - Z+2 (original requirement)
+        // - Y+1 to be above the target block
+        double tx = target.getX() + 1.0 + 0.5;
+        double ty = target.getY() + 1.0;
         double tz = target.getZ() + 2.0 + 0.5;
         host.buildTpPathQueue(mc.world, mc.player.posX, mc.player.posY, mc.player.posZ, tx, ty, tz);
         try
