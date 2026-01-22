@@ -5,6 +5,7 @@ import java.util.Set;
 import java.util.List;
 
 import net.minecraft.block.Block;
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.BlockPos;
 
 public class PlaceEntry
@@ -77,6 +78,15 @@ public class PlaceEntry
     // Temporary hotbar slot used for item(...) injection (so we can click it into GUI)
     public int tempHotbarSlot = -1; // 0..8
     public long tempHotbarClearMs = 0L;
+    public ItemStack tempHotbarOriginal = ItemStack.EMPTY;
+
+    // Item(...) click injection sequence (hotbar -> target -> hotbar)
+    public int tempItemSeqStage = -1; // -1 = inactive, 0..2 steps, 3=done
+    public int tempItemSeqSlot0 = -1;
+    public int tempItemSeqSlot1 = -1;
+    public int tempItemSeqSlot2 = -1;
+    public int tempItemTargetSlot = -1;
+    public int tempItemExtraClicks = 0;
 
     public PlaceEntry(BlockPos pos, Block block)
     {
@@ -124,6 +134,13 @@ public class PlaceEntry
         this.placedLostCount = 0;
         this.tempHotbarSlot = -1;
         this.tempHotbarClearMs = 0L;
+        this.tempHotbarOriginal = ItemStack.EMPTY;
+        this.tempItemSeqStage = -1;
+        this.tempItemSeqSlot0 = -1;
+        this.tempItemSeqSlot1 = -1;
+        this.tempItemSeqSlot2 = -1;
+        this.tempItemTargetSlot = -1;
+        this.tempItemExtraClicks = 0;
     }
 
     public PlaceEntry(BlockPos pos, Block block, String searchKey)
@@ -172,5 +189,12 @@ public class PlaceEntry
         this.placedLostCount = 0;
         this.tempHotbarSlot = -1;
         this.tempHotbarClearMs = 0L;
+        this.tempHotbarOriginal = ItemStack.EMPTY;
+        this.tempItemSeqStage = -1;
+        this.tempItemSeqSlot0 = -1;
+        this.tempItemSeqSlot1 = -1;
+        this.tempItemSeqSlot2 = -1;
+        this.tempItemTargetSlot = -1;
+        this.tempItemExtraClicks = 0;
     }
 }

@@ -8712,8 +8712,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         if (slot == null)
         {
-            setActionBar(false, "&eNo empty inventory slot.", 2000L);
-            return;
+            // Fallback: overwrite current hotbar slot (best-effort). Some flows rely on being able to "give" anyway.
+            slot = mc == null || mc.player == null ? null : mc.player.inventory.currentItem;
+            if (slot == null)
+            {
+                slot = 0;
+            }
         }
         mc.player.inventory.setInventorySlotContents(slot, stack);
         sendCreativeSlotUpdate(mc, slot, stack);
@@ -8731,6 +8735,24 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             slot = 0;
         }
+        // If we are about to overwrite a hotbar slot, try to move the old item into inventory first.
+        try
+        {
+            if (mc != null && mc.player != null && slot >= 0 && slot < 9)
+            {
+                ItemStack old = mc.player.inventory.getStackInSlot(slot);
+                if (old != null && !old.isEmpty())
+                {
+                    Integer inv = findEmptyInventorySlot(mc);
+                    if (inv != null)
+                    {
+                        mc.player.inventory.setInventorySlotContents(inv, old);
+                        sendCreativeSlotUpdate(mc, inv, old);
+                    }
+                }
+            }
+        }
+        catch (Exception ignore) { }
         mc.player.inventory.setInventorySlotContents(slot, stack);
         sendCreativeSlotUpdate(mc, slot, stack);
         return slot;

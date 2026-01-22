@@ -458,6 +458,88 @@ final class PlaceGuiHandler
             return;
         }
 
+        // Continue item(...) click injection sequence (hotbar -> target -> hotbar).
+        if (entry.tempItemSeqStage >= 0 && entry.tempItemSeqStage < 3)
+        {
+            if (nowMs < entry.pendingArgNextMs)
+            {
+                return;
+            }
+
+            int slotToClick = entry.tempItemSeqStage == 0 ? entry.tempItemSeqSlot0
+                : entry.tempItemSeqStage == 1 ? entry.tempItemSeqSlot1 : entry.tempItemSeqSlot2;
+            if (slotToClick < 0)
+            {
+                abort(host, state, "item_seq_bad_slot");
+                return;
+            }
+
+            try
+            {
+                // Don't proceed with a dirty cursor unless it's step 1 (we intentionally carry the item).
+                if (entry.tempItemSeqStage != 1)
+                {
+                    ItemStack carried = mc.player.inventory.getItemStack();
+                    if (carried != null && !carried.isEmpty())
+                    {
+                        if (!tryClearCarriedToInventory(gui, mc))
+                        {
+                            host.setActionBar(false, "&c/placeadvanced: cursor not empty", 2500L);
+                            abort(host, state, "cursor_not_empty");
+                            return;
+                        }
+                        entry.pendingArgNextMs = nowMs + host.placeDelayMs(350L);
+                        return;
+                    }
+                }
+            }
+            catch (Exception ignore) { }
+
+            host.queueClick(new ClickAction(slotToClick, 0, ClickType.PICKUP));
+            entry.tempItemSeqStage++;
+            entry.pendingArgNextMs = nowMs + host.placeDelayMs(500L);
+            entry.lastArgsActionMs = nowMs;
+
+            if (entry.tempItemSeqStage >= 3)
+            {
+                // Restore original hotbar stack.
+                try
+                {
+                    if (entry.tempHotbarSlot >= 0 && entry.tempHotbarSlot < 9 && mc.player.connection != null)
+                    {
+                        ItemStack restore = entry.tempHotbarOriginal == null ? ItemStack.EMPTY : entry.tempHotbarOriginal;
+                        mc.player.inventory.setInventorySlotContents(entry.tempHotbarSlot, restore);
+                        mc.player.connection.sendPacket(new CPacketCreativeInventoryAction(36 + entry.tempHotbarSlot, restore));
+                    }
+                }
+                catch (Exception ignore) { }
+
+                // Mark arg as consumed.
+                if (entry.tempItemTargetSlot >= 0)
+                {
+                    entry.usedArgSlots.add(entry.tempItemTargetSlot);
+                }
+                entry.advancedArgIndex++;
+                if (entry.tempItemExtraClicks > 0 && entry.tempItemTargetSlot >= 0)
+                {
+                    entry.pendingArgClickSlot = entry.tempItemTargetSlot;
+                    entry.pendingArgClicks = entry.tempItemExtraClicks;
+                    entry.pendingArgNextMs = nowMs + host.placeDelayMs(500L);
+                }
+
+                entry.tempHotbarSlot = -1;
+                entry.tempHotbarOriginal = ItemStack.EMPTY;
+                entry.tempHotbarClearMs = 0L;
+                entry.tempItemSeqStage = -1;
+                entry.tempItemSeqSlot0 = -1;
+                entry.tempItemSeqSlot1 = -1;
+                entry.tempItemSeqSlot2 = -1;
+                entry.tempItemTargetSlot = -1;
+                entry.tempItemExtraClicks = 0;
+            }
+            return;
+        }
+
         // If we used a temp hotbar slot for item(...) injection, clear it after a short delay so it
         // doesn't remain in the player's inventory (server may reject/ignore the GUI insert).
         if (entry.tempHotbarSlot >= 0 && entry.tempHotbarSlot < 9 && entry.tempHotbarClearMs > 0L && nowMs >= entry.tempHotbarClearMs)
@@ -506,6 +588,20 @@ final class PlaceGuiHandler
         }
         if (entry.advancedArgIndex >= entry.advancedArgs.size())
         {
+            try
+            {
+                ItemStack carried = mc.player.inventory.getItemStack();
+                if (carried != null && !carried.isEmpty())
+                {
+                    if (!tryClearCarriedToInventory(gui, mc))
+                    {
+                        host.setActionBar(false, "&c/placeadvanced: cursor not empty", 2500L);
+                        abort(host, state, "cursor_not_empty");
+                        return;
+                    }
+                }
+            }
+            catch (Exception ignore) { }
             entry.awaitingArgs = false;
             host.closeCurrentScreen();
             state.current = null;
@@ -629,10 +725,16 @@ final class PlaceGuiHandler
                 }
                 if (hotbar < 0)
                 {
-                    host.setActionBar(false, "&c/placeadvanced: no empty hotbar slot for item()", 2500L);
-                    abort(host, state, "no_hotbar_slot");
-                    return;
+                    // Fallback: reuse current hotbar slot and restore after injection.
+                    hotbar = mc.player.inventory.currentItem;
                 }
+
+                entry.tempHotbarSlot = hotbar;
+                try
+                {
+                    entry.tempHotbarOriginal = mc.player.inventory.getStackInSlot(hotbar).copy();
+                }
+                catch (Exception ignore) { entry.tempHotbarOriginal = ItemStack.EMPTY; }
 
                 mc.player.inventory.setInventorySlotContents(hotbar, stack);
                 if (mc.player.connection != null)
@@ -657,12 +759,16 @@ final class PlaceGuiHandler
                     return;
                 }
 
-                host.queueClick(new ClickAction(hotbarContainerSlot, 0, ClickType.PICKUP));
-                host.queueClick(new ClickAction(target.slotNumber, 0, ClickType.PICKUP));
-                host.queueClick(new ClickAction(hotbarContainerSlot, 0, ClickType.PICKUP));
-
-                entry.tempHotbarSlot = hotbar;
-                entry.tempHotbarClearMs = nowMs + host.placeDelayMs(900L);
+                entry.tempItemSeqStage = 0;
+                entry.tempItemSeqSlot0 = hotbarContainerSlot;
+                entry.tempItemSeqSlot1 = target.slotNumber;
+                entry.tempItemSeqSlot2 = hotbarContainerSlot;
+                entry.tempItemTargetSlot = target.slotNumber;
+                entry.tempItemExtraClicks = arg.clicks > 0 ? arg.clicks : 0;
+                entry.pendingArgNextMs = nowMs + host.placeDelayMs(500L);
+                entry.lastArgsActionMs = nowMs;
+                entry.argsMisses = 0;
+                return;
             }
             catch (Exception ignore) { }
         }
@@ -780,6 +886,36 @@ final class PlaceGuiHandler
             return candidate;
         }
         return null;
+    }
+
+    private static boolean tryClearCarriedToInventory(GuiContainer gui, Minecraft mc)
+    {
+        if (gui == null || mc == null || mc.player == null || mc.playerController == null)
+        {
+            return false;
+        }
+        try
+        {
+            ItemStack carried = mc.player.inventory.getItemStack();
+            if (carried == null || carried.isEmpty())
+            {
+                return true;
+            }
+            for (Slot s : gui.inventorySlots.inventorySlots)
+            {
+                if (s == null || s.inventory != mc.player.inventory)
+                {
+                    continue;
+                }
+                if (!s.getHasStack())
+                {
+                    mc.playerController.windowClick(gui.inventorySlots.windowId, s.slotNumber, 0, ClickType.PICKUP, mc.player);
+                    return true;
+                }
+            }
+        }
+        catch (Exception ignore) { }
+        return false;
     }
 
     private static Slot findCandidateSlotForArg(PlaceModuleHost host, GuiContainer gui, Slot base)
