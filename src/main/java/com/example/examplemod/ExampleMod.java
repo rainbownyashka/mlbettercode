@@ -95,6 +95,7 @@ import com.example.examplemod.cmd.ScoreTitleCommand;
 import com.example.examplemod.util.ItemStackUtils;
 import com.example.examplemod.feature.place.PlaceModule;
 import com.example.examplemod.feature.place.PlaceModuleHost;
+import com.example.examplemod.feature.copy.CopyCodeModule;
 import com.example.examplemod.feature.regallactions.RegAllActionsHost;
 import com.example.examplemod.feature.regallactions.RegAllActionsModule;
 import net.minecraft.tileentity.TileEntitySign;
@@ -175,7 +176,8 @@ import java.util.concurrent.TimeUnit;
 
 @Mod(modid = ExampleMod.MODID, name = ExampleMod.NAME, version = ExampleMod.VERSION,
     guiFactory = "com.example.examplemod.ModGuiFactory")
-public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.example.examplemod.feature.mldsl.MlDslHost
+public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.example.examplemod.feature.mldsl.MlDslHost,
+    CopyCodeModule.Host
 {
     public static final String MODID = "bettercode";
     public static final String NAME = "Creative+ BetterCode";
@@ -395,6 +397,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         new com.example.examplemod.feature.mldsl.MlDslModule(this, placeModule);
     // Discover/crawl menus into clickMenuMap
     private final RegAllActionsModule regAllActionsModule = new RegAllActionsModule(this);
+    // Copy code between plots (/copycode, /cancelcopy)
+    private final CopyCodeModule copyCodeModule = new CopyCodeModule(this);
     // Legacy state (kept temporarily while migrating code out of this class).
     private final Deque<PlaceEntry> placeBlocksQueue = new ArrayDeque<>();
     private PlaceEntry placeBlocksCurrent = null;
@@ -2009,6 +2013,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         handleTpPathQueue(mc);
         handleHotbarSwap(mc);
         handleCacheAllTick(mc, now);
+        copyCodeModule.onClientTick(mc, now);
         placeModule.onClientTick(mc, now);
         regAllActionsModule.onClientTick(mc, now);
         handleAutoChestCacheTick(mc, now);
@@ -2330,6 +2335,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             "/placeadvanced <block> <name> <args|no> [<block> <name> <args|no> ...]", placeModule::runPlaceAdvancedCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("mldsl",
             "/mldsl run [path] [--start N] - run plan.json via placeadvanced", mlDslModule::runCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("copycode",
+            "/copycode <id1> <id2> <yoffset> <floorsCSV> - copy code blocks by floor", this::runCopyCodeCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("cancelcopy",
+            "/cancelcopy - stop /copycode", this::runCancelCopyCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("testplace",
             "/testplace <method 1-10> [block]", this::runTestPlaceCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("regallactions",
@@ -2338,6 +2347,16 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             "/regallactionsdebug [on/off] - slow + actionbar debug for regallactions", regAllActionsModule::runDebugCommand));
         ClientCommandHandler.instance.registerCommand(
             new com.example.examplemod.cmd.ShowFuncsCommand(() -> clickFunctionMap, () -> clickMenuLocation, () -> clickMenuMap));
+    }
+
+    private void runCopyCodeCommand(MinecraftServer server, ICommandSender sender, String[] args)
+    {
+        copyCodeModule.runCopyCommand(sender, args);
+    }
+
+    private void runCancelCopyCommand(MinecraftServer server, ICommandSender sender, String[] args)
+    {
+        copyCodeModule.cancel("manual");
     }
 
     private BlockPos resolveExportGlassPos(World world)
