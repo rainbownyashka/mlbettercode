@@ -1,6 +1,8 @@
 package com.example.examplemod.feature.copy;
 
 import com.example.examplemod.feature.codemap.BlueGlassCodeMap;
+import net.minecraft.block.Block;
+import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiChat;
 import net.minecraft.client.gui.GuiIngameMenu;
@@ -22,12 +24,16 @@ import net.minecraft.world.World;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 public final class CopyCodeModule
 {
+    private static final int BLUE_GLASS_META = 3;
+
     public interface Host
     {
         boolean isEditorModeActive();
@@ -46,6 +52,20 @@ public final class CopyCodeModule
         int tpPathQueueSize();
         void buildTpPathQueue(World world, double fromX, double fromY, double fromZ, double toX, double toY, double toZ);
         void clearTpPathQueue();
+    }
+
+    private static final class BlockTask
+    {
+        final int floorOffset;
+        final int relX;
+        final int relZ;
+
+        BlockTask(int floorOffset, int relX, int relZ)
+        {
+            this.floorOffset = floorOffset;
+            this.relX = relX;
+            this.relZ = relZ;
+        }
     }
 
     private enum Stage
@@ -79,8 +99,9 @@ public final class CopyCodeModule
     private List<Integer> floorOffsets = new ArrayList<>();
 
     private int floorIndex = 0;
-    private List<BlockPos> sourceBlocks = new ArrayList<>();
+    private List<BlockTask> floorTasks = new ArrayList<>();
     private int blockIndex = 0;
+    private int currentFloorOffset = 0;
 
     private Stage stage = Stage.IDLE;
     private long nextMs = 0L;
@@ -91,6 +112,9 @@ public final class CopyCodeModule
 
     private boolean prevPauseOnLostFocus = true;
     private boolean shiftHeld = false;
+
+    private int floorCacheWorldRef = 0;
+    private final Map<Integer, BlockPos> floorMaxGlassCache = new HashMap<>();
 
     private long nextEtaMs = 0L;
     private double avgSwitchMs = -1.0;
@@ -129,11 +153,14 @@ public final class CopyCodeModule
         catch (Exception ignore) { }
         active = false;
         stage = Stage.IDLE;
-        sourceBlocks.clear();
+        floorTasks.clear();
         floorOffsets.clear();
         floorIndex = 0;
         blockIndex = 0;
+        currentFloorOffset = 0;
         currentSource = null;
+        floorCacheWorldRef = 0;
+        floorMaxGlassCache.clear();
         worldRefSwitch = 0;
         switchSentMs = 0L;
         switchFromPos = null;
@@ -208,7 +235,8 @@ public final class CopyCodeModule
         stage = Stage.SCAN_FLOOR;
         floorIndex = 0;
         blockIndex = 0;
-        sourceBlocks.clear();
+        floorTasks.clear();
+        currentFloorOffset = 0;
         currentSource = null;
         nextMs = System.currentTimeMillis();
         worldRefSwitch = 0;
@@ -219,6 +247,8 @@ public final class CopyCodeModule
         avgTpSteps = -1.0;
         floorsScanned = 0;
         blocksScannedTotal = 0;
+        floorCacheWorldRef = 0;
+        floorMaxGlassCache.clear();
 
         host.setActionBar(true, "&aCopy started: floors=" + floorOffsets + " yoff=" + copyYOffset, 3500L);
     }
@@ -245,9 +275,17 @@ public final class CopyCodeModule
             return;
         }
 
+        int wref = System.identityHashCode(mc.world);
+        if (floorCacheWorldRef != wref)
+        {
+            floorCacheWorldRef = wref;
+            floorMaxGlassCache.clear();
+        }
+
         // Only keep flying while in Dev+Creative (tppath + safe movement).
         if (host.isDevCreativeScoreboard(mc))
         {
+            tryUpdateLastGlassFromPlayer(mc);
             ensureFlying(mc);
         }
 
@@ -285,7 +323,7 @@ public final class CopyCodeModule
                 return;
             }
             scanFloor(mc, floorOffsets.get(floorIndex));
-            if (sourceBlocks.isEmpty())
+            if (floorTasks.isEmpty())
             {
                 floorIndex++;
                 nextMs = nowMs + 250L;
@@ -297,10 +335,10 @@ public final class CopyCodeModule
             return;
         }
 
-        if (blockIndex >= sourceBlocks.size() && stage != Stage.SCAN_FLOOR)
+        if (blockIndex >= floorTasks.size() && stage != Stage.SCAN_FLOOR)
         {
             floorIndex++;
-            sourceBlocks.clear();
+            floorTasks.clear();
             stage = Stage.SCAN_FLOOR;
             nextMs = nowMs + 250L;
             return;
@@ -316,7 +354,10 @@ public final class CopyCodeModule
                     nextMs = nowMs + 250L;
                     return;
                 }
-                currentSource = sourceBlocks.get(blockIndex);
+                BlockTask task = floorTasks.get(blockIndex);
+                currentFloorOffset = task == null ? currentFloorOffset : task.floorOffset;
+                BlockPos maxGlass = task == null ? null : getFloorMaxGlass(mc, task.floorOffset);
+                currentSource = resolveBlockPosFromMaxGlass(maxGlass, task, 0);
                 if (currentSource == null)
                 {
                     blockIndex++;
@@ -341,12 +382,15 @@ public final class CopyCodeModule
                 return;
 
             case BREAK_BLOCK:
-                if (currentSource == null)
+                BlockTask taskB = floorTasks.get(blockIndex);
+                BlockPos maxGlassB = taskB == null ? null : getFloorMaxGlass(mc, taskB.floorOffset);
+                BlockPos breakPos = resolveBlockPosFromMaxGlass(maxGlassB, taskB, 0);
+                if (breakPos == null)
                 {
                     stage = Stage.NEXT;
                     return;
                 }
-                doBreak(mc, currentSource);
+                doBreak(mc, breakPos);
                 stage = Stage.WAIT_AFTER_BREAK;
                 nextMs = nowMs + 3000L;
                 return;
@@ -407,24 +451,28 @@ public final class CopyCodeModule
                     nextMs = nowMs + 100L;
                     return;
                 }
-                if (currentSource == null)
+                BlockTask taskD = floorTasks.get(blockIndex);
+                BlockPos maxGlassD = taskD == null ? null : getFloorMaxGlass(mc, taskD.floorOffset);
+                BlockPos dest = resolveBlockPosFromMaxGlass(maxGlassD, taskD, copyYOffset);
+                if (dest == null)
                 {
                     stage = Stage.NEXT;
                     return;
                 }
-                BlockPos dest = currentSource.add(0, copyYOffset, 0);
                 tpNear(mc, dest);
                 stage = Stage.PLACE_BEACON;
                 nextMs = nowMs + 650L;
                 return;
 
             case PLACE_BEACON:
-                if (currentSource == null)
+                BlockTask taskP = floorTasks.get(blockIndex);
+                BlockPos maxGlassP = taskP == null ? null : getFloorMaxGlass(mc, taskP.floorOffset);
+                BlockPos placeAt = resolveBlockPosFromMaxGlass(maxGlassP, taskP, copyYOffset);
+                if (placeAt == null)
                 {
                     stage = Stage.NEXT;
                     return;
                 }
-                BlockPos placeAt = currentSource.add(0, copyYOffset, 0);
                 if (!placeBeacon(mc, placeAt))
                 {
                     cancel("failed to place beacon");
@@ -489,7 +537,8 @@ public final class CopyCodeModule
 
     private void scanFloor(Minecraft mc, int floorOffset)
     {
-        sourceBlocks.clear();
+        floorTasks.clear();
+        currentFloorOffset = floorOffset;
         if (mc == null || mc.world == null)
         {
             return;
@@ -505,7 +554,25 @@ public final class CopyCodeModule
         {
             return;
         }
-        LinkedHashSet<BlockPos> out = new LinkedHashSet<>();
+        BlockPos maxZ = null;
+        for (BlockPos g : scanned)
+        {
+            if (g == null || g.getY() != floorSeed.getY())
+            {
+                continue;
+            }
+            if (maxZ == null || g.getZ() > maxZ.getZ())
+            {
+                maxZ = g;
+            }
+        }
+        if (maxZ == null)
+        {
+            return;
+        }
+        floorMaxGlassCache.put(floorOffset, maxZ);
+
+        LinkedHashSet<BlockTask> out = new LinkedHashSet<>();
         for (BlockPos g : scanned)
         {
             if (g == null)
@@ -523,15 +590,15 @@ public final class CopyCodeModule
             }
             if (!mc.world.isAirBlock(above))
             {
-                out.add(above);
+                out.add(new BlockTask(floorOffset, g.getX() - maxZ.getX(), g.getZ() - maxZ.getZ()));
             }
         }
-        sourceBlocks.addAll(out);
+        floorTasks.addAll(out);
         floorsScanned++;
-        blocksScannedTotal += sourceBlocks.size();
+        blocksScannedTotal += floorTasks.size();
         if (host.isDebugUi())
         {
-            host.debugChat("&e/copycode scan y=" + floorSeed.getY() + " blocks=" + sourceBlocks.size());
+            host.debugChat("&e/copycode scan y=" + floorSeed.getY() + " blocks=" + floorTasks.size());
         }
     }
 
@@ -556,6 +623,135 @@ public final class CopyCodeModule
             catch (Exception ignore) { }
         }
         return out;
+    }
+
+    private BlockPos getFloorMaxGlass(Minecraft mc, int floorOffset)
+    {
+        if (mc == null || mc.world == null)
+        {
+            return null;
+        }
+        BlockPos cached = floorMaxGlassCache.get(floorOffset);
+        if (cached != null)
+        {
+            return cached;
+        }
+        BlockPos base = host.getLastGlassPos();
+        if (base == null || !mc.world.isBlockLoaded(base))
+        {
+            tryUpdateLastGlassFromPlayer(mc);
+            base = host.getLastGlassPos();
+        }
+        if (base == null)
+        {
+            return null;
+        }
+        BlockPos floorSeed = base.add(0, floorOffset, 0);
+        List<BlockPos> scanned = BlueGlassCodeMap.scan(mc.world, Arrays.asList(floorSeed));
+        if (scanned.isEmpty())
+        {
+            return null;
+        }
+        BlockPos maxZ = null;
+        for (BlockPos g : scanned)
+        {
+            if (g == null || g.getY() != floorSeed.getY())
+            {
+                continue;
+            }
+            if (maxZ == null || g.getZ() > maxZ.getZ())
+            {
+                maxZ = g;
+            }
+        }
+        if (maxZ != null)
+        {
+            floorMaxGlassCache.put(floorOffset, maxZ);
+        }
+        return maxZ;
+    }
+
+    private static BlockPos resolveBlockPosFromMaxGlass(BlockPos maxGlass, BlockTask task, int extraY)
+    {
+        if (maxGlass == null || task == null)
+        {
+            return null;
+        }
+        return maxGlass.add(task.relX, 1 + extraY, task.relZ);
+    }
+
+    private void tryUpdateLastGlassFromPlayer(Minecraft mc)
+    {
+        if (mc == null || mc.world == null || mc.player == null)
+        {
+            return;
+        }
+        if (!host.isDevCreativeScoreboard(mc))
+        {
+            return;
+        }
+        BlockPos guess = new BlockPos((int) Math.floor(mc.player.posX) - 2, 0, (int) Math.floor(mc.player.posZ) - 2);
+        BlockPos found = findBlueGlassNear(mc.world, guess, 6);
+        if (found != null)
+        {
+            BlockPos prev = host.getLastGlassPos();
+            if (prev == null || !prev.equals(found))
+            {
+                host.setLastGlassPos(found, mc.world.provider.getDimension());
+                floorMaxGlassCache.clear();
+            }
+        }
+    }
+
+    private static BlockPos findBlueGlassNear(World world, BlockPos center, int r)
+    {
+        if (world == null || center == null)
+        {
+            return null;
+        }
+        if (isBlueGlass(world, center))
+        {
+            return center;
+        }
+        int rr = Math.max(1, Math.min(16, r));
+        for (int dz = -rr; dz <= rr; dz++)
+        {
+            for (int dx = -rr; dx <= rr; dx++)
+            {
+                if (dx == 0 && dz == 0)
+                {
+                    continue;
+                }
+                BlockPos p = center.add(dx, 0, dz);
+                if (isBlueGlass(world, p))
+                {
+                    return p;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean isBlueGlass(World world, BlockPos pos)
+    {
+        if (world == null || pos == null || !world.isBlockLoaded(pos))
+        {
+            return false;
+        }
+        try
+        {
+            IBlockState st = world.getBlockState(pos);
+            Block b = st == null ? null : st.getBlock();
+            if (b != Blocks.STAINED_GLASS)
+            {
+                return false;
+            }
+            return b.getMetaFromState(st) == BLUE_GLASS_META;
+        }
+        catch (Exception ignore)
+        {
+            return false;
+        }
     }
 
     private void tpNear(Minecraft mc, BlockPos target)
@@ -654,11 +850,13 @@ public final class CopyCodeModule
             worldRefSwitch = 0;
             switchSentMs = System.currentTimeMillis();
             switchFromPos = null;
+            floorMaxGlassCache.clear();
             return;
         }
         worldRefSwitch = System.identityHashCode(mc.world);
         switchSentMs = System.currentTimeMillis();
         switchFromPos = new Vec3d(mc.player.posX, mc.player.posY, mc.player.posZ);
+        floorMaxGlassCache.clear();
     }
 
     private boolean switchReady(Minecraft mc, long nowMs)
@@ -740,7 +938,7 @@ public final class CopyCodeModule
         }
         int floorsTotal = floorOffsets == null ? 0 : floorOffsets.size();
         int floorHuman = Math.max(1, floorIndex + 1);
-        int blocksTotal = sourceBlocks == null ? 0 : sourceBlocks.size();
+        int blocksTotal = floorTasks == null ? 0 : floorTasks.size();
         int blockHuman = Math.max(1, Math.min(blockIndex + 1, Math.max(1, blocksTotal)));
 
         int blocksLeftThisFloor = Math.max(0, blocksTotal - blockIndex);
