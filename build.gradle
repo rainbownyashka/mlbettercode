@@ -13,7 +13,7 @@ apply plugin: 'net.minecraftforge.gradle'
 apply plugin: 'eclipse'
 apply plugin: 'maven-publish'
 
-version = '1.0.0'
+version = '1.0.4'
 group = 'com.rainbow_universe.bettercode' // http://maven.apache.org/guides/mini/guide-naming-conventions.html
 archivesBaseName = 'bettercode'
 
@@ -87,7 +87,7 @@ jar {
         attributes([
             "Specification-Title": "bettercode",
             "Specification-Vendor": "rainbow_universe",
-            "Specification-Version": "1.0.0",
+            "Specification-Version": "${version}",
             "Implementation-Title": project.name,
             "Implementation-Version": "${version}",
             "Implementation-Vendor" :"rainbow_universe",
@@ -112,6 +112,15 @@ tasks.register('copyToMinecraftMods', Copy) {
     doFirst {
         if (modsDir != null && !modsDir.exists()) {
             modsDir.mkdirs()
+        }
+        // Avoid duplicate BetterCode jars in mods folder.
+        if (modsDir != null && modsDir.exists()) {
+            def currentName = jar.archivePath.name
+            modsDir.listFiles(new FilenameFilter() {
+                boolean accept(File dir, String name) {
+                    return name.startsWith('bettercode-') && name.endsWith('.jar') && name != currentName
+                }
+            })?.each { it.delete() }
         }
     }
 }

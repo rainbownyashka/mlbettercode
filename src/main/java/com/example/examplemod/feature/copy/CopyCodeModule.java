@@ -39,6 +39,7 @@ public final class CopyCodeModule
         String getCodeGlassScopeKey(World world);
 
         boolean tpPathQueueIsEmpty();
+        int tpPathQueueSize();
         void buildTpPathQueue(World world, double fromX, double fromY, double fromZ, double toX, double toY, double toZ);
         void clearTpPathQueue();
     }
@@ -87,6 +88,12 @@ public final class CopyCodeModule
     private boolean prevPauseOnLostFocus = true;
     private boolean shiftHeld = false;
 
+    private long nextEtaMs = 0L;
+    private double avgSwitchMs = -1.0;
+    private double avgTpSteps = -1.0;
+    private int floorsScanned = 0;
+    private int blocksScannedTotal = 0;
+
     public CopyCodeModule(Host host)
     {
         this.host = host;
@@ -126,6 +133,7 @@ public final class CopyCodeModule
         worldRefSwitch = 0;
         switchSentMs = 0L;
         switchFromPos = null;
+        nextEtaMs = 0L;
         if (host != null)
         {
             host.setActionBar(true, "&eCopy stopped: " + reason, 2500L);
@@ -202,6 +210,11 @@ public final class CopyCodeModule
         worldRefSwitch = 0;
         switchSentMs = 0L;
         switchFromPos = null;
+        nextEtaMs = nextMs;
+        avgSwitchMs = -1.0;
+        avgTpSteps = -1.0;
+        floorsScanned = 0;
+        blocksScannedTotal = 0;
 
         host.setActionBar(true, "&aCopy started: floors=" + floorOffsets + " yoff=" + copyYOffset, 3500L);
     }
@@ -228,6 +241,12 @@ public final class CopyCodeModule
 
         // Always keep flying on while active.
         ensureFlying(mc);
+
+        if (nowMs >= nextEtaMs)
+        {
+            showEta(nowMs);
+            nextEtaMs = nowMs + 1000L;
+        }
 
         try
         {
@@ -321,6 +340,7 @@ public final class CopyCodeModule
             case WAIT_WORLD_2:
                 if (switchReady(mc, nowMs))
                 {
+                    updateAvgSwitch(nowMs);
                     nextMs = nowMs + 1000L;
                     stage = Stage.DEV_2;
                 }
@@ -385,6 +405,7 @@ public final class CopyCodeModule
             case WAIT_WORLD_1:
                 if (switchReady(mc, nowMs))
                 {
+                    updateAvgSwitch(nowMs);
                     nextMs = nowMs + 1000L;
                     stage = Stage.DEV_1;
                 }
@@ -456,6 +477,8 @@ public final class CopyCodeModule
             }
         }
         sourceBlocks.addAll(out);
+        floorsScanned++;
+        blocksScannedTotal += sourceBlocks.size();
         if (host.isDebugUi())
         {
             host.debugChat("&e/copycode scan y=" + floorSeed.getY() + " blocks=" + sourceBlocks.size());
@@ -496,6 +519,22 @@ public final class CopyCodeModule
         double ty = target.getY();
         double tz = target.getZ() + 2.0 + 0.5;
         host.buildTpPathQueue(mc.world, mc.player.posX, mc.player.posY, mc.player.posZ, tx, ty, tz);
+        try
+        {
+            int steps = host.tpPathQueueSize();
+            if (steps > 0)
+            {
+                if (avgTpSteps < 0.0)
+                {
+                    avgTpSteps = steps;
+                }
+                else
+                {
+                    avgTpSteps = (avgTpSteps * 0.8) + (steps * 0.2);
+                }
+            }
+        }
+        catch (Exception ignore) { }
     }
 
     private static void ensureFlying(Minecraft mc)
@@ -594,6 +633,94 @@ public final class CopyCodeModule
         }
         // Fallback: proceed after some time, some servers keep the same world instance.
         return switchSentMs != 0L && (nowMs - switchSentMs) >= 8000L;
+    }
+
+    private void updateAvgSwitch(long nowMs)
+    {
+        if (switchSentMs <= 0L)
+        {
+            return;
+        }
+        long dt = Math.max(0L, nowMs - switchSentMs);
+        if (avgSwitchMs < 0.0)
+        {
+            avgSwitchMs = dt;
+        }
+        else
+        {
+            avgSwitchMs = (avgSwitchMs * 0.8) + (dt * 0.2);
+        }
+    }
+
+    private void showEta(long nowMs)
+    {
+        if (!active || stage == Stage.IDLE)
+        {
+            return;
+        }
+        int floorsTotal = floorOffsets == null ? 0 : floorOffsets.size();
+        int floorHuman = Math.max(1, floorIndex + 1);
+        int blocksTotal = sourceBlocks == null ? 0 : sourceBlocks.size();
+        int blockHuman = Math.max(1, Math.min(blockIndex + 1, Math.max(1, blocksTotal)));
+
+        int blocksLeftThisFloor = Math.max(0, blocksTotal - blockIndex);
+        int floorsLeftAfterThis = Math.max(0, floorsTotal - floorIndex - 1);
+        double avgBlocksPerFloor = (floorsScanned > 0) ? ((double) blocksScannedTotal / (double) floorsScanned) : (double) Math.max(1, blocksTotal);
+        int blocksLeftFuture = (int) Math.round(avgBlocksPerFloor * floorsLeftAfterThis);
+        int blocksLeft = blocksLeftThisFloor + blocksLeftFuture;
+
+        long etaMs = estimateRemainingMs(blocksLeft);
+        String eta = formatEta(etaMs);
+        String avgLoad = formatMs(avgSwitchMs < 0.0 ? 0.0 : avgSwitchMs);
+        host.setActionBar(true,
+            "&e/copycode &7этаж " + floorHuman + "/" + Math.max(1, floorsTotal)
+                + " &7блок " + blockHuman + "/" + Math.max(1, blocksTotal)
+                + " &fETA " + eta
+                + (avgSwitchMs > 0.0 ? " &8(load~" + avgLoad + ")" : ""),
+            1100L);
+    }
+
+    private long estimateRemainingMs(int blocksLeft)
+    {
+        if (blocksLeft <= 0)
+        {
+            return 0L;
+        }
+        double switchMs = avgSwitchMs > 0.0 ? avgSwitchMs : 7000.0;
+        double tpSteps = avgTpSteps > 0.0 ? avgTpSteps : 8.0;
+        double tpMs = (tpSteps * 300.0) + 600.0;
+
+        // Rough per-block time model, based on CopyCodeModule stage delays.
+        double perBlock =
+            // TP to source + settle
+            tpMs
+            // Shift + break + wait
+            + 500.0 + 3000.0
+            // /ad id2 + load + /dev wait
+            + (switchMs + 1000.0 + 1250.0)
+            // TP to dest + settle + place + wait
+            + ((tpSteps * 300.0) + 650.0) + 2000.0
+            // /ad id1 + load + /dev wait
+            + (switchMs + 1000.0 + 1250.0);
+
+        return (long) Math.max(0.0, perBlock * (double) blocksLeft);
+    }
+
+    private static String formatEta(long ms)
+    {
+        long s = Math.max(0L, ms / 1000L);
+        long m = s / 60L;
+        long ss = s % 60L;
+        return String.format(Locale.ROOT, "%02d:%02d", m, ss);
+    }
+
+    private static String formatMs(double ms)
+    {
+        if (ms <= 0.0)
+        {
+            return "0s";
+        }
+        return String.format(Locale.ROOT, "%.1fs", ms / 1000.0);
     }
 
     private static void sendLookPacket(Minecraft mc, BlockPos target)
