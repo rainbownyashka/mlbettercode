@@ -2,6 +2,10 @@ package com.example.examplemod.feature.copy;
 
 import com.example.examplemod.feature.codemap.BlueGlassCodeMap;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiChat;
+import net.minecraft.client.gui.GuiIngameMenu;
+import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.gui.inventory.GuiInventory;
 import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.command.ICommandSender;
 import net.minecraft.init.Blocks;
@@ -233,14 +237,19 @@ public final class CopyCodeModule
         {
             return;
         }
-        if (!host.isEditorModeActive() || !host.isDevCreativeScoreboard(mc))
+
+        // Auto-close random server GUIs (ads, etc). Allow only chat, inventory and ESC menu.
+        if (closeUnexpectedGui(mc))
         {
-            cancel("not in dev/creative");
+            nextMs = nowMs + 300L;
             return;
         }
 
-        // Always keep flying on while active.
-        ensureFlying(mc);
+        // Only keep flying while in Dev+Creative (tppath + safe movement).
+        if (host.isDevCreativeScoreboard(mc))
+        {
+            ensureFlying(mc);
+        }
 
         if (nowMs >= nextEtaMs)
         {
@@ -264,6 +273,12 @@ public final class CopyCodeModule
 
         if (stage == Stage.SCAN_FLOOR)
         {
+            if (!host.isDevCreativeScoreboard(mc))
+            {
+                host.setActionBar(false, "&c/copycode: открой Dev (нужен для скана/ломания)", 2500L);
+                nextMs = nowMs + 600L;
+                return;
+            }
             if (floorIndex >= floorOffsets.size())
             {
                 cancel("done");
@@ -294,6 +309,13 @@ public final class CopyCodeModule
         switch (stage)
         {
             case TP_TO_SOURCE:
+                if (!host.isDevCreativeScoreboard(mc))
+                {
+                    // We can only tppath in Dev+Creative.
+                    stage = Stage.DEV_1;
+                    nextMs = nowMs + 250L;
+                    return;
+                }
                 currentSource = sourceBlocks.get(blockIndex);
                 if (currentSource == null)
                 {
@@ -357,12 +379,29 @@ public final class CopyCodeModule
                 return;
 
             case WAIT_DEV_2:
-                // wait a bit so UI/state settles
+                if (!host.isDevCreativeScoreboard(mc))
+                {
+                    // Some servers drop us into play mode after /ad. Retry /dev until it sticks.
+                    if ((nowMs - switchSentMs) > 15000L)
+                    {
+                        cancel("dev mode not available");
+                        return;
+                    }
+                    stage = Stage.DEV_2;
+                    nextMs = nowMs + 1500L;
+                    return;
+                }
                 stage = Stage.TP_TO_DEST;
-                nextMs = nowMs + 250L;
+                nextMs = nowMs + 350L;
                 return;
 
             case TP_TO_DEST:
+                if (!host.isDevCreativeScoreboard(mc))
+                {
+                    stage = Stage.DEV_2;
+                    nextMs = nowMs + 250L;
+                    return;
+                }
                 if (!host.tpPathQueueIsEmpty())
                 {
                     nextMs = nowMs + 100L;
@@ -422,8 +461,19 @@ public final class CopyCodeModule
                 return;
 
             case WAIT_DEV_1:
+                if (!host.isDevCreativeScoreboard(mc))
+                {
+                    if ((nowMs - switchSentMs) > 15000L)
+                    {
+                        cancel("dev mode not available");
+                        return;
+                    }
+                    stage = Stage.DEV_1;
+                    nextMs = nowMs + 1500L;
+                    return;
+                }
                 stage = Stage.NEXT;
-                nextMs = nowMs + 250L;
+                nextMs = nowMs + 350L;
                 return;
 
             case NEXT:
@@ -633,6 +683,36 @@ public final class CopyCodeModule
         }
         // Fallback: proceed after some time, some servers keep the same world instance.
         return switchSentMs != 0L && (nowMs - switchSentMs) >= 8000L;
+    }
+
+    private static boolean closeUnexpectedGui(Minecraft mc)
+    {
+        if (mc == null)
+        {
+            return false;
+        }
+        GuiScreen s = mc.currentScreen;
+        if (s == null)
+        {
+            return false;
+        }
+        if (s instanceof GuiChat || s instanceof GuiInventory || s instanceof GuiIngameMenu)
+        {
+            return false;
+        }
+        try
+        {
+            if (mc.player != null)
+            {
+                mc.player.closeScreen();
+            }
+            else
+            {
+                mc.displayGuiScreen(null);
+            }
+        }
+        catch (Exception ignore) { }
+        return true;
     }
 
     private void updateAvgSwitch(long nowMs)

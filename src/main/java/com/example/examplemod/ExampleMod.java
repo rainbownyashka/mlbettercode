@@ -181,7 +181,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 {
     public static final String MODID = "bettercode";
     public static final String NAME = "Creative+ BetterCode";
-    public static final String VERSION = "1.0.4";
+    public static final String VERSION = "1.0.5";
     private static final int BASE_PORT = 8765;
     private static final int MAX_PORT = 8790;
     private static final long REGISTRY_TTL_MS = 15000L;
