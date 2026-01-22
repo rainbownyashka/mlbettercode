@@ -14,6 +14,11 @@
 2) Положи в `.minecraft/mods/`  
 3) Запусти игру.
 
+## Документация
+
+- Быстрый старт (RU): `docs/QUICKSTART_RU.md`
+- Гайд (RU): `docs/GUIDE_RU.md`
+
 ## Основные команды
 
 ### `/mldsl`
@@ -98,3 +103,7 @@
 
 - Сборка: `.\gradlew.bat build`
 - Артефакт: `build/libs/bettercode-*.jar`
+
+## Лицензия
+
+MIT — см. `LICENSE`.
