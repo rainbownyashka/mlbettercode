@@ -1,21 +1,38 @@
-MIT License
+MLBetterCode Non-Commercial License (v1.0)
 
 Copyright (c) 2026 rainbownyashka
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Разрешается бесплатно использовать, копировать, модифицировать и распространять
+этот проект и производные работы ТОЛЬКО для некоммерческого использования.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Коммерческое использование запрещено без предварительного письменного разрешения
+правообладателя.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+1) Определения
+
+“Коммерческое использование” — любое использование, прямо или косвенно направленное
+на получение денежной выгоды или коммерческого преимущества, включая (но не ограничиваясь):
+- продажу исходников/бинарников;
+- распространение за плату или в составе платного продукта/сервиса;
+- предоставление платного доступа к функциональности (SaaS/подписка/донат‑пэйволл);
+- публикацию/распространение, где доступ к проекту является частью коммерческого предложения.
+
+2) Права
+
+Вам предоставляется неисключительная лицензия на:
+- запуск/использование проекта;
+- изменение и создание производных работ;
+- распространение исходников/бинарников и производных работ
+  при условии соблюдения ограничений этого файла.
+
+3) Ограничения
+
+- НЕЛЬЗЯ продавать проект или производные работы без разрешения правообладателя.
+- НЕЛЬЗЯ использовать проект или производные работы в коммерческих целях без разрешения.
+- При распространении исходников/бинарников вы обязаны сохранить этот файл LICENSE и
+  уведомление об авторских правах.
+
+4) Отказ от гарантий
+
+ПРОЕКТ ПРЕДОСТАВЛЯЕТСЯ “КАК ЕСТЬ”, БЕЗ КАКИХ‑ЛИБО ГАРАНТИЙ. АВТОРЫ НЕ НЕСУТ
+ОТВЕТСТВЕННОСТИ ЗА УЩЕРБ, ВОЗНИКШИЙ В РЕЗУЛЬТАТЕ ИСПОЛЬЗОВАНИЯ ПРОЕКТА.
