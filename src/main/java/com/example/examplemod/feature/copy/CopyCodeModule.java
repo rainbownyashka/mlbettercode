@@ -73,6 +73,7 @@ public final class CopyCodeModule
         IDLE,
         SCAN_FLOOR,
         TP_TO_SOURCE,
+        WAIT_TP_SOURCE,
         SHIFT_DOWN,
         BREAK_BLOCK,
         WAIT_AFTER_BREAK,
@@ -81,6 +82,7 @@ public final class CopyCodeModule
         DEV_2,
         WAIT_DEV_2,
         TP_TO_DEST,
+        WAIT_TP_DEST,
         PLACE_BEACON,
         WAIT_AFTER_PLACE,
         SWITCH_TO_ID1,
@@ -115,6 +117,10 @@ public final class CopyCodeModule
 
     private int floorCacheWorldRef = 0;
     private final Map<Integer, BlockPos> floorMaxGlassCache = new HashMap<>();
+
+    private Vec3d pendingStandPos = null;
+    private long pendingTpStartMs = 0L;
+    private int pendingTpAttempts = 0;
 
     private long nextEtaMs = 0L;
     private double avgSwitchMs = -1.0;
@@ -165,6 +171,9 @@ public final class CopyCodeModule
         switchSentMs = 0L;
         switchFromPos = null;
         nextEtaMs = 0L;
+        pendingStandPos = null;
+        pendingTpStartMs = 0L;
+        pendingTpAttempts = 0;
         if (host != null)
         {
             host.setActionBar(true, "&eCopy stopped: " + reason, 2500L);
@@ -249,6 +258,9 @@ public final class CopyCodeModule
         blocksScannedTotal = 0;
         floorCacheWorldRef = 0;
         floorMaxGlassCache.clear();
+        pendingStandPos = null;
+        pendingTpStartMs = 0L;
+        pendingTpAttempts = 0;
 
         host.setActionBar(true, "&aCopy started: floors=" + floorOffsets + " yoff=" + copyYOffset, 3500L);
     }
@@ -369,9 +381,37 @@ public final class CopyCodeModule
                     nextMs = nowMs + 100L;
                     return;
                 }
-                tpNear(mc, currentSource);
-                stage = Stage.SHIFT_DOWN;
-                nextMs = nowMs + 600L;
+                beginTpTo(mc, currentSource);
+                stage = Stage.WAIT_TP_SOURCE;
+                nextMs = nowMs + 100L;
+                return;
+
+            case WAIT_TP_SOURCE:
+                if (!host.tpPathQueueIsEmpty())
+                {
+                    nextMs = nowMs + 100L;
+                    return;
+                }
+                if (isAtStandPos(mc))
+                {
+                    pendingStandPos = null;
+                    pendingTpAttempts = 0;
+                    stage = Stage.SHIFT_DOWN;
+                    nextMs = nowMs + 250L;
+                    return;
+                }
+                if ((nowMs - pendingTpStartMs) < 1200L)
+                {
+                    nextMs = nowMs + 150L;
+                    return;
+                }
+                if (pendingTpAttempts++ >= 8)
+                {
+                    cancel("tp source failed (rubberband)");
+                    return;
+                }
+                beginTpTo(mc, currentSource);
+                nextMs = nowMs + 150L;
                 return;
 
             case SHIFT_DOWN:
@@ -388,6 +428,13 @@ public final class CopyCodeModule
                 if (breakPos == null)
                 {
                     stage = Stage.NEXT;
+                    return;
+                }
+                if (!isNear(mc, breakPos, 6.0))
+                {
+                    // player got rubberbanded away: re-tp and retry
+                    stage = Stage.TP_TO_SOURCE;
+                    nextMs = nowMs + 150L;
                     return;
                 }
                 doBreak(mc, breakPos);
@@ -459,9 +506,40 @@ public final class CopyCodeModule
                     stage = Stage.NEXT;
                     return;
                 }
-                tpNear(mc, dest);
-                stage = Stage.PLACE_BEACON;
-                nextMs = nowMs + 650L;
+                beginTpTo(mc, dest);
+                stage = Stage.WAIT_TP_DEST;
+                nextMs = nowMs + 100L;
+                return;
+
+            case WAIT_TP_DEST:
+                if (!host.tpPathQueueIsEmpty())
+                {
+                    nextMs = nowMs + 100L;
+                    return;
+                }
+                if (isAtStandPos(mc))
+                {
+                    pendingStandPos = null;
+                    pendingTpAttempts = 0;
+                    stage = Stage.PLACE_BEACON;
+                    nextMs = nowMs + 250L;
+                    return;
+                }
+                if ((nowMs - pendingTpStartMs) < 1200L)
+                {
+                    nextMs = nowMs + 150L;
+                    return;
+                }
+                if (pendingTpAttempts++ >= 8)
+                {
+                    cancel("tp dest failed (rubberband)");
+                    return;
+                }
+                BlockTask taskDR = floorTasks.get(blockIndex);
+                BlockPos maxGlassDR = taskDR == null ? null : getFloorMaxGlass(mc, taskDR.floorOffset);
+                BlockPos destR = resolveBlockPosFromMaxGlass(maxGlassDR, taskDR, copyYOffset);
+                beginTpTo(mc, destR);
+                nextMs = nowMs + 150L;
                 return;
 
             case PLACE_BEACON:
@@ -471,6 +549,12 @@ public final class CopyCodeModule
                 if (placeAt == null)
                 {
                     stage = Stage.NEXT;
+                    return;
+                }
+                if (!isNear(mc, placeAt, 7.0))
+                {
+                    stage = Stage.TP_TO_DEST;
+                    nextMs = nowMs + 150L;
                     return;
                 }
                 if (!placeBeacon(mc, placeAt))
@@ -680,6 +764,70 @@ public final class CopyCodeModule
         return maxGlass.add(task.relX, 1 + extraY, task.relZ);
     }
 
+    private void beginTpTo(Minecraft mc, BlockPos target)
+    {
+        if (mc == null || mc.player == null || mc.world == null || target == null)
+        {
+            pendingStandPos = null;
+            return;
+        }
+        // Avoid teleporting "inside" blocks (server rubberband). Stand to the side and 1 block above.
+        // - X+1 to not collide with the target column
+        // - Z+2 (original requirement)
+        // - Y+1 to be above the target block
+        pendingStandPos = new Vec3d(target.getX() + 1.0 + 0.5, target.getY() + 1.0, target.getZ() + 2.0 + 0.5);
+        pendingTpStartMs = System.currentTimeMillis();
+        host.buildTpPathQueue(mc.world, mc.player.posX, mc.player.posY, mc.player.posZ,
+            pendingStandPos.x, pendingStandPos.y, pendingStandPos.z);
+        try
+        {
+            int steps = host.tpPathQueueSize();
+            if (steps > 0)
+            {
+                if (avgTpSteps < 0.0)
+                {
+                    avgTpSteps = steps;
+                }
+                else
+                {
+                    avgTpSteps = (avgTpSteps * 0.8) + (steps * 0.2);
+                }
+            }
+        }
+        catch (Exception ignore) { }
+    }
+
+    private boolean isAtStandPos(Minecraft mc)
+    {
+        if (pendingStandPos == null || mc == null || mc.player == null)
+        {
+            return true;
+        }
+        double dx = mc.player.posX - pendingStandPos.x;
+        double dy = mc.player.posY - pendingStandPos.y;
+        double dz = mc.player.posZ - pendingStandPos.z;
+        return (dx * dx + dy * dy + dz * dz) <= (3.5 * 3.5);
+    }
+
+    private static boolean isNear(Minecraft mc, BlockPos block, double dist)
+    {
+        if (mc == null || mc.player == null || block == null)
+        {
+            return false;
+        }
+        double px = mc.player.posX;
+        double py = mc.player.posY;
+        double pz = mc.player.posZ;
+        double cx = block.getX() + 0.5;
+        double cy = block.getY() + 0.5;
+        double cz = block.getZ() + 0.5;
+        double dx = px - cx;
+        double dy = py - cy;
+        double dz = pz - cz;
+        double d2 = dx * dx + dy * dy + dz * dz;
+        return d2 <= (dist * dist);
+    }
+
     private void tryUpdateLastGlassFromPlayer(Minecraft mc)
     {
         if (mc == null || mc.world == null || mc.player == null)
@@ -760,30 +908,7 @@ public final class CopyCodeModule
         {
             return;
         }
-        // Avoid teleporting "inside" blocks (server rubberband). Stand to the side and 1 block above.
-        // - X+1 to not collide with the target column
-        // - Z+2 (original requirement)
-        // - Y+1 to be above the target block
-        double tx = target.getX() + 1.0 + 0.5;
-        double ty = target.getY() + 1.0;
-        double tz = target.getZ() + 2.0 + 0.5;
-        host.buildTpPathQueue(mc.world, mc.player.posX, mc.player.posY, mc.player.posZ, tx, ty, tz);
-        try
-        {
-            int steps = host.tpPathQueueSize();
-            if (steps > 0)
-            {
-                if (avgTpSteps < 0.0)
-                {
-                    avgTpSteps = steps;
-                }
-                else
-                {
-                    avgTpSteps = (avgTpSteps * 0.8) + (steps * 0.2);
-                }
-            }
-        }
-        catch (Exception ignore) { }
+        beginTpTo(mc, target);
     }
 
     private static void ensureFlying(Minecraft mc)
