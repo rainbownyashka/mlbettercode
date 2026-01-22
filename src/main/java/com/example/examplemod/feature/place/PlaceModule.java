@@ -9,7 +9,11 @@ import net.minecraft.client.gui.inventory.GuiContainer;
 import net.minecraft.command.ICommandSender;
 import net.minecraft.init.Blocks;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.tileentity.TileEntity;
+import net.minecraft.tileentity.TileEntitySign;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.text.ITextComponent;
+import net.minecraft.util.text.TextFormatting;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,9 +27,24 @@ public final class PlaceModule
     public static final int INPUT_MODE_ARRAY = 3;
     public static final int INPUT_MODE_LOCATION = 4;
     public static final int INPUT_MODE_APPLE = 5;
+    public static final int INPUT_MODE_ITEM = 6;
 
     private final PlaceModuleHost host;
     private final PlaceState state = new PlaceState();
+    private List<BlockPos> lastScannedBlueGlass = new ArrayList<>();
+    private int lastScannedBlueGlassDim = Integer.MIN_VALUE;
+
+    private static final class PlanStep
+    {
+        boolean isPause;
+        boolean isSkip;
+        Block block;
+        String name;
+        String expectedSign1;
+        String expectedSign2;
+        String argsRaw;
+        List<PlaceArg> parsedArgs;
+    }
 
     public PlaceModule(PlaceModuleHost host)
     {
@@ -40,6 +59,15 @@ public final class PlaceModule
     public boolean isActive()
     {
         return state.active;
+    }
+
+    public boolean isPostPlaceActive()
+    {
+        return state.active
+            && state.current != null
+            && state.current.placedBlock
+            && state.current.postPlaceKind != PlaceEntry.POST_PLACE_NONE
+            && state.current.postPlaceStage < 3;
     }
 
     public void onClientTick(Minecraft mc, long nowMs)
@@ -223,20 +251,10 @@ public final class PlaceModule
         // behavior and broke server-side expectations (actions that must follow a specific event/block chain).
 
         // Parse steps first (so we know how many "real" placements we need and can validate tokens).
-        final class Step
-        {
-            boolean isPause;
-            boolean isSkip;
-            Block block;
-            String name;
-            String argsRaw;
-            List<PlaceArg> parsedArgs;
-        }
-
         // Multi-row support: "newline" token splits the plan into separate code rows.
         // Each row gets its own allocated free blue-glass start, while preserving the -2X chain inside that row.
-        List<List<Step>> rows = new ArrayList<>();
-        List<Step> steps = new ArrayList<>();
+        List<List<PlanStep>> rows = new ArrayList<>();
+        List<PlanStep> steps = new ArrayList<>();
         int i = 0;
         while (i < tokens.size())
         {
@@ -253,7 +271,7 @@ public final class PlaceModule
             }
             if ("skip".equalsIgnoreCase(blockTok))
             {
-                Step s = new Step();
+                PlanStep s = new PlanStep();
                 s.isSkip = true;
                 steps.add(s);
                 i++;
@@ -261,7 +279,7 @@ public final class PlaceModule
             }
             if ("air".equalsIgnoreCase(blockTok) || "minecraft:air".equalsIgnoreCase(blockTok))
             {
-                Step s = new Step();
+                PlanStep s = new PlanStep();
                 s.isPause = true;
                 steps.add(s);
                 i++;
@@ -288,10 +306,23 @@ public final class PlaceModule
                 return;
             }
 
-            Step s = new Step();
+            PlanStep s = new PlanStep();
             s.isPause = false;
             s.block = b;
-            s.name = nameTok == null ? "" : nameTok.trim();
+            String rawName = nameTok == null ? "" : nameTok.trim();
+            if (rawName.contains("||"))
+            {
+                String[] parts = rawName.split("\\Q||\\E", -1);
+                s.name = parts.length >= 1 ? parts[0].trim() : rawName;
+                if (parts.length == 2)
+                {
+                    s.expectedSign2 = parts[1].trim();
+                }
+            }
+            else
+            {
+                s.name = rawName;
+            }
             if (!"no".equalsIgnoreCase(argsTok))
             {
                 s.argsRaw = argsTok;
@@ -313,37 +344,142 @@ public final class PlaceModule
             return;
         }
 
-        List<BlockPos> scanned = BlueGlassCodeMap.scan(mc.world, java.util.Collections.singleton(seed));
+        List<BlockPos> seedList = new ArrayList<>();
+        seedList.add(seed);
+        try
+        {
+            Map<String, BlockPos> all = host.getCodeBlueGlassById();
+            if (all != null && !all.isEmpty())
+            {
+                for (BlockPos p : all.values())
+                {
+                    if (p != null)
+                    {
+                        seedList.add(p);
+                    }
+                }
+            }
+        }
+        catch (Exception ignore) { }
+
+        List<BlockPos> scanned = BlueGlassCodeMap.scan(mc.world, seedList);
         if (scanned.isEmpty())
         {
-            host.setActionBar(false, "&cNo blue glass found near seed", 2500L);
-            return;
+            // If chunks are unloaded (you flew away), fall back to the last known scan in this dimension.
+            if (lastScannedBlueGlassDim == mc.world.provider.getDimension() && lastScannedBlueGlass != null && !lastScannedBlueGlass.isEmpty())
+            {
+                scanned = new ArrayList<>(lastScannedBlueGlass);
+            }
+            else
+            {
+                host.setActionBar(false, "&cNo blue glass found near seed", 2500L);
+                return;
+            }
         }
-
-        List<BlockPos> starts = BlueGlassCodeMap.allocateNearestContiguousOrNearest(
-            mc.world,
-            scanned,
-            rows.size(),
-            mc.player.posX,
-            mc.player.posY,
-            mc.player.posZ,
-            BlueGlassCodeMap.DEFAULT_STEP_Z);
-        if (starts.isEmpty())
+        else
         {
-            host.setActionBar(false, "&cNo free blue glass found (need at least " + rows.size() + ")", 4500L);
-            reset();
-            return;
+            lastScannedBlueGlass = new ArrayList<>(scanned);
+            lastScannedBlueGlassDim = mc.world.provider.getDimension();
         }
 
-        BlockPos startGlass = starts.get(0);
-        host.setLastGlassPos(startGlass, mc.world.provider.getDimension());
+        // If we have a previous scan for this dimension, merge it in (helps when seed/glass IDs change).
+        if (lastScannedBlueGlassDim == mc.world.provider.getDimension() && lastScannedBlueGlass != null && !lastScannedBlueGlass.isEmpty())
+        {
+            java.util.LinkedHashSet<BlockPos> merged = new java.util.LinkedHashSet<>(scanned);
+            merged.addAll(lastScannedBlueGlass);
+            scanned = new ArrayList<>(merged);
+        }
 
-        // Build execution queue: append rows sequentially.
+        // Pre-skip: if a row already exists anywhere in the scanned blue-glass area, skip it.
+        // This avoids relying on the allocator picking the same start glass across runs.
+        List<List<PlanStep>> pendingRows = new ArrayList<>();
+        List<Integer> pendingRowNumbers = new ArrayList<>();
+        int skippedRows = 0;
         for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++)
         {
+            List<PlanStep> row = rows.get(rowIndex);
+            boolean already = false;
+
+            // Fast filter: only consider candidate glass positions where the first real block matches.
+            Block firstBlock = null;
+            for (PlanStep s : row)
+            {
+                if (s == null || s.isPause || s.isSkip)
+                {
+                    continue;
+                }
+                firstBlock = s.block;
+                break;
+            }
+            if (firstBlock == null)
+            {
+                // Empty row: treat as already done.
+                already = true;
+            }
+            else
+            {
+                for (BlockPos candidate : scanned)
+                {
+                    if (candidate == null)
+                    {
+                        continue;
+                    }
+                    Block b0 = mc.world.getBlockState(candidate.add(0, 1, 0)).getBlock();
+                    if (b0 != firstBlock)
+                    {
+                        continue;
+                    }
+                    if (rowAlreadyMatches(host, mc, candidate, row, rowIndex + 1, false))
+                    {
+                        already = true;
+                        break;
+                    }
+                }
+            }
+            if (already)
+            {
+                skippedRows++;
+                host.debugChat("&e/mldsl: skipped row " + (rowIndex + 1) + " (already exists)");
+            }
+            else
+            {
+                pendingRows.add(row);
+                pendingRowNumbers.add(rowIndex + 1);
+            }
+        }
+
+        List<BlockPos> starts = new ArrayList<>();
+        if (!pendingRows.isEmpty())
+        {
+            starts = BlueGlassCodeMap.allocateNearestContiguousOrNearest(
+                mc.world,
+                scanned,
+                pendingRows.size(),
+                mc.player.posX,
+                mc.player.posY,
+                mc.player.posZ,
+                BlueGlassCodeMap.DEFAULT_STEP_Z);
+            if (starts.isEmpty())
+            {
+                host.setActionBar(false, "&cNo free blue glass found (need at least " + pendingRows.size() + ")", 4500L);
+                reset();
+                return;
+            }
+        }
+
+        if (!starts.isEmpty())
+        {
+            BlockPos startGlass = starts.get(0);
+            host.setLastGlassPos(startGlass, mc.world.provider.getDimension());
+        }
+
+        // Build execution queue: append rows sequentially.
+        for (int rowIndex = 0; rowIndex < pendingRows.size(); rowIndex++)
+        {
             BlockPos glass = starts.get(rowIndex);
+            int logicalRowNumber = pendingRowNumbers.get(rowIndex);
             int p = 0; // reset per row
-            for (Step s : rows.get(rowIndex))
+            for (PlanStep s : pendingRows.get(rowIndex))
             {
                 if (s.isPause)
                 {
@@ -402,8 +538,409 @@ public final class PlaceModule
         state.active = !state.queue.isEmpty();
         state.current = null;
         host.setActionBar(true,
-            "&a/mldsl queued=" + state.queue.size() + " rows=" + rows.size(),
+            "&a/mldsl queued=" + state.queue.size() + " rows=" + rows.size() + " skipped=" + skippedRows,
             3500L);
+    }
+
+    public void runPlaceAdvancedPlanCheckCommand(MinecraftServer server, ICommandSender sender, String[] args)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.world == null || mc.player == null)
+        {
+            host.setActionBar(false, "&cNo world/player", 2000L);
+            return;
+        }
+        if (args == null || args.length == 0)
+        {
+            host.setActionBar(false, "&cEmpty plan args", 2000L);
+            return;
+        }
+
+        // Parse steps and rows (same rules as runPlaceAdvancedPlanCommand).
+        List<String> tokens = PlaceParser.splitArgsPreserveQuotes(String.join(" ", args));
+        if (tokens == null || tokens.isEmpty())
+        {
+            host.setActionBar(false, "&cEmpty plan", 2000L);
+            return;
+        }
+
+        List<List<PlanStep>> rows = new ArrayList<>();
+        List<PlanStep> steps = new ArrayList<>();
+        int i = 0;
+        while (i < tokens.size())
+        {
+            String blockTok = tokens.get(i);
+            if ("newline".equalsIgnoreCase(blockTok) || "row".equalsIgnoreCase(blockTok))
+            {
+                if (!steps.isEmpty())
+                {
+                    rows.add(steps);
+                    steps = new ArrayList<>();
+                }
+                i++;
+                continue;
+            }
+            if ("skip".equalsIgnoreCase(blockTok))
+            {
+                PlanStep s = new PlanStep();
+                s.isSkip = true;
+                steps.add(s);
+                i++;
+                continue;
+            }
+            if ("air".equalsIgnoreCase(blockTok) || "minecraft:air".equalsIgnoreCase(blockTok))
+            {
+                PlanStep s = new PlanStep();
+                s.isPause = true;
+                steps.add(s);
+                i++;
+                continue;
+            }
+            if (i + 2 >= tokens.size())
+            {
+                host.setActionBar(false, "&cPlan token error (expected <block> <name> <args|no> ...)", 4500L);
+                return;
+            }
+
+            String nameTok = tokens.get(i + 1);
+            String argsTok = tokens.get(i + 2);
+            i += 3;
+
+            String blockName = blockTok.contains(":") ? blockTok : ("minecraft:" + blockTok);
+            Block b = Block.getBlockFromName(blockName);
+            if (b == null)
+            {
+                host.setActionBar(false, "&cUnknown block: " + blockTok, 2500L);
+                return;
+            }
+
+            PlanStep s = new PlanStep();
+            s.isPause = false;
+            s.block = b;
+            String rawName = nameTok == null ? "" : nameTok.trim();
+                if (rawName.contains("||"))
+                {
+                    String[] parts = rawName.split("\\Q||\\E", -1);
+                    s.name = parts.length >= 1 ? parts[0].trim() : rawName;
+                    if (parts.length == 2)
+                    {
+                        s.expectedSign2 = parts[1].trim();
+                    }
+                }
+            else
+            {
+                s.name = rawName;
+            }
+            if (!"no".equalsIgnoreCase(argsTok))
+            {
+                s.argsRaw = argsTok;
+                List<PlaceArg> parsed = PlaceParser.parsePlaceAdvancedArgs(argsTok, host);
+                if (parsed != null && !parsed.isEmpty())
+                {
+                    s.parsedArgs = parsed;
+                }
+            }
+            steps.add(s);
+        }
+        if (!steps.isEmpty())
+        {
+            rows.add(steps);
+        }
+        if (rows.isEmpty())
+        {
+            host.setActionBar(false, "&cEmpty plan", 2000L);
+            return;
+        }
+
+        BlockPos seed = host.getLastGlassPos();
+        if (seed == null)
+        {
+            host.setActionBar(false, "&cNo blue glass position recorded", 2000L);
+            return;
+        }
+
+        List<BlockPos> seedList = new ArrayList<>();
+        seedList.add(seed);
+        try
+        {
+            Map<String, BlockPos> all = host.getCodeBlueGlassById();
+            if (all != null && !all.isEmpty())
+            {
+                for (BlockPos p : all.values())
+                {
+                    if (p != null)
+                    {
+                        seedList.add(p);
+                    }
+                }
+            }
+        }
+        catch (Exception ignore) { }
+
+        List<BlockPos> scanned = BlueGlassCodeMap.scan(mc.world, seedList);
+        if (scanned.isEmpty())
+        {
+            if (lastScannedBlueGlassDim == mc.world.provider.getDimension() && lastScannedBlueGlass != null && !lastScannedBlueGlass.isEmpty())
+            {
+                scanned = new ArrayList<>(lastScannedBlueGlass);
+            }
+            else
+            {
+                host.setActionBar(false, "&cNo blue glass found near seed", 2500L);
+                return;
+            }
+        }
+        else
+        {
+            lastScannedBlueGlass = new ArrayList<>(scanned);
+            lastScannedBlueGlassDim = mc.world.provider.getDimension();
+        }
+
+        if (lastScannedBlueGlassDim == mc.world.provider.getDimension() && lastScannedBlueGlass != null && !lastScannedBlueGlass.isEmpty())
+        {
+            java.util.LinkedHashSet<BlockPos> merged = new java.util.LinkedHashSet<>(scanned);
+            merged.addAll(lastScannedBlueGlass);
+            scanned = new ArrayList<>(merged);
+        }
+
+        host.setActionBar(true,
+            "&e/mldsl check: scanned=" + scanned.size() + " seeds=" + seedList.size() + " rows=" + rows.size(),
+            2500L);
+        if (host.isDebugUi())
+        {
+            host.debugChat("&e/mldsl check: seed=" + seed + " seeds=" + seedList.size()
+                + " scanned=" + scanned.size()
+                + " dy=" + BlueGlassCodeMap.DEFAULT_FLOOR_DY
+                + " dz=" + BlueGlassCodeMap.DEFAULT_STEP_Z);
+            if (!scanned.isEmpty())
+            {
+                BlockPos first = scanned.get(0);
+                BlockPos last = scanned.get(scanned.size() - 1);
+                host.debugChat("&e/mldsl check: scanned y=[" + first.getY() + ".." + last.getY() + "] z=[" + first.getZ() + ".." + last.getZ() + "]");
+            }
+        }
+
+        int foundRows = 0;
+        for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++)
+        {
+            List<PlanStep> row = rows.get(rowIndex);
+            Block firstBlock = null;
+            for (PlanStep st : row)
+            {
+                if (st == null || st.isPause || st.isSkip)
+                {
+                    continue;
+                }
+                firstBlock = st.block;
+                break;
+            }
+            boolean found = false;
+            BlockPos foundAt = null;
+            int candidates = 0;
+            for (BlockPos candidate : scanned)
+            {
+                if (candidate == null)
+                {
+                    continue;
+                }
+                if (firstBlock != null)
+                {
+                    BlockPos b0Pos = candidate.add(0, 1, 0);
+                    Block b0;
+                    if (!mc.world.isBlockLoaded(b0Pos, false))
+                    {
+                        b0 = host.getCachedPlacedBlock(mc.world, b0Pos);
+                    }
+                    else
+                    {
+                        b0 = mc.world.getBlockState(b0Pos).getBlock();
+                    }
+                    if (b0 != firstBlock)
+                    {
+                        continue;
+                    }
+                }
+                candidates++;
+                if (rowAlreadyMatches(host, mc, candidate, row, rowIndex + 1, false))
+                {
+                    found = true;
+                    foundAt = candidate;
+                    break;
+                }
+            }
+            if (found)
+            {
+                foundRows++;
+                host.debugChat("&a/mldsl check: row " + (rowIndex + 1) + " FOUND at " + foundAt);
+            }
+            else
+            {
+                host.debugChat("&c/mldsl check: row " + (rowIndex + 1) + " NOT found");
+                if (host.isDebugUi())
+                {
+                    host.debugChat("&e/mldsl check: row " + (rowIndex + 1) + " candidates=" + candidates
+                        + " firstBlock=" + (firstBlock == null ? "null" : firstBlock.getRegistryName()));
+                }
+            }
+        }
+        host.setActionBar(true, "&a/mldsl check done: found=" + foundRows + "/" + rows.size(), 3500L);
+    }
+
+    private static boolean rowAlreadyMatches(
+        PlaceModuleHost host,
+        Minecraft mc,
+        BlockPos glass,
+        List<PlanStep> steps,
+        int rowNumber,
+        boolean verbose)
+    {
+        if (host == null || mc == null || mc.world == null || glass == null || steps == null)
+        {
+            return false;
+        }
+        int p = 0;
+        for (PlanStep s : steps)
+        {
+            if (s == null)
+            {
+                continue;
+            }
+            if (s.isPause)
+            {
+                continue;
+            }
+            if (s.isSkip)
+            {
+                p++;
+                continue;
+            }
+            if (s.block == null)
+            {
+                return false;
+            }
+            BlockPos entryPos = glass.add(-2 * p, 1, 0);
+            Block existing;
+            if (!mc.world.isBlockLoaded(entryPos, false))
+            {
+                existing = host.getCachedPlacedBlock(mc.world, entryPos);
+            }
+            else
+            {
+                existing = mc.world.getBlockState(entryPos).getBlock();
+            }
+            if (existing != s.block)
+            {
+                if (verbose)
+                {
+                    host.debugChat(
+                        "&e/mldsl skip-check row " + rowNumber + ": block mismatch p=" + p
+                            + " want=" + s.block.getRegistryName()
+                            + " got=" + (existing == null ? "null" : existing.getRegistryName()));
+                }
+                return false;
+            }
+
+            String expectedName = s.name == null ? "" : s.name.trim();
+            String expectedSign2 = s.expectedSign2 == null ? "" : s.expectedSign2.trim();
+            // NOTE: expectedSign1 is the category label (e.g. "Действие игрока") and is NOT written on the sign.
+            // For reliable skip detection we compare only action/sign text (expectedSign2) and (optionally) menu name.
+            if (!expectedName.isEmpty() || !expectedSign2.isEmpty())
+            {
+                BlockPos signPos = host.findSignAtZMinus1(mc.world, entryPos);
+                if (signPos == null)
+                {
+                    if (verbose)
+                    {
+                        host.debugChat("&e/mldsl skip-check row " + rowNumber + ": no sign at p=" + p);
+                    }
+                    return false;
+                }
+                String expectedMenuNorm = host.normalizeForMatch(expectedName);
+                String expectedSign2Norm = host.normalizeForMatch(expectedSign2);
+
+                // menu name usually isn't written on the sign for actions; when expectedSign2 is present,
+                // match only sign2. Use menu-only matching for blocks like functions/events where sign2 is empty.
+                boolean menuOk = (expectedSign2Norm != null && !expectedSign2Norm.isEmpty())
+                    || expectedMenuNorm == null || expectedMenuNorm.isEmpty();
+                boolean s2Ok = expectedSign2Norm == null || expectedSign2Norm.isEmpty();
+                StringBuilder actual = verbose ? new StringBuilder() : null;
+
+                String[] cachedLines = null;
+                TileEntity te = mc.world.getTileEntity(signPos);
+                if (te instanceof TileEntitySign)
+                {
+                    TileEntitySign sign = (TileEntitySign) te;
+                    for (ITextComponent line : sign.signText)
+                    {
+                        if (line == null)
+                        {
+                            continue;
+                        }
+                        String txt = TextFormatting.getTextWithoutFormattingCodes(line.getUnformattedText());
+                        String lineNorm = host.normalizeForMatch(txt);
+                        if (actual != null)
+                        {
+                            if (actual.length() > 0) actual.append(" | ");
+                            actual.append(lineNorm == null ? "" : lineNorm);
+                        }
+
+                        if (!menuOk && lineNorm != null && !lineNorm.isEmpty() && lineNorm.equals(expectedMenuNorm))
+                        {
+                            menuOk = true;
+                        }
+                        if (!s2Ok && lineNorm != null && !lineNorm.isEmpty() && lineNorm.equals(expectedSign2Norm))
+                        {
+                            s2Ok = true;
+                        }
+                    }
+                }
+                else
+                {
+                    cachedLines = host.getCachedSignLines(mc.world, signPos);
+                    if (cachedLines == null)
+                    {
+                        if (verbose)
+                        {
+                            host.debugChat("&e/mldsl skip-check row " + rowNumber + ": sign not loaded and no cache p=" + p);
+                        }
+                        return false;
+                    }
+                    for (int li = 0; li < cachedLines.length; li++)
+                    {
+                        String txt = cachedLines[li];
+                        String lineNorm = host.normalizeForMatch(txt);
+                        if (actual != null)
+                        {
+                            if (actual.length() > 0) actual.append(" | ");
+                            actual.append(lineNorm == null ? "" : lineNorm);
+                        }
+                        if (!menuOk && lineNorm != null && !lineNorm.isEmpty() && lineNorm.equals(expectedMenuNorm))
+                        {
+                            menuOk = true;
+                        }
+                        if (!s2Ok && lineNorm != null && !lineNorm.isEmpty() && lineNorm.equals(expectedSign2Norm))
+                        {
+                            s2Ok = true;
+                        }
+                    }
+                }
+                if (!(menuOk && s2Ok))
+                {
+                    if (verbose)
+                    {
+                        host.debugChat(
+                            "&e/mldsl skip-check row " + rowNumber + ": sign mismatch p=" + p
+                                + " menu=" + (expectedMenuNorm == null ? "" : expectedMenuNorm)
+                                + " sign2=" + (expectedSign2Norm == null ? "" : expectedSign2Norm)
+                                + " actual=" + (actual == null ? "" : actual.toString())
+                                + " (rawSign2=" + expectedSign2 + ", rawMenu=" + expectedName + ")");
+                    }
+                    return false;
+                }
+            }
+            p++;
+        }
+        return true;
     }
 
     private static int parseCycleTicks(String raw)

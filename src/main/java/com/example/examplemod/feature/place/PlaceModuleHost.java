@@ -20,6 +20,11 @@ public interface PlaceModuleHost
     boolean isDebugUi();
     boolean isInputActive();
 
+    long placeDelayMs(long baseMs);
+    int placeMaxPlaceAttempts();
+    long placeBlockRetryDelayMs();
+    long placeParamsChestAutoOpenDelayMs();
+
     void setActionBar(boolean ok, String text, long timeMs);
     void debugChat(String text);
 
@@ -52,6 +57,9 @@ public interface PlaceModuleHost
     String getGuiTitle(GuiChest gui);
 
     BlockPos findSignAtZMinus1(World world, BlockPos basePos);
+    String[] getCachedSignLines(World world, BlockPos signPos);
+    void cachePlacedBlock(World world, BlockPos entryPos, Block block);
+    Block getCachedPlacedBlock(World world, BlockPos entryPos);
 
     BlockPos getLastGlassPos();
     int getLastGlassDim();

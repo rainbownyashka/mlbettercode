@@ -195,6 +195,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private static final int INPUT_MODE_ARRAY = 3;
     private static final int INPUT_MODE_LOCATION = 4;
     private static final int INPUT_MODE_APPLE = 5;
+    private static final int INPUT_MODE_ITEM = 6;
     private static final int INPUT_CONTEXT_SLOT = 0;
     private static final int INPUT_CONTEXT_GIVE = 1;
     private static final int ENTRY_RECENT_LIMIT = 10;
@@ -225,6 +226,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private static boolean autoCacheEnabled = false;
     private static int autoCacheRadius = 6;
     private static boolean autoCacheTrappedOnly = true;
+    // --- Place/MLDSL timings (config) ---
+    private static int placeSpeedPercent = 100;
+    private static int placeMaxPlaceAttempts = 6;
+    private static int placeBlockRetryDelayMs = 1000;
+    private static int placeParamsChestAutoOpenDelayMs = 1500;
     private static volatile String lastChatMessage = "";
     private static volatile String lastChatPlayer = "";
     private static volatile long lastChatTimeMs = 0L;
@@ -249,6 +255,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private final boolean[] hotbarKeyDown = new boolean[9];
     private int activeHotbarSet = 0;
     private World lastWorldRef = null;
+    private Boolean prevPauseOnLostFocus = null;
     private boolean inputActive = false;
     private boolean inputSaveVariable = false;
     private GuiTextField inputField;
@@ -307,6 +314,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private long lastCodeBlueGlassSaveMs = 0L;
     private final AtomicBoolean codeBlueGlassSaveQueued = new AtomicBoolean(false);
     private final Map<String, BlockPos> codeBlueGlassById = new HashMap<>();
+    private final Map<String, String[]> signLinesCache = new HashMap<>();
+    private final Map<String, String[]> signLinesCacheByDimPos = new HashMap<>();
+    private long lastSignCacheScanMs = 0L;
+    private final Map<String, String> placedBlockCacheByDimPos = new HashMap<>();
     private String signSearchQuery = null;
     private int signSearchDim = 0;
     private final List<BlockPos> signSearchMatches = new ArrayList<>();
@@ -511,6 +522,32 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     public boolean isInputActive()
     {
         return inputActive;
+    }
+
+    @Override
+    public long placeDelayMs(long baseMs)
+    {
+        long base = Math.max(0L, baseMs);
+        int pct = Math.max(10, Math.min(500, placeSpeedPercent));
+        return (base * 100L) / pct;
+    }
+
+    @Override
+    public int placeMaxPlaceAttempts()
+    {
+        return Math.max(1, Math.min(30, placeMaxPlaceAttempts));
+    }
+
+    @Override
+    public long placeBlockRetryDelayMs()
+    {
+        return Math.max(50L, (long) placeBlockRetryDelayMs);
+    }
+
+    @Override
+    public long placeParamsChestAutoOpenDelayMs()
+    {
+        return Math.max(200L, (long) placeParamsChestAutoOpenDelayMs);
     }
 
     @Override
@@ -1547,17 +1584,33 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             // If a menu was just opened, clear pending click/place queues to avoid interference
             if ("OpenedMenu".equals(trigger))
             {
-                // Schedule content-change detection after a short delay so the server can populate the container.
+                // During post-place sign configuration (cycle/function naming), the server may open unrelated container GUIs.
+                // Ignore them so they don't interfere with cached menu detection or stall the printer.
                 try
                 {
-                    if (mc.player != null && mc.player.openContainer != null)
+                    if (placeModule != null && placeModule.isPostPlaceActive())
                     {
-                        pendingMenuDetect = true;
-                        pendingMenuDetectStartMs = System.currentTimeMillis();
-                        pendingMenuDetectWindowId = mc.player.openContainer.windowId;
-                        if (debugUi && mc.player != null)
+                        pendingMenuDetect = false;
+                        pendingMenuDetectWindowId = -1;
+                        pendingMenuDetectStartMs = 0L;
+                        closeCurrentScreen();
+                        if (debugUi && mc != null && mc.player != null)
                         {
-                            mc.player.sendMessage(new TextComponentString("Scheduled menu-content detection for window " + pendingMenuDetectWindowId));
+                            mc.player.sendMessage(new TextComponentString("Ignored OpenedMenu during post-place"));
+                        }
+                    }
+                    else
+                    {
+                        // Schedule content-change detection after a short delay so the server can populate the container.
+                        if (mc.player != null && mc.player.openContainer != null)
+                        {
+                            pendingMenuDetect = true;
+                            pendingMenuDetectStartMs = System.currentTimeMillis();
+                            pendingMenuDetectWindowId = mc.player.openContainer.windowId;
+                            if (debugUi && mc.player != null)
+                            {
+                                mc.player.sendMessage(new TextComponentString("Scheduled menu-content detection for window " + pendingMenuDetectWindowId));
+                            }
                         }
                     }
                 }
@@ -1644,6 +1697,54 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             placeModule.onGuiTick((GuiContainer) mc.currentScreen, System.currentTimeMillis());
             regAllActionsModule.onGuiTick((GuiContainer) mc.currentScreen, System.currentTimeMillis());
         }
+
+        // Cache sign texts from currently-loaded tile entities so skip-check can work even after chunks unload.
+        // This runs continuously (throttled) in editor mode because signs can unload when you fly away.
+        try
+        {
+            if (mc != null && mc.world != null && editorModeActive)
+            {
+                long nowMs = System.currentTimeMillis();
+                if (nowMs - lastSignCacheScanMs > 1000L)
+                {
+                    lastSignCacheScanMs = nowMs;
+                    for (TileEntity te : new ArrayList<>(mc.world.loadedTileEntityList))
+                    {
+                        if (!(te instanceof TileEntitySign))
+                        {
+                            continue;
+                        }
+                        TileEntitySign sign = (TileEntitySign) te;
+                        cacheSignLines(mc.world, sign);
+                    }
+                }
+            }
+        }
+        catch (Exception ignore) { }
+
+        // While printing/running plans, force-disable vanilla "pause on lost focus" so minimizing/alt-tabbing
+        // doesn't pause the client tick loop.
+        try
+        {
+            if (mc != null && mc.gameSettings != null)
+            {
+                boolean shouldForce = placeModule != null && placeModule.isActive();
+                if (shouldForce)
+                {
+                    if (prevPauseOnLostFocus == null)
+                    {
+                        prevPauseOnLostFocus = mc.gameSettings.pauseOnLostFocus;
+                    }
+                    mc.gameSettings.pauseOnLostFocus = false;
+                }
+                else if (prevPauseOnLostFocus != null)
+                {
+                    mc.gameSettings.pauseOnLostFocus = prevPauseOnLostFocus;
+                    prevPauseOnLostFocus = null;
+                }
+            }
+        }
+        catch (Exception ignore) { }
         
         // If a menu-open detection was scheduled, run it after a short delay so the server has time
         // to populate the container. Timeout if it takes too long.
@@ -7152,6 +7253,214 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         clickMenuLocation.clear();
         clickMenuMap.putAll(loaded.menus);
         clickMenuLocation.putAll(loaded.locs);
+
+        try
+        {
+            Minecraft mc = Minecraft.getMinecraft();
+            if (mc != null && mc.mcDataDir != null)
+            {
+                File export = new File(mc.mcDataDir, "regallactions_export.txt");
+                int added = importClickMenuFromRegAllExport(export);
+                if (added > 0)
+                {
+                    debugChat("&aRegAll export -> clickMenuMap: +" + added);
+                }
+            }
+        }
+        catch (Exception ignore) { }
+    }
+
+    private static String parseExportDisplayName(String raw)
+    {
+        if (raw == null)
+        {
+            return "";
+        }
+        String s = raw;
+        int rb = s.indexOf(']');
+        if (rb >= 0)
+        {
+            s = s.substring(rb + 1);
+        }
+        int pipe = s.indexOf('|');
+        if (pipe >= 0)
+        {
+            s = s.substring(0, pipe);
+        }
+        s = net.minecraft.util.text.TextFormatting.getTextWithoutFormattingCodes(s);
+        return s == null ? "" : s.trim();
+    }
+
+    private static ItemStack parseExportItemStack(String raw)
+    {
+        if (raw == null || raw.isEmpty())
+        {
+            return ItemStack.EMPTY;
+        }
+        String s = raw.trim();
+        ItemStack stack = ItemStack.EMPTY;
+        try
+        {
+            if (s.startsWith("[") && s.contains(" meta="))
+            {
+                int end = s.indexOf(']');
+                String head = end > 0 ? s.substring(1, end) : s.substring(1);
+                String[] parts = head.split("\\s+meta=");
+                String idStr = parts.length >= 1 ? parts[0].trim() : "";
+                int meta = 0;
+                if (parts.length >= 2)
+                {
+                    try
+                    {
+                        meta = Integer.parseInt(parts[1].trim());
+                    }
+                    catch (Exception ignore) { }
+                }
+                Item it = Item.getByNameOrId(idStr);
+                if (it != null)
+                {
+                    stack = new ItemStack(it, 1, meta);
+                }
+            }
+        }
+        catch (Exception ignore) { }
+        if (stack.isEmpty())
+        {
+            stack = new ItemStack(Items.PAPER);
+        }
+        String name = parseExportDisplayName(s);
+        if (!name.isEmpty())
+        {
+            stack.setStackDisplayName(name);
+        }
+        return stack;
+    }
+
+    private int importClickMenuFromRegAllExport(File exportFile)
+    {
+        if (exportFile == null || !exportFile.exists())
+        {
+            return 0;
+        }
+        int added = 0;
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(exportFile), "UTF-8")))
+        {
+            String path = "";
+            String category = null;
+            String subitem = null;
+            String line;
+            while ((line = reader.readLine()) != null)
+            {
+                if (line.startsWith("# record"))
+                {
+                    if (category != null && subitem != null)
+                    {
+                        added += importClickMenuFromRecord(path, category, subitem);
+                    }
+                    path = "";
+                    category = null;
+                    subitem = null;
+                    continue;
+                }
+                if (line.startsWith("path="))
+                {
+                    path = line.substring("path=".length());
+                }
+                if (line.startsWith("category="))
+                {
+                    category = line.substring("category=".length());
+                }
+                else if (line.startsWith("subitem="))
+                {
+                    subitem = line.substring("subitem=".length());
+                }
+            }
+            if (category != null && subitem != null)
+            {
+                added += importClickMenuFromRecord(path, category, subitem);
+            }
+        }
+        catch (Exception ignore)
+        {
+            return 0;
+        }
+        if (added > 0)
+        {
+            clickMenuDirty = true;
+        }
+        return added;
+    }
+
+    private static String lastPathKey(String path)
+    {
+        if (path == null)
+        {
+            return null;
+        }
+        String p = path.trim();
+        if (p.isEmpty())
+        {
+            return null;
+        }
+        int idx = p.lastIndexOf('>');
+        String key = idx >= 0 ? p.substring(idx + 1) : p;
+        key = key == null ? null : key.trim().toLowerCase(java.util.Locale.ROOT);
+        return key == null || key.isEmpty() ? null : key;
+    }
+
+    private int importClickMenuFromRecord(String path, String categoryRaw, String subitemRaw)
+    {
+        ItemStack categoryStack = parseExportItemStack(categoryRaw);
+        ItemStack subStack = parseExportItemStack(subitemRaw);
+        if (categoryStack.isEmpty() || subStack.isEmpty())
+        {
+            return 0;
+        }
+        String categoryKey = getItemNameKey(categoryStack);
+        if (categoryKey == null || categoryKey.isEmpty() || "empty".equals(categoryKey))
+        {
+            return 0;
+        }
+        int added = 0;
+
+        // 1) Link: openerKey -> categoryStack (so we can navigate nested categories)
+        String openerKey = lastPathKey(path);
+        if (openerKey != null && !"empty".equals(openerKey))
+        {
+            added += addToClickMenuList(openerKey, categoryStack);
+        }
+
+        // 2) Link: categoryKey -> subStack (so we can find the action within the category)
+        added += addToClickMenuList(categoryKey, subStack);
+        return added;
+    }
+
+    private int addToClickMenuList(String key, ItemStack stack)
+    {
+        if (key == null || key.isEmpty() || stack == null || stack.isEmpty())
+        {
+            return 0;
+        }
+        List<ItemStack> list = clickMenuMap.get(key);
+        if (list == null)
+        {
+            list = new ArrayList<>();
+            clickMenuMap.put(key, list);
+        }
+        String want = getItemNameKey(stack);
+        for (ItemStack it : list)
+        {
+            if (it == null || it.isEmpty())
+            {
+                continue;
+            }
+            if (want.equals(getItemNameKey(it)))
+            {
+                return 0;
+            }
+        }
+        list.add(stack);
+        return 1;
     }
 
     private void loadNote()
@@ -7644,6 +7953,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             ItemStack cached = getCachedTemplateForItem(Items.APPLE);
             return cached.isEmpty() ? new ItemStack(Items.APPLE, 1) : cached;
+        }
+        if (mode == INPUT_MODE_ITEM)
+        {
+            return new ItemStack(Blocks.STONE, 1);
         }
         return new ItemStack(Items.BOOK, 1);
     }
@@ -8468,7 +8781,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             {
                 return -1;
             }
-            display = applyColorCodes("&r" + finalRaw);
+            boolean isSaved = saveVar;
+            if (mode == INPUT_MODE_VARIABLE)
+            {
+                isSaved = saveVar || savedVariableNames.contains(finalRaw);
+            }
+            display = applyColorCodes("&r" + finalRaw + ((mode == INPUT_MODE_ARRAY && isSaved) ? " \\u2398" : ""));
         }
         else if (mode == INPUT_MODE_APPLE)
         {
@@ -8484,12 +8802,17 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         ItemStack give = template == null || template.isEmpty() ? new ItemStack(Items.BOOK, 1) : template.copy();
         give.setCount(1);
         give.setStackDisplayName(display);
-        if (mode == INPUT_MODE_VARIABLE)
+        if (mode == INPUT_MODE_VARIABLE || mode == INPUT_MODE_ARRAY)
         {
-            if (saveVar || savedVariableNames.contains(finalRaw))
+            boolean shouldSave = saveVar;
+            if (mode == INPUT_MODE_VARIABLE)
+            {
+                shouldSave = saveVar || savedVariableNames.contains(finalRaw);
+            }
+            if (shouldSave)
             {
                 applySavedVariableTag(give);
-                if (saveVar)
+                if (saveVar && mode == INPUT_MODE_VARIABLE)
                 {
                     savedVariableNames.add(finalRaw);
                 }
@@ -9667,6 +9990,17 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 "Radius (blocks) around player to scan for chests to auto-cache.");
             autoCacheTrappedOnly = config.getBoolean("autoCacheTrappedOnly", "chest", true,
                 "If true: only TRAPPED_CHEST blocks. If false: TRAPPED_CHEST + CHEST blocks.");
+
+            placeSpeedPercent = config.getInt("placeSpeedPercent", "place", 100, 10, 500,
+                "PLACE/MLDSL: speed multiplier in percent.\n"
+                    + "100 = default timings, 50 = slower (more stable), 200 = faster.");
+            placeMaxPlaceAttempts = config.getInt("placeMaxPlaceAttempts", "place", 6, 1, 30,
+                "PLACE/MLDSL: max retries for block placement if server cancels it.");
+            placeBlockRetryDelayMs = config.getInt("placeBlockRetryDelayMs", "place", 1000, 50, 5000,
+                "PLACE/MLDSL: delay (ms) between block placement retries.");
+            placeParamsChestAutoOpenDelayMs = config.getInt("placeParamsChestAutoOpenDelayMs", "place", 1500, 200, 8000,
+                "PLACE/MLDSL: if after selecting an action the params chest does not open automatically,\n"
+                    + "close the menu and try to open it after this delay (ms).");
             String holoColor = config.getString("holoTextColor", "hologram", "FFFFFF",
                 "Hex RGB text color for chest holograms (e.g. FFFFFF).");
             chestHoloTextColor = parseHexColor(holoColor, 0xFFFFFF);
@@ -10856,6 +11190,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             return Items.BOOK;
         }
+        if (mode == INPUT_MODE_ITEM)
+        {
+            return null;
+        }
         return Items.BOOK;
     }
 
@@ -11065,6 +11403,71 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
         }
         return null;
+    }
+
+    @Override
+    public String[] getCachedSignLines(World world, BlockPos signPos)
+    {
+        if (world == null || signPos == null)
+        {
+            return null;
+        }
+        String key1 = getCodeGlassScopeKey(world) + ":" + signPos.toLong();
+        String[] hit = signLinesCache.get(key1);
+        if (hit != null)
+        {
+            return hit;
+        }
+        String key2 = world.provider.getDimension() + ":" + signPos.toLong();
+        return signLinesCacheByDimPos.get(key2);
+    }
+
+    @Override
+    public void cachePlacedBlock(World world, BlockPos entryPos, Block block)
+    {
+        if (world == null || entryPos == null || block == null)
+        {
+            return;
+        }
+        String key = world.provider.getDimension() + ":" + entryPos.toLong();
+        ResourceLocation id = block.getRegistryName();
+        placedBlockCacheByDimPos.put(key, id == null ? "" : id.toString());
+    }
+
+    @Override
+    public Block getCachedPlacedBlock(World world, BlockPos entryPos)
+    {
+        if (world == null || entryPos == null)
+        {
+            return null;
+        }
+        String key = world.provider.getDimension() + ":" + entryPos.toLong();
+        String id = placedBlockCacheByDimPos.get(key);
+        if (id == null || id.trim().isEmpty())
+        {
+            return null;
+        }
+        return Block.getBlockFromName(id);
+    }
+
+    private void cacheSignLines(World world, TileEntitySign sign)
+    {
+        if (world == null || sign == null || sign.getPos() == null)
+        {
+            return;
+        }
+        BlockPos pos = sign.getPos();
+        String[] lines = new String[]{"", "", "", ""};
+        for (int i = 0; i < 4 && i < sign.signText.length; i++)
+        {
+            String raw = sign.signText[i] == null ? "" : sign.signText[i].getUnformattedText();
+            raw = net.minecraft.util.text.TextFormatting.getTextWithoutFormattingCodes(raw);
+            lines[i] = raw == null ? "" : raw;
+        }
+        String key1 = getCodeGlassScopeKey(world) + ":" + pos.toLong();
+        signLinesCache.put(key1, lines);
+        String key2 = world.provider.getDimension() + ":" + pos.toLong();
+        signLinesCacheByDimPos.put(key2, lines);
     }
 
     private String parseNestingLevel(World world, BlockPos pos)
@@ -11762,6 +12165,26 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             {
                 mode = INPUT_MODE_TEXT;
                 valueRaw = valueExpr.substring(5, valueExpr.length() - 1);
+            }
+            else if (low.startsWith("arr_save(") && valueExpr.endsWith(")"))
+            {
+                mode = INPUT_MODE_ARRAY;
+                valueRaw = valueExpr.substring(9, valueExpr.length() - 1);
+                saveVariable = true;
+                if ((valueRaw.startsWith("\"") && valueRaw.endsWith("\"")) || (valueRaw.startsWith("'") && valueRaw.endsWith("'")))
+                {
+                    valueRaw = valueRaw.substring(1, valueRaw.length() - 1);
+                }
+            }
+            else if (low.startsWith("arr(") && valueExpr.endsWith(")"))
+            {
+                mode = INPUT_MODE_ARRAY;
+                valueRaw = valueExpr.substring(4, valueExpr.length() - 1);
+            }
+            else if (low.startsWith("array(") && valueExpr.endsWith(")"))
+            {
+                mode = INPUT_MODE_ARRAY;
+                valueRaw = valueExpr.substring(6, valueExpr.length() - 1);
             }
             else if (low.startsWith("apple(") && valueExpr.endsWith(")"))
             {

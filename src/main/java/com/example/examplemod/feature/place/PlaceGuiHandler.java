@@ -10,6 +10,7 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.inventory.ClickType;
 import net.minecraft.inventory.Slot;
 import net.minecraft.item.ItemStack;
+import net.minecraft.network.play.client.CPacketCreativeInventoryAction;
 import net.minecraft.util.text.TextFormatting;
 
 import java.util.ArrayList;
@@ -40,7 +41,7 @@ final class PlaceGuiHandler
             if (windowId != -1
                 && entry.lastMenuWindowId != -1
                 && windowId != entry.lastMenuWindowId
-                && nowMs - entry.lastMenuClickMs > 450L)
+                && nowMs - entry.lastMenuClickMs > host.placeDelayMs(450L))
             {
                 entry.awaitingParamsChest = false;
                 entry.awaitingArgs = true;
@@ -50,6 +51,25 @@ final class PlaceGuiHandler
                 entry.argsMisses = 0;
                 entry.usedArgSlots.clear();
                 handleArgs(host, state, gui, nowMs);
+            }
+            else
+            {
+                // Some servers don't open the params chest automatically (or do it with big lag).
+                // If the window doesn't change for a while, close the menu and let the tick handler open the chest.
+                if (entry.paramsStartMs == 0L)
+                {
+                    entry.paramsStartMs = nowMs;
+                }
+                if (!entry.needOpenParamsChest
+                    && entry.lastMenuWindowId != -1
+                    && windowId == entry.lastMenuWindowId
+                    && nowMs - entry.paramsStartMs > host.placeParamsChestAutoOpenDelayMs())
+                {
+                    host.closeCurrentScreen();
+                    entry.needOpenParamsChest = true;
+                    entry.nextParamsActionMs = nowMs + host.placeDelayMs(350L);
+                    entry.paramsOpenAttempts = 0;
+                }
             }
             return;
         }
@@ -83,7 +103,7 @@ final class PlaceGuiHandler
         }
         catch (Exception ignore) { }
 
-        if (nowMs - entry.menuStartMs < 300L)
+        if (nowMs - entry.menuStartMs < host.placeDelayMs(300L))
         {
             return;
         }
@@ -121,7 +141,7 @@ final class PlaceGuiHandler
             entry.menuNonEmptySinceMs = nowMs;
             return;
         }
-        if (nowMs - entry.menuNonEmptySinceMs < 250L)
+        if (nowMs - entry.menuNonEmptySinceMs < host.placeDelayMs(250L))
         {
             return;
         }
@@ -133,7 +153,7 @@ final class PlaceGuiHandler
             return;
         }
 
-        if (nowMs - entry.menuStartMs > 10000L)
+        if (nowMs - entry.menuStartMs > host.placeDelayMs(10000L))
         {
             host.setActionBar(false, "&c/place: menu timeout", 2000L);
             abort(host, state, "menu_timeout");
@@ -146,7 +166,7 @@ final class PlaceGuiHandler
             entry.triedWindowId = windowId;
             entry.menuClicksSinceOpen = 0;
         }
-        if (entry.lastMenuWindowId == windowId && nowMs - entry.lastMenuClickMs < 300L)
+        if (entry.lastMenuWindowId == windowId && nowMs - entry.lastMenuClickMs < host.placeDelayMs(300L))
         {
             return;
         }
@@ -164,7 +184,7 @@ final class PlaceGuiHandler
             {
                 return;
             }
-            entry.nextMenuActionMs = nowMs + 220L;
+            entry.nextMenuActionMs = nowMs + host.placeDelayMs(220L);
 
             MenuStep rnd = findRandomMenuStep(host, gui, entry);
             if (rnd == null)
@@ -180,7 +200,7 @@ final class PlaceGuiHandler
                 entry.needOpenMenu = true;
                 entry.awaitingMenu = true;
                 entry.menuStartMs = nowMs;
-                entry.nextMenuActionMs = nowMs + 450L;
+                entry.nextMenuActionMs = nowMs + host.placeDelayMs(450L);
                 entry.menuClicksSinceOpen = 0;
                 entry.triedSlots.clear();
                 entry.triedWindowId = -1;
@@ -249,7 +269,7 @@ final class PlaceGuiHandler
                 entry.lastArgsActionMs = 0L;
                 entry.argsMisses = 0;
                 entry.usedArgSlots.clear();
-                entry.paramsStartMs = 0L;
+                entry.paramsStartMs = nowMs;
                 entry.nextParamsActionMs = 0L;
                 entry.paramsOpenAttempts = 0;
             }
@@ -437,6 +457,23 @@ final class PlaceGuiHandler
         {
             return;
         }
+
+        // If we used a temp hotbar slot for item(...) injection, clear it after a short delay so it
+        // doesn't remain in the player's inventory (server may reject/ignore the GUI insert).
+        if (entry.tempHotbarSlot >= 0 && entry.tempHotbarSlot < 9 && entry.tempHotbarClearMs > 0L && nowMs >= entry.tempHotbarClearMs)
+        {
+            try
+            {
+                if (mc.player.connection != null)
+                {
+                    mc.player.inventory.setInventorySlotContents(entry.tempHotbarSlot, ItemStack.EMPTY);
+                    mc.player.connection.sendPacket(new CPacketCreativeInventoryAction(36 + entry.tempHotbarSlot, ItemStack.EMPTY));
+                }
+            }
+            catch (Exception ignore) { }
+            entry.tempHotbarSlot = -1;
+            entry.tempHotbarClearMs = 0L;
+        }
         if (entry.pendingArgClicks > 0)
         {
             try
@@ -452,7 +489,7 @@ final class PlaceGuiHandler
             {
                 host.queueClick(new ClickAction(entry.pendingArgClickSlot, 0, ClickType.PICKUP));
                 entry.pendingArgClicks--;
-                entry.pendingArgNextMs = nowMs + 500L;
+                entry.pendingArgNextMs = nowMs + host.placeDelayMs(500L);
                 entry.lastArgsActionMs = nowMs;
                 if (entry.pendingArgClicks <= 0)
                 {
@@ -484,7 +521,7 @@ final class PlaceGuiHandler
         {
             return;
         }
-        if (entry.lastArgsActionMs > 0 && nowMs - entry.lastArgsActionMs < 180L)
+        if (entry.lastArgsActionMs > 0 && nowMs - entry.lastArgsActionMs < host.placeDelayMs(180L))
         {
             return;
         }
@@ -497,7 +534,7 @@ final class PlaceGuiHandler
                 entry.argsMisses++;
                 return;
             }
-            if (entry.argsStartMs > 0 && nowMs - entry.argsStartMs < 250L)
+            if (entry.argsStartMs > 0 && nowMs - entry.argsStartMs < host.placeDelayMs(250L))
             {
                 return;
             }
@@ -530,7 +567,7 @@ final class PlaceGuiHandler
             entry.usedArgSlots.add(clickSlot);
             entry.pendingArgClickSlot = clickSlot;
             entry.pendingArgClicks = arg.clicks > 0 ? arg.clicks : 1;
-            entry.pendingArgNextMs = nowMs + 500L;
+            entry.pendingArgNextMs = nowMs + host.placeDelayMs(500L);
             entry.lastArgsActionMs = nowMs;
             entry.advancedArgIndex++;
             return;
@@ -557,12 +594,87 @@ final class PlaceGuiHandler
         }
 
         ItemStack presetStack = target.getStack();
-        String preset = presetStack == null || presetStack.isEmpty() ? "" : host.extractEntryText(presetStack, arg.mode);
-        ItemStack template = host.templateForMode(arg.mode);
-        host.setInputSaveVariable(arg.saveVariable);
-        host.startSlotInput(gui, target, template, arg.mode, preset, "Arg: " + arg.keyRaw);
-        host.setInputText(arg.valueRaw);
-        host.submitInputText(false);
+        if (arg.mode == PlaceModule.INPUT_MODE_ITEM)
+        {
+            try
+            {
+                ItemStack carried = mc.player.inventory.getItemStack();
+                if (carried != null && !carried.isEmpty())
+                {
+                    return;
+                }
+            }
+            catch (Exception ignore) { }
+
+            ItemStack stack = PlaceParser.parseItemSpec(arg.valueRaw);
+            if (stack == null || stack.isEmpty())
+            {
+                host.setActionBar(false, "&c/placeadvanced: invalid item()", 2500L);
+                abort(host, state, "invalid_item");
+                return;
+            }
+            try
+            {
+                // Many servers reject "sendSlotPacket" for custom GUIs; simulate normal click placement:
+                // put stack into a temp hotbar slot (creative inventory action), pick it up, click target slot.
+                int hotbar = -1;
+                for (int h = 0; h < 9; h++)
+                {
+                    ItemStack hs = mc.player.inventory.getStackInSlot(h);
+                    if (hs == null || hs.isEmpty())
+                    {
+                        hotbar = h;
+                        break;
+                    }
+                }
+                if (hotbar < 0)
+                {
+                    host.setActionBar(false, "&c/placeadvanced: no empty hotbar slot for item()", 2500L);
+                    abort(host, state, "no_hotbar_slot");
+                    return;
+                }
+
+                mc.player.inventory.setInventorySlotContents(hotbar, stack);
+                if (mc.player.connection != null)
+                {
+                    mc.player.connection.sendPacket(new CPacketCreativeInventoryAction(36 + hotbar, stack));
+                }
+
+                int hotbarContainerSlot = -1;
+                for (int i = 0; i < gui.inventorySlots.inventorySlots.size(); i++)
+                {
+                    Slot s = gui.inventorySlots.inventorySlots.get(i);
+                    if (s != null && s.inventory == mc.player.inventory && s.getSlotIndex() == hotbar)
+                    {
+                        hotbarContainerSlot = i;
+                        break;
+                    }
+                }
+                if (hotbarContainerSlot < 0)
+                {
+                    host.setActionBar(false, "&c/placeadvanced: hotbar slot not found in container", 2500L);
+                    abort(host, state, "no_hotbar_container_slot");
+                    return;
+                }
+
+                host.queueClick(new ClickAction(hotbarContainerSlot, 0, ClickType.PICKUP));
+                host.queueClick(new ClickAction(target.slotNumber, 0, ClickType.PICKUP));
+                host.queueClick(new ClickAction(hotbarContainerSlot, 0, ClickType.PICKUP));
+
+                entry.tempHotbarSlot = hotbar;
+                entry.tempHotbarClearMs = nowMs + host.placeDelayMs(900L);
+            }
+            catch (Exception ignore) { }
+        }
+        else
+        {
+            String preset = presetStack == null || presetStack.isEmpty() ? "" : host.extractEntryText(presetStack, arg.mode);
+            ItemStack template = host.templateForMode(arg.mode);
+            host.setInputSaveVariable(arg.saveVariable);
+            host.startSlotInput(gui, target, template, arg.mode, preset, "Arg: " + arg.keyRaw);
+            host.setInputText(arg.valueRaw);
+            host.submitInputText(false);
+        }
 
         entry.usedArgSlots.add(target.slotNumber);
         entry.advancedArgIndex++;
@@ -570,7 +682,7 @@ final class PlaceGuiHandler
         {
             entry.pendingArgClickSlot = target.slotNumber;
             entry.pendingArgClicks = arg.clicks;
-            entry.pendingArgNextMs = nowMs + 500L;
+            entry.pendingArgNextMs = nowMs + host.placeDelayMs(500L);
         }
         entry.argsMisses = 0;
         entry.lastArgsActionMs = nowMs;

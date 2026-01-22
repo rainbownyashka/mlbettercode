@@ -65,6 +65,19 @@ public class PlaceEntry
     // Move-only step (no placement, only TP path advance).
     public boolean moveOnly = false;
 
+    // Placement retry (server may cancel fast placements / anti-cheat).
+    public int placeAttempts = 0;
+    public long nextPlaceAttemptMs = 0L;
+    public long firstPlaceAttemptMs = 0L;
+
+    // Placement validation: server may "ghost place" then revert.
+    public long placedConfirmedMs = 0L;
+    public int placedLostCount = 0;
+
+    // Temporary hotbar slot used for item(...) injection (so we can click it into GUI)
+    public int tempHotbarSlot = -1; // 0..8
+    public long tempHotbarClearMs = 0L;
+
     public PlaceEntry(BlockPos pos, Block block)
     {
         this.pos = pos;
@@ -107,6 +120,10 @@ public class PlaceEntry
         this.postPlaceNextMs = 0L;
 
         this.moveOnly = false;
+        this.placedConfirmedMs = 0L;
+        this.placedLostCount = 0;
+        this.tempHotbarSlot = -1;
+        this.tempHotbarClearMs = 0L;
     }
 
     public PlaceEntry(BlockPos pos, Block block, String searchKey)
@@ -151,5 +168,9 @@ public class PlaceEntry
         this.postPlaceNextMs = 0L;
 
         this.moveOnly = false;
+        this.placedConfirmedMs = 0L;
+        this.placedLostCount = 0;
+        this.tempHotbarSlot = -1;
+        this.tempHotbarClearMs = 0L;
     }
 }

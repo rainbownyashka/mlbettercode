@@ -35,14 +35,14 @@ public final class MlDslModule
     {
         if (args == null || args.length == 0)
         {
-            host.setActionBar(false, "&cUsage: /mldsl run [path] [--start N]", 3500L);
+            host.setActionBar(false, "&cUsage: /mldsl run|check [path] [--start N]", 3500L);
             return;
         }
 
         String sub = args[0] == null ? "" : args[0].trim().toLowerCase();
-        if (!"run".equals(sub))
+        if (!"run".equals(sub) && !"check".equals(sub))
         {
-            host.setActionBar(false, "&cUsage: /mldsl run [path] [--start N]", 3500L);
+            host.setActionBar(false, "&cUsage: /mldsl run|check [path] [--start N]", 3500L);
             return;
         }
 
@@ -112,8 +112,17 @@ public final class MlDslModule
             placeArgs = skipPlaceEntries(placeArgs, skipEntries);
         }
 
+        if ("check".equals(sub))
+        {
+            host.setActionBar(true,
+                "&a/mldsl check: entries=" + totalEntries + " start=" + start + " scanning...",
+                3500L);
+            placeModule.runPlaceAdvancedPlanCheckCommand(server, sender, placeArgs.toArray(new String[0]));
+            return;
+        }
+
         host.setActionBar(true,
-            "&a/mldsl: entries=" + totalEntries + " start=" + start + " queued=" + countPlaceEntries(placeArgs),
+            "&a/mldsl run: entries=" + totalEntries + " start=" + start + " queued=" + countPlaceEntries(placeArgs),
             3500L);
 
         // Plan-run uses the blue-glass code map allocator (±4Z, ±10Y), instead of the legacy -2X row placer.

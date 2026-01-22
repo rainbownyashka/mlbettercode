@@ -22,13 +22,13 @@ final class PlaceTickHandler
         {
             return;
         }
-        if (!state.active)
-        {
-            return;
-        }
         if (mc.world == null || mc.player == null)
         {
             state.reset();
+            return;
+        }
+        if (!state.active)
+        {
             return;
         }
         if (!host.isEditorModeActive() || !host.isDevCreativeScoreboard(mc))
@@ -49,6 +49,26 @@ final class PlaceTickHandler
                     host.debugChat("/place: closed non-container GUI to continue");
                 }
             }
+            else
+            {
+                // Some server interactions (cycle/function sign config) may unexpectedly open a container GUI.
+                // While we are in post-place sign stages, close such GUIs so printing can continue.
+                try
+                {
+                    if (state.current != null
+                        && state.current.placedBlock
+                        && state.current.postPlaceKind != PlaceEntry.POST_PLACE_NONE
+                        && state.current.postPlaceStage < 3)
+                    {
+                        host.closeCurrentScreen();
+                        if (host.isDebugUi() && mc.player != null)
+                        {
+                            host.debugChat("/place: closed unexpected container during post-place");
+                        }
+                    }
+                }
+                catch (Exception ignore) { }
+            }
             return;
         }
 
@@ -64,6 +84,72 @@ final class PlaceTickHandler
 
         PlaceEntry entry = state.current;
 
+        // If the block is already present (server delayed updates), detect it and continue without re-placing.
+        if (!entry.placedBlock && entry.pos != null && entry.block != null)
+        {
+            try
+            {
+                if (mc.world.isBlockLoaded(entry.pos, false)
+                    && mc.world.getBlockState(entry.pos).getBlock() == entry.block)
+                {
+                    entry.placedBlock = true;
+                    entry.placedConfirmedMs = nowMs;
+                    try
+                    {
+                        host.cachePlacedBlock(mc.world, entry.pos, entry.block);
+                    }
+                    catch (Exception ignore) { }
+                    startAfterPlaced(entry, nowMs, host);
+                }
+            }
+            catch (Exception ignore) { }
+        }
+
+        if (entry.placedBlock
+            && entry.pos != null
+            && entry.block != null)
+        {
+            // Server may "ghost place" and then revert the block back to air; handle it by retrying placement.
+            try
+            {
+                if (mc.world.isBlockLoaded(entry.pos, false)
+                    && mc.world.getBlockState(entry.pos).getBlock() != entry.block
+                    && entry.placedConfirmedMs > 0L
+                    && nowMs - entry.placedConfirmedMs > host.placeDelayMs(250L))
+                {
+                    entry.placedLostCount++;
+                    entry.placedBlock = false;
+                    entry.placedConfirmedMs = 0L;
+                    entry.awaitingMenu = false;
+                    entry.needOpenMenu = false;
+                    entry.menuStartMs = 0L;
+                    entry.lastMenuClickMs = 0L;
+                    entry.lastMenuWindowId = -1;
+                    entry.awaitingParamsChest = false;
+                    entry.needOpenParamsChest = false;
+                    entry.awaitingArgs = false;
+                    entry.advancedArgIndex = 0;
+                    entry.argsStartMs = 0L;
+                    entry.lastArgsActionMs = 0L;
+                    entry.pendingArgClickSlot = -1;
+                    entry.pendingArgClicks = 0;
+                    entry.pendingArgNextMs = 0L;
+                    entry.postPlaceStage = 0;
+                    entry.postPlaceNextMs = 0L;
+
+                    entry.placeAttempts++;
+                    entry.nextPlaceAttemptMs = nowMs + host.placeBlockRetryDelayMs();
+
+                    if (host.isDebugUi())
+                    {
+                        host.debugChat("/place: block reverted by server, retrying placement (lost=" + entry.placedLostCount + ")");
+                    }
+                    return;
+                }
+            }
+            catch (Exception ignore) { }
+        }
+
         if (entry.placedBlock
             && entry.awaitingMenu
             && !entry.needOpenMenu
@@ -72,7 +158,7 @@ final class PlaceTickHandler
         {
             entry.needOpenMenu = true;
             entry.menuStartMs = nowMs;
-            entry.nextMenuActionMs = nowMs + 250L;
+            entry.nextMenuActionMs = nowMs + host.placeDelayMs(250L);
             entry.menuClicksSinceOpen = 0;
             entry.triedWindowId = -1;
             entry.menuNonEmptySinceMs = 0L;
@@ -81,6 +167,42 @@ final class PlaceTickHandler
 
         if (entry.placedBlock)
         {
+            // If we clicked the sign but the GUI never opened, retry right-click a few times instead of stalling forever.
+            if (entry.awaitingMenu
+                && !entry.needOpenMenu
+                && entry.lastMenuWindowId == -1
+                && entry.menuStartMs > 0L
+                && nowMs - entry.menuStartMs > host.placeDelayMs(1600L))
+            {
+                entry.menuOpenAttempts++;
+                if (entry.menuOpenAttempts > 8)
+                {
+                    // Force re-place: either sign isn't clickable anymore or server canceled placement silently.
+                    entry.placedBlock = false;
+                    entry.placedConfirmedMs = 0L;
+                    entry.awaitingMenu = false;
+                    entry.needOpenMenu = false;
+                    entry.menuStartMs = 0L;
+                    entry.lastMenuClickMs = 0L;
+                    entry.lastMenuWindowId = -1;
+                    entry.menuOpenAttempts = 0;
+                    entry.nextPlaceAttemptMs = nowMs + host.placeBlockRetryDelayMs();
+                    if (host.isDebugUi())
+                    {
+                        host.debugChat("/place: menu did not open, forcing re-place");
+                    }
+                    return;
+                }
+                entry.needOpenMenu = true;
+                entry.nextMenuActionMs = nowMs + host.placeDelayMs(250L);
+                entry.menuStartMs = nowMs;
+                if (host.isDebugUi())
+                {
+                    host.debugChat("/place: menu not opened yet, retry click (" + entry.menuOpenAttempts + ")");
+                }
+                return;
+            }
+
             // Post-place sign interactions (functions/cycles). These don't use menus/containers.
             if (entry.postPlaceKind != PlaceEntry.POST_PLACE_NONE && entry.postPlaceStage < 3)
             {
@@ -128,7 +250,7 @@ final class PlaceTickHandler
                     catch (Exception ignore) { }
 
                     entry.postPlaceStage = 1;
-                    entry.postPlaceNextMs = nowMs + 550L;
+                    entry.postPlaceNextMs = nowMs + host.placeDelayMs(550L);
                     return;
                 }
 
@@ -157,7 +279,7 @@ final class PlaceTickHandler
                     catch (Exception ignore) { }
 
                     entry.postPlaceStage = 2;
-                    entry.postPlaceNextMs = nowMs + 550L;
+                    entry.postPlaceNextMs = nowMs + host.placeDelayMs(550L);
                     return;
                 }
 
@@ -173,7 +295,7 @@ final class PlaceTickHandler
             {
                 entry.needOpenParamsChest = true;
                 entry.paramsStartMs = nowMs;
-                entry.nextParamsActionMs = nowMs + 350L;
+                entry.nextParamsActionMs = nowMs + host.placeDelayMs(350L);
                 entry.paramsOpenAttempts = 0;
             }
             if (entry.awaitingMenu && entry.needOpenMenu)
@@ -197,7 +319,7 @@ final class PlaceTickHandler
 
                 entry.needOpenMenu = false;
                 entry.menuStartMs = nowMs;
-                entry.nextMenuActionMs = nowMs + 350L;
+                entry.nextMenuActionMs = nowMs + host.placeDelayMs(350L);
                 entry.menuClicksSinceOpen = 0;
                 entry.triedSlots.clear();
                 entry.triedWindowId = -1;
@@ -239,7 +361,7 @@ final class PlaceTickHandler
                 catch (Exception ignore) { }
 
                 entry.paramsOpenAttempts++;
-                entry.nextParamsActionMs = nowMs + 350L;
+                entry.nextParamsActionMs = nowMs + host.placeDelayMs(350L);
             }
             return;
         }
@@ -269,6 +391,24 @@ final class PlaceTickHandler
 
         if (mc.player.getDistanceSq(dx, dy, dz) <= 6.0)
         {
+            if (entry.firstPlaceAttemptMs == 0L)
+            {
+                entry.firstPlaceAttemptMs = nowMs;
+            }
+            if (entry.nextPlaceAttemptMs > 0L && nowMs < entry.nextPlaceAttemptMs)
+            {
+                return;
+            }
+            if (entry.placeAttempts >= host.placeMaxPlaceAttempts()
+                && entry.firstPlaceAttemptMs > 0L
+                && nowMs - entry.firstPlaceAttemptMs > 15000L)
+            {
+                host.setActionBar(false, "&c/place: block placement retries exceeded", 2500L);
+                host.clearQueuedClicks();
+                host.clearTpPathQueue();
+                state.reset();
+                return;
+            }
             try
             {
                 // Try to hold the correct block if it already exists in hotbar.
@@ -305,30 +445,10 @@ final class PlaceTickHandler
                     runPlaceClick(mc, placePos, hitA);
                     mc.player.swingArm(EnumHand.MAIN_HAND);
                 }
-
-                entry.placedBlock = true;
-                if (entry.postPlaceKind != PlaceEntry.POST_PLACE_NONE)
-                {
-                    entry.awaitingMenu = false;
-                    entry.needOpenMenu = false;
-                    entry.postPlaceStage = 0;
-                    entry.postPlaceNextMs = System.currentTimeMillis() + 450L;
-                }
-                else
-                {
-                    entry.awaitingMenu = true;
-                    entry.menuStartMs = System.currentTimeMillis();
-                    entry.needOpenMenu = true;
-                    entry.menuOpenAttempts = 0;
-                    entry.nextMenuActionMs = System.currentTimeMillis() + 350L;
-                    entry.menuClicksSinceOpen = 0;
-                    entry.menuNonEmptySinceMs = 0L;
-                    entry.menuNonEmptyWindowId = -1;
-                    entry.triedSlots.clear();
-                    entry.triedWindowId = -1;
-                }
             }
             catch (Exception ignore) { }
+            entry.placeAttempts++;
+            entry.nextPlaceAttemptMs = nowMs + host.placeBlockRetryDelayMs();
             return;
         }
  
@@ -339,6 +459,38 @@ final class PlaceTickHandler
             return;
         }
         host.buildTpPathQueue(mc.world, mc.player.posX, mc.player.posY, mc.player.posZ, dx, dy, dz);
+    }
+
+    private static void startAfterPlaced(PlaceEntry entry, long nowMs, PlaceModuleHost host)
+    {
+        if (entry == null)
+        {
+            return;
+        }
+        try
+        {
+            if (entry.postPlaceKind != PlaceEntry.POST_PLACE_NONE)
+            {
+                entry.awaitingMenu = false;
+                entry.needOpenMenu = false;
+                entry.postPlaceStage = 0;
+                entry.postPlaceNextMs = nowMs + host.placeDelayMs(450L);
+            }
+            else
+            {
+                entry.awaitingMenu = true;
+                entry.menuStartMs = nowMs;
+                entry.needOpenMenu = true;
+                entry.menuOpenAttempts = 0;
+                entry.nextMenuActionMs = nowMs + host.placeDelayMs(350L);
+                entry.menuClicksSinceOpen = 0;
+                entry.menuNonEmptySinceMs = 0L;
+                entry.menuNonEmptyWindowId = -1;
+                entry.triedSlots.clear();
+                entry.triedWindowId = -1;
+            }
+        }
+        catch (Exception ignore) { }
     }
 
     private static int findHotbarSlot(Minecraft mc, net.minecraft.block.Block block)
