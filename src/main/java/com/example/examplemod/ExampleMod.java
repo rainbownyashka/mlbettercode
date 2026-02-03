@@ -2378,6 +2378,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             "/copycode <id1> <id2> <yoffset> <floorsCSV> - copy code blocks by floor", this::runCopyCodeCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("cancelcopy",
             "/cancelcopy - stop /copycode", this::runCancelCopyCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("exportcode",
+            "/exportcode [floorsCSV] [name] - export loaded code floors to exportcode_*.json", this::runExportCodeCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("testplace",
             "/testplace <method 1-10> [block]", this::runTestPlaceCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("regallactions",
@@ -2396,6 +2398,311 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private void runCancelCopyCommand(MinecraftServer server, ICommandSender sender, String[] args)
     {
         copyCodeModule.cancel("manual");
+    }
+
+    private void runExportCodeCommand(MinecraftServer server, ICommandSender sender, String[] args)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.world == null || mc.player == null)
+        {
+            setActionBar(false, "&cNo world/player", 2000L);
+            return;
+        }
+        if (!editorModeActive || !isDevCreativeScoreboard(mc))
+        {
+            setActionBar(false, "&cDEV mode only (creative + scoreboard)", 3000L);
+            return;
+        }
+
+        BlockPos seed = resolveExportGlassPos(mc.world);
+        if (seed == null || !mc.world.isBlockLoaded(seed))
+        {
+            setActionBar(false, "&cNo blue glass seed loaded", 2500L);
+            return;
+        }
+
+        List<Integer> floors = parseCsvInts(args.length > 0 ? args[0] : null);
+        if (floors.isEmpty())
+        {
+            floors.add(seed.getY());
+        }
+        String name = args.length > 1 ? (args[1] == null ? "" : args[1].trim()) : "";
+        if (name.isEmpty())
+        {
+            name = normalizeEntryScopeId(getScoreboardIdLine());
+        }
+        if (name.isEmpty())
+        {
+            name = "code";
+        }
+
+        List<BlockPos> seeds = new ArrayList<>();
+        seeds.add(seed);
+        List<BlockPos> glasses = BlueGlassCodeMap.scan(mc.world, seeds);
+        if (glasses == null || glasses.isEmpty())
+        {
+            setActionBar(false, "&cNo blue glass nodes found", 2500L);
+            return;
+        }
+
+        List<BlockPos> filtered = new ArrayList<>();
+        for (BlockPos p : glasses)
+        {
+            if (p == null)
+            {
+                continue;
+            }
+            if (!floors.contains(p.getY()))
+            {
+                continue;
+            }
+            if (!mc.world.isBlockLoaded(p))
+            {
+                continue;
+            }
+            filtered.add(p);
+        }
+        if (filtered.isEmpty())
+        {
+            setActionBar(false, "&cNo loaded blue glass on requested floors", 3000L);
+            return;
+        }
+
+        filtered.sort(Comparator.<BlockPos>comparingInt(BlockPos::getY)
+            .thenComparingInt(BlockPos::getZ)
+            .thenComparingInt(BlockPos::getX));
+
+        String json = buildExportCodeJson(mc.world, filtered, autoCodeCacheMaxSteps);
+        if (json == null || json.isEmpty())
+        {
+            setActionBar(false, "&cExport failed", 2500L);
+            return;
+        }
+
+        File out = new File(mc.mcDataDir, "exportcode_" + name + "_" + System.currentTimeMillis() + ".json");
+        try
+        {
+            java.nio.file.Files.write(out.toPath(), json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            setActionBar(true, "&aExported: " + out.getName(), 3500L);
+            mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "exportcode saved: " + out.getAbsolutePath()));
+            mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
+                + "NOTE: chest arg export is not implemented yet (blocks+signs only)."));
+        }
+        catch (Exception e)
+        {
+            setActionBar(false, "&cExport failed: " + e.getMessage(), 3500L);
+        }
+    }
+
+    private static List<Integer> parseCsvInts(String raw)
+    {
+        List<Integer> out = new ArrayList<>();
+        if (raw == null)
+        {
+            return out;
+        }
+        String s = raw.trim();
+        if (s.isEmpty())
+        {
+            return out;
+        }
+        for (String part : s.split(","))
+        {
+            String t = part == null ? "" : part.trim();
+            if (t.isEmpty())
+            {
+                continue;
+            }
+            try
+            {
+                out.add(Integer.parseInt(t));
+            }
+            catch (Exception ignore) { }
+        }
+        return out;
+    }
+
+    private String buildExportCodeJson(World world, List<BlockPos> glasses, int maxSteps)
+    {
+        String scope = getCodeGlassScopeKey(world);
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        sb.append("\"version\":2,");
+        sb.append("\"scopeKey\":\"").append(escapeJson(scope)).append("\",");
+        sb.append("\"exportedAt\":").append(System.currentTimeMillis()).append(",");
+        sb.append("\"rows\":[");
+
+        boolean firstRow = true;
+        int rowIndex = 0;
+        for (BlockPos glassPos : glasses)
+        {
+            if (glassPos == null)
+            {
+                continue;
+            }
+            String rowJson = buildExportRowJson(world, glassPos, Math.max(32, maxSteps), rowIndex++);
+            if (rowJson == null || rowJson.isEmpty())
+            {
+                continue;
+            }
+            if (!firstRow)
+            {
+                sb.append(",");
+            }
+            firstRow = false;
+            sb.append(rowJson);
+        }
+        sb.append("]}");
+        return sb.toString();
+    }
+
+    private String buildExportRowJson(World world, BlockPos glassPos, int maxSteps, int rowIndex)
+    {
+        if (world == null || glassPos == null || !world.isBlockLoaded(glassPos))
+        {
+            return null;
+        }
+        BlockPos start = glassPos.up();
+        if (!world.isBlockLoaded(start, false))
+        {
+            return null;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        sb.append("\"row\":").append(rowIndex).append(",");
+        sb.append("\"glass\":").append(posJson(glassPos)).append(",");
+        sb.append("\"blocks\":[");
+
+        boolean first = true;
+        int emptyPairs = 0;
+
+        for (int p = 0; p < maxSteps; p++)
+        {
+            BlockPos entryPos = start.add(-2 * p, 0, 0);
+            BlockPos sidePos = entryPos.add(1, 0, 0);
+            if (!world.isBlockLoaded(entryPos, false) || !world.isBlockLoaded(sidePos, false))
+            {
+                break;
+            }
+
+            IBlockState entryState = world.getBlockState(entryPos);
+            IBlockState sideState = world.getBlockState(sidePos);
+            Block entryBlock = entryState == null ? Blocks.AIR : entryState.getBlock();
+            Block sideBlock = sideState == null ? Blocks.AIR : sideState.getBlock();
+
+            BlockPos signPos = findSignAtZMinus1(world, entryPos);
+            String[] signLines = null;
+            if (signPos != null)
+            {
+                TileEntity te = world.getTileEntity(signPos);
+                if (te instanceof TileEntitySign)
+                {
+                    TileEntitySign sign = (TileEntitySign) te;
+                    signLines = new String[]{"", "", "", ""};
+                    for (int i = 0; i < 4 && i < sign.signText.length; i++)
+                    {
+                        String raw = sign.signText[i] == null ? "" : sign.signText[i].getUnformattedText();
+                        raw = TextFormatting.getTextWithoutFormattingCodes(raw);
+                        signLines[i] = raw == null ? "" : raw;
+                    }
+                }
+                else
+                {
+                    signLines = getCachedSignLines(world, signPos);
+                }
+            }
+
+            boolean emptySlot = (entryBlock == null || entryBlock == Blocks.AIR)
+                && (sideBlock == null || sideBlock == Blocks.AIR)
+                && (signLines == null || allEmpty(signLines));
+
+            if (emptySlot)
+            {
+                emptyPairs++;
+                if (emptyPairs >= 2)
+                {
+                    break;
+                }
+                continue;
+            }
+            emptyPairs = 0;
+
+            if (!first) sb.append(",");
+            first = false;
+            sb.append(blockJson(entryPos, entryState, signLines, null));
+
+            if (sideBlock == Blocks.PISTON || sideBlock == Blocks.STICKY_PISTON)
+            {
+                String facing = "";
+                try
+                {
+                    EnumFacing f = sideState.getValue(BlockPistonBase.FACING);
+                    facing = f == null ? "" : f.getName().toLowerCase(Locale.ROOT);
+                }
+                catch (Exception ignore) { }
+                sb.append(",");
+                sb.append(blockJson(sidePos, sideState, null, facing));
+            }
+        }
+
+        sb.append("]}");
+        return sb.toString();
+    }
+
+    private static boolean allEmpty(String[] lines)
+    {
+        if (lines == null)
+        {
+            return true;
+        }
+        for (String s : lines)
+        {
+            if (s != null && !s.trim().isEmpty())
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static String posJson(BlockPos pos)
+    {
+        if (pos == null)
+        {
+            return "{\"x\":0,\"y\":0,\"z\":0}";
+        }
+        return "{\"x\":" + pos.getX() + ",\"y\":" + pos.getY() + ",\"z\":" + pos.getZ() + "}";
+    }
+
+    private String blockJson(BlockPos pos, IBlockState state, String[] signLines, String facing)
+    {
+        Block b = state == null ? Blocks.AIR : state.getBlock();
+        ResourceLocation id = b == null ? null : b.getRegistryName();
+        String rid = id == null ? "minecraft:air" : id.toString();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        sb.append("\"block\":\"").append(escapeJson(rid)).append("\",");
+        sb.append("\"pos\":").append(posJson(pos));
+
+        if (facing != null && !facing.isEmpty())
+        {
+            sb.append(",\"facing\":\"").append(escapeJson(facing)).append("\"");
+        }
+        if (signLines != null)
+        {
+            sb.append(",\"sign\":[");
+            for (int i = 0; i < 4; i++)
+            {
+                if (i > 0) sb.append(",");
+                String v = i < signLines.length ? signLines[i] : "";
+                sb.append("\"").append(escapeJson(v == null ? "" : v)).append("\"");
+            }
+            sb.append("]");
+        }
+        sb.append("}");
+        return sb.toString();
     }
 
     private BlockPos resolveExportGlassPos(World world)
