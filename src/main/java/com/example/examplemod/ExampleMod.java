@@ -83,6 +83,7 @@ import com.example.examplemod.model.TestChestHolo;
 import com.example.examplemod.io.ChestIdCacheIO;
 import com.example.examplemod.io.ClickMenuIO;
 import com.example.examplemod.io.CodeBlueGlassIO;
+import com.example.examplemod.io.CodeCacheIO;
 import com.example.examplemod.io.MenuCacheIO;
 import com.example.examplemod.io.ShulkerHoloIO;
 import com.example.examplemod.cmd.ActionBarSink;
@@ -93,6 +94,7 @@ import com.example.examplemod.cmd.GuiExportSink;
 import com.example.examplemod.cmd.ScoreLineCommand;
 import com.example.examplemod.cmd.ScoreTitleCommand;
 import com.example.examplemod.util.ItemStackUtils;
+import com.example.examplemod.feature.codemap.BlueGlassCodeMap;
 import com.example.examplemod.feature.place.PlaceModule;
 import com.example.examplemod.feature.place.PlaceModuleHost;
 import com.example.examplemod.feature.copy.CopyCodeModule;
@@ -312,6 +314,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private final Deque<double[]> tpPathQueue = new ArrayDeque<>();
     private long tpPathNextMs = 0L;
     private File codeBlueGlassFile = null;
+    private File codeCacheFile = null;
     private boolean codeBlueGlassDirty = false;
     private long lastCodeBlueGlassSaveMs = 0L;
     private final AtomicBoolean codeBlueGlassSaveQueued = new AtomicBoolean(false);
@@ -319,7 +322,19 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private final Map<String, String[]> signLinesCache = new HashMap<>();
     private final Map<String, String[]> signLinesCacheByDimPos = new HashMap<>();
     private long lastSignCacheScanMs = 0L;
+
+    // Cache blocks/sign references by scope (scoreboard id + dim) so skip-check can work after chunks unload.
+    private final Map<String, String> placedBlockCacheByScopePos = new HashMap<>();
     private final Map<String, String> placedBlockCacheByDimPos = new HashMap<>();
+    private final Map<String, Long> entryToSignPosByScopeEntry = new HashMap<>();
+
+    private boolean codeCacheDirty = false;
+    private long lastCodeCacheSaveMs = 0L;
+    private final AtomicBoolean codeCacheSaveQueued = new AtomicBoolean(false);
+    private long lastCodeCacheScanMs = 0L;
+
+    private static boolean autoCodeCacheEnabled = true;
+    private static int autoCodeCacheMaxSteps = 256;
     private String signSearchQuery = null;
     private int signSearchDim = 0;
     private final List<BlockPos> signSearchMatches = new ArrayList<>();
@@ -1732,6 +1747,23 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         catch (Exception ignore) { }
 
+        // Cache code blocks/sign positions from loaded chunks so /mldsl skip-check can work even after you fly away.
+        // Only records what is currently loaded ("what you see while flying around in code").
+        try
+        {
+            if (mc != null && mc.world != null && editorModeActive)
+            {
+                handleAutoCodeCacheTick(mc, System.currentTimeMillis());
+            }
+        }
+        catch (Exception e)
+        {
+            if (debugUi && mc != null && mc.player != null)
+            {
+                mc.player.sendMessage(new TextComponentString("[BetterCode] code-cache tick error: " + e));
+            }
+        }
+
         // While printing/running plans, force-disable vanilla "pause on lost focus" so minimizing/alt-tabbing
         // doesn't pause the client tick loop.
         try
@@ -2030,6 +2062,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         saveChestIdCachesIfNeeded();
         saveShulkerHolosIfNeeded();
         saveCodeBlueGlassIfNeeded();
+        saveCodeCachesIfNeeded();
     }
 
     private static String buildNameListJson(List<String> names)
@@ -6677,6 +6710,40 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         });
     }
 
+    private void saveCodeCachesIfNeeded()
+    {
+        if (!codeCacheDirty || codeCacheFile == null)
+        {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastCodeCacheSaveMs < 10000L)
+        {
+            return;
+        }
+        if (codeCacheSaveQueued.get())
+        {
+            return;
+        }
+        lastCodeCacheSaveMs = now;
+        final File target = codeCacheFile;
+        final Map<String, String> blocksSnapshot = new LinkedHashMap<>(placedBlockCacheByScopePos);
+        final Map<String, String[]> signsSnapshot = new LinkedHashMap<>(signLinesCache);
+        final Map<String, Long> entrySignSnapshot = new LinkedHashMap<>(entryToSignPosByScopeEntry);
+        codeCacheDirty = false;
+        codeCacheSaveQueued.set(true);
+        ioExecutor.execute(() -> {
+            try
+            {
+                saveCodeCacheSnapshot(target, blocksSnapshot, signsSnapshot, entrySignSnapshot);
+            }
+            finally
+            {
+                codeCacheSaveQueued.set(false);
+            }
+        });
+    }
+
     private void scanChestEntries(GuiChest chest)
     {
         if (chest == null)
@@ -7251,6 +7318,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         CodeBlueGlassIO.save(target, snapshot);
     }
 
+    private void saveCodeCacheSnapshot(File target, Map<String, String> blocksByKey, Map<String, String[]> signsByKey,
+        Map<String, Long> entryToSignByKey)
+    {
+        CodeCacheIO.save(target, blocksByKey, signsByKey, entryToSignByKey);
+    }
+
     private void loadShulkerHolos()
     {
         shulkerHolos.clear();
@@ -7261,6 +7334,18 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     {
         codeBlueGlassById.clear();
         codeBlueGlassById.putAll(CodeBlueGlassIO.load(codeBlueGlassFile));
+    }
+
+    private void loadCodeCaches()
+    {
+        placedBlockCacheByScopePos.clear();
+        entryToSignPosByScopeEntry.clear();
+
+        // signLinesCache already stores scope-keyed sign texts; keep runtime updates and merge loaded snapshot.
+        CodeCacheIO.Loaded loaded = CodeCacheIO.load(codeCacheFile);
+        placedBlockCacheByScopePos.putAll(loaded.blocksByKey);
+        entryToSignPosByScopeEntry.putAll(loaded.entryToSignByKey);
+        signLinesCache.putAll(loaded.signsByKey);
     }
 
     private void loadMenuCache()
@@ -9995,6 +10080,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         loadShulkerHolos();
         codeBlueGlassFile = new File(dir, "mcpythonapi_code_glass.dat");
         loadCodeBlueGlass();
+        codeCacheFile = new File(dir, "mcpythonapi_code_cache.dat");
+        loadCodeCaches();
     }
 
     private void initIoExecutor()
@@ -10029,6 +10116,13 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
             enableSecondHotbar = config.getBoolean("enableSecondHotbar", "hotbar", true,
                 "Enable the second hotbar swap feature.");
+
+            autoCodeCacheEnabled = config.getBoolean("autoCodeCacheEnabled", "code", true,
+                "CODE CACHE: Continuously scan loaded blue-glass rows and cache placed blocks/signs.\n"
+                    + "This makes /mldsl skip-check work even after chunks unload (as long as you flew by at least once).");
+            autoCodeCacheMaxSteps = config.getInt("autoCodeCacheMaxSteps", "code", 256, 32, 1024,
+                "CODE CACHE: Max blocks to scan per row (x step = -2). Stops earlier on 2 empty slots.");
+
             autoCacheEnabled = config.getBoolean("autoCacheEnabled", "chest", false,
                 "AUTO-CACHE CHESTS: Automatically open and cache nearby trapped chests in DEV mode.\n"
                     + "Only works in creative mode with special scoreboard. Check with /autocache command.\n"
@@ -10244,6 +10338,131 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         if (target != null)
         {
             beginAutoCacheChest(mc, target, now);
+        }
+    }
+
+    private void cacheEntrySignPos(World world, BlockPos entryPos, BlockPos signPos)
+    {
+        if (world == null || entryPos == null || signPos == null)
+        {
+            return;
+        }
+        String scopeKey = getCodeGlassScopeKey(world);
+        if (scopeKey == null)
+        {
+            return;
+        }
+        String k = scopeKey + ":" + entryPos.toLong();
+        long v = signPos.toLong();
+        Long prev = entryToSignPosByScopeEntry.get(k);
+        if (prev == null || prev.longValue() != v)
+        {
+            entryToSignPosByScopeEntry.put(k, v);
+            codeCacheDirty = true;
+        }
+    }
+
+    private void handleAutoCodeCacheTick(Minecraft mc, long nowMs)
+    {
+        if (!autoCodeCacheEnabled || mc == null || mc.world == null || mc.player == null)
+        {
+            return;
+        }
+        if (!editorModeActive || !isDevCreativeScoreboard(mc))
+        {
+            return;
+        }
+        if (nowMs - lastCodeCacheScanMs < 1000L)
+        {
+            return;
+        }
+        lastCodeCacheScanMs = nowMs;
+
+        BlockPos seed = resolveExportGlassPos(mc.world);
+        if (seed == null || !mc.world.isBlockLoaded(seed))
+        {
+            return;
+        }
+
+        List<BlockPos> seeds = new ArrayList<>();
+        seeds.add(seed);
+        List<BlockPos> glasses = BlueGlassCodeMap.scan(mc.world, seeds);
+        if (glasses == null || glasses.isEmpty())
+        {
+            return;
+        }
+
+        int maxSteps = Math.max(32, autoCodeCacheMaxSteps);
+        for (BlockPos glassPos : glasses)
+        {
+            if (glassPos == null || !mc.world.isBlockLoaded(glassPos))
+            {
+                continue;
+            }
+            cacheRowFromBlueGlass(mc.world, glassPos, maxSteps);
+        }
+    }
+
+    private void cacheRowFromBlueGlass(World world, BlockPos glassPos, int maxSteps)
+    {
+        if (world == null || glassPos == null)
+        {
+            return;
+        }
+        BlockPos start = glassPos.up();
+        int emptyPairs = 0;
+
+        for (int p = 0; p < maxSteps; p++)
+        {
+            BlockPos entryPos = start.add(-2 * p, 0, 0);
+            BlockPos sidePos = entryPos.add(1, 0, 0);
+
+            if (!world.isBlockLoaded(entryPos, false) || !world.isBlockLoaded(sidePos, false))
+            {
+                break;
+            }
+
+            IBlockState entryState = world.getBlockState(entryPos);
+            IBlockState sideState = world.getBlockState(sidePos);
+            Block entryBlock = entryState == null ? Blocks.AIR : entryState.getBlock();
+            Block sideBlock = sideState == null ? Blocks.AIR : sideState.getBlock();
+
+            if (entryBlock != null && entryBlock != Blocks.AIR)
+            {
+                cachePlacedBlock(world, entryPos, entryBlock);
+            }
+            if (sideBlock != null && sideBlock != Blocks.AIR)
+            {
+                cachePlacedBlock(world, sidePos, sideBlock);
+            }
+
+            BlockPos signPos = findSignAtZMinus1(world, entryPos);
+            if (signPos != null)
+            {
+                cacheEntrySignPos(world, entryPos, signPos);
+                TileEntity te = world.getTileEntity(signPos);
+                if (te instanceof TileEntitySign)
+                {
+                    cacheSignLines(world, (TileEntitySign) te);
+                }
+            }
+
+            boolean emptySlot = (entryBlock == null || entryBlock == Blocks.AIR)
+                && (sideBlock == null || sideBlock == Blocks.AIR)
+                && signPos == null;
+
+            if (emptySlot)
+            {
+                emptyPairs++;
+                if (emptyPairs >= 2)
+                {
+                    break;
+                }
+            }
+            else
+            {
+                emptyPairs = 0;
+            }
         }
     }
 
@@ -11439,6 +11658,27 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     @Override
     public BlockPos findSignAtZMinus1(World world, BlockPos basePos)
     {
+        if (world == null || basePos == null)
+        {
+            return null;
+        }
+
+        // If the chunk is not loaded, use cached entry->sign mapping (so skip-check can work from cache).
+        if (!world.isBlockLoaded(basePos, false))
+        {
+            String scopeKey = getCodeGlassScopeKey(world);
+            if (scopeKey != null)
+            {
+                String k = scopeKey + ":" + basePos.toLong();
+                Long hit = entryToSignPosByScopeEntry.get(k);
+                if (hit != null)
+                {
+                    return BlockPos.fromLong(hit.longValue());
+                }
+            }
+            return null;
+        }
+
         // Try to find sign at z-1 from basePos at various Y levels
         for (int dy = -2; dy <= 0; dy++)
         {
@@ -11476,6 +11716,31 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             return;
         }
+
+        // Scope-keyed cache (preferred): avoids collisions across different plots with the same coordinates.
+        try
+        {
+            String scopeKey = getCodeGlassScopeKey(world);
+            if (scopeKey != null)
+            {
+                String k = scopeKey + ":" + entryPos.toLong();
+                ResourceLocation id = block.getRegistryName();
+                String v = id == null ? "" : id.toString();
+                if (!v.isEmpty())
+                {
+                    placedBlockCacheByScopePos.put(k, v);
+                    codeCacheDirty = true;
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            if (debugUi && Minecraft.getMinecraft() != null && Minecraft.getMinecraft().player != null)
+            {
+                Minecraft.getMinecraft().player.sendMessage(new TextComponentString("[BetterCode] cachePlacedBlock err: " + e));
+            }
+        }
+
         String key = world.provider.getDimension() + ":" + entryPos.toLong();
         ResourceLocation id = block.getRegistryName();
         placedBlockCacheByDimPos.put(key, id == null ? "" : id.toString());
@@ -11488,6 +11753,28 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             return null;
         }
+
+        try
+        {
+            String scopeKey = getCodeGlassScopeKey(world);
+            if (scopeKey != null)
+            {
+                String k = scopeKey + ":" + entryPos.toLong();
+                String sid = placedBlockCacheByScopePos.get(k);
+                if (sid != null && !sid.trim().isEmpty())
+                {
+                    return Block.getBlockFromName(sid);
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            if (debugUi && Minecraft.getMinecraft() != null && Minecraft.getMinecraft().player != null)
+            {
+                Minecraft.getMinecraft().player.sendMessage(new TextComponentString("[BetterCode] getCachedPlacedBlock err: " + e));
+            }
+        }
+
         String key = world.provider.getDimension() + ":" + entryPos.toLong();
         String id = placedBlockCacheByDimPos.get(key);
         if (id == null || id.trim().isEmpty())
@@ -11515,6 +11802,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         signLinesCache.put(key1, lines);
         String key2 = world.provider.getDimension() + ":" + pos.toLong();
         signLinesCacheByDimPos.put(key2, lines);
+        codeCacheDirty = true;
     }
 
     private String parseNestingLevel(World world, BlockPos pos)
