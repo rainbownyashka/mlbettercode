@@ -305,6 +305,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private KeyBinding keyOpenCodeMenu;
     private KeyBinding keyOpenCodeMenuAlt;
     private KeyBinding keyTpForward;
+    private KeyBinding keyConfirmLoad;
     private boolean codeMenuKeyDown = false;
     private boolean tpForwardKeyDown = false;
     private int tpScrollSteps = 0;
@@ -2050,6 +2051,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         handleMenuCacheTick(mc);
         handleCodeMenuKeys(mc);
         handleTpForwardKey(mc);
+        handleConfirmLoadKey(mc);
         handleTpScrollQueue(mc);
         handleTpPathQueue(mc);
         handleHotbarSwap(mc);
@@ -2066,6 +2068,25 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         saveShulkerHolosIfNeeded();
         saveCodeBlueGlassIfNeeded();
         saveCodeCachesIfNeeded();
+    }
+
+    private void handleConfirmLoadKey(Minecraft mc)
+    {
+        if (mc == null || keyConfirmLoad == null)
+        {
+            return;
+        }
+        try
+        {
+            if (keyConfirmLoad.isPressed())
+            {
+                hubModule.runConfirmCommand(null, null, new String[0]);
+            }
+        }
+        catch (Exception ignore)
+        {
+            // ignore key errors
+        }
     }
 
     private static String buildNameListJson(List<String> names)
@@ -2379,6 +2400,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             "/mldsl run [path] [--start N] - run plan.json via placeadvanced", mlDslModule::runCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("loadmodule",
             "/loadmodule <postId> [file] - download from MLDSL Hub", hubModule::runCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("confirmload",
+            "/confirmload - confirm printing downloaded plan.json", hubModule::runConfirmCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("copycode",
             "/copycode <id1> <id2> <yoffset> <floorsCSV> - copy code blocks by floor", this::runCopyCodeCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("cancelcopy",
@@ -2739,9 +2762,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         keyOpenCodeMenuAlt = new KeyBinding("key.mcpythonapi.codemenu_alt", Keyboard.KEY_RMENU,
             "key.categories.mcpythonapi");
         keyTpForward = new KeyBinding("key.mcpythonapi.tpfwd", Keyboard.KEY_G, "key.categories.mcpythonapi");
+        keyConfirmLoad = new KeyBinding("key.mcpythonapi.confirmload", Keyboard.KEY_NONE, "key.categories.mcpythonapi");
         ClientRegistry.registerKeyBinding(keyOpenCodeMenu);
         ClientRegistry.registerKeyBinding(keyOpenCodeMenuAlt);
         ClientRegistry.registerKeyBinding(keyTpForward);
+        ClientRegistry.registerKeyBinding(keyConfirmLoad);
+        hubModule.setConfirmKeyHint(org.lwjgl.input.Keyboard.getKeyName(keyConfirmLoad.getKeyCode()));
     }
 
     private void runDebugCommand(MinecraftServer server, ICommandSender sender, String[] args)
