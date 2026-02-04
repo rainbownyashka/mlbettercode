@@ -410,6 +410,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     // MVP plan runner (/mldsl run plan.json) that drives PlaceModule
     private final com.example.examplemod.feature.mldsl.MlDslModule mlDslModule =
         new com.example.examplemod.feature.mldsl.MlDslModule(this, placeModule);
+    // Download modules from MLDSL Hub (/loadmodule <postId> [file])
+    private final com.example.examplemod.feature.hub.HubModule hubModule =
+        new com.example.examplemod.feature.hub.HubModule(this);
     // Discover/crawl menus into clickMenuMap
     private final RegAllActionsModule regAllActionsModule = new RegAllActionsModule(this);
     // Copy code between plots (/copycode, /cancelcopy)
@@ -2374,6 +2377,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             "/placeadvanced <block> <name> <args|no> [<block> <name> <args|no> ...]", placeModule::runPlaceAdvancedCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("mldsl",
             "/mldsl run [path] [--start N] - run plan.json via placeadvanced", mlDslModule::runCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("loadmodule",
+            "/loadmodule <postId> [file] - download from MLDSL Hub", hubModule::runCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("copycode",
             "/copycode <id1> <id2> <yoffset> <floorsCSV> - copy code blocks by floor", this::runCopyCodeCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("cancelcopy",
