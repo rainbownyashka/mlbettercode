@@ -316,9 +316,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private boolean tpForwardKeyDown = false;
     private boolean codeSelectKeyDown = false;
 
-    // Code selector: set of selected blue-glass anchors by dimension (used by /exportselected).
+    // Code selector: set of selected blue-glass anchors by dimension (used by /exportcode selection mode).
     private final Map<Integer, Set<BlockPos>> codeSelectedGlassesByDim = new HashMap<>();
     private long lastCodeSelectorToggleMs = 0L;
+    private final Map<Integer, Integer> exportSelectedFloorYByDim = new HashMap<>();
     private int tpScrollSteps = 0;
     private int tpScrollQueue = 0;
     private int tpScrollDir = 0;
@@ -2454,8 +2455,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             "/exportcode [floorsCSV] [name] - export loaded code floors to exportcode_*.json", this::runExportCodeCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("codeselector",
             "/codeselector - give Code Selector tool (RMB toggle row, LMB clear, F finish)", this::runCodeSelectorCommand));
-        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("exportselected",
-            "/exportselected [name] - export selected rows to exportselected_*.json", this::runExportSelectedCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("selectfloor",
+            "/selectfloor <1..20> - set default floor for /exportcode (Y = N*10-10)", this::runSelectFloorCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("testplace",
             "/testplace <method 1-10> [block]", this::runTestPlaceCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("regallactions",
@@ -2490,6 +2491,60 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             return;
         }
 
+        // By default, if there is an active Code Selector selection, export it instead of scanning floors.
+        ExportSelection selection = getValidSelectedRows(mc.world);
+        if (selection.totalSelected > 0)
+        {
+            if (selection.valid.isEmpty())
+            {
+                setActionBar(false, "&cSelected rows are unloaded/empty. Fly closer and re-select.", 4000L);
+                mc.player.sendMessage(new TextComponentString(TextFormatting.RED
+                    + "exportcode: no valid selected rows (unloaded=" + selection.skippedUnloaded + " empty=" + selection.skippedEmpty + ")"));
+                return;
+            }
+
+            String name = extractExportNameFromArgs(args);
+            if (name.isEmpty())
+            {
+                name = normalizeEntryScopeId(getScoreboardIdLine());
+            }
+            if (name.isEmpty())
+            {
+                name = "code";
+            }
+
+            selection.valid.sort(Comparator.<BlockPos>comparingInt(BlockPos::getY)
+                .thenComparingInt(BlockPos::getZ)
+                .thenComparingInt(BlockPos::getX));
+
+            String json = buildExportCodeJson(mc.world, selection.valid, autoCodeCacheMaxSteps);
+            if (json == null || json.isEmpty())
+            {
+                setActionBar(false, "&cExport failed", 2500L);
+                return;
+            }
+
+            File out = new File(mc.mcDataDir, "exportcode_" + name + "_" + System.currentTimeMillis() + ".json");
+            try
+            {
+                java.nio.file.Files.write(out.toPath(), json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                setActionBar(true, "&aExported selected rows: " + selection.valid.size(), 3500L);
+                mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "exportcode saved: " + out.getAbsolutePath()));
+                if (selection.skippedUnloaded > 0 || selection.skippedEmpty > 0)
+                {
+                    mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
+                        + "Skipped selected rows: unloaded=" + selection.skippedUnloaded + " empty=" + selection.skippedEmpty));
+                }
+                mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
+                    + "NOTE: chest arg export is not implemented yet (blocks+signs only)."));
+            }
+            catch (Exception e)
+            {
+                setActionBar(false, "&cExport failed: " + e.getMessage(), 3500L);
+            }
+            return;
+        }
+
         BlockPos seed = resolveExportGlassPos(mc.world);
         if (seed == null || !mc.world.isBlockLoaded(seed))
         {
@@ -2500,7 +2555,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         List<Integer> floors = parseCsvInts(args.length > 0 ? args[0] : null);
         if (floors.isEmpty())
         {
-            floors.add(seed.getY());
+            Integer forced = exportSelectedFloorYByDim.get(mc.world.provider.getDimension());
+            floors.add(forced == null ? seed.getY() : forced);
         }
         String name = args.length > 1 ? (args[1] == null ? "" : args[1].trim()) : "";
         if (name.isEmpty())
@@ -2570,6 +2626,98 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
     }
 
+    private void runSelectFloorCommand(MinecraftServer server, ICommandSender sender, String[] args)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.world == null || mc.player == null)
+        {
+            return;
+        }
+        if (!editorModeActive || !isDevCreativeScoreboard(mc))
+        {
+            setActionBar(false, "&cDEV mode only (creative + scoreboard)", 3000L);
+            return;
+        }
+        if (args == null || args.length == 0)
+        {
+            setActionBar(false, "&cUsage: /selectfloor <1..20>", 3000L);
+            return;
+        }
+        String raw = args[0] == null ? "" : args[0].trim();
+        int n;
+        try
+        {
+            n = Integer.parseInt(raw);
+        }
+        catch (Exception e)
+        {
+            setActionBar(false, "&cUsage: /selectfloor <1..20>", 3000L);
+            return;
+        }
+        if (n < 1 || n > 20)
+        {
+            setActionBar(false, "&cFloor must be 1..20", 3000L);
+            return;
+        }
+        int y = (n * 10) - 10;
+        exportSelectedFloorYByDim.put(mc.world.provider.getDimension(), y);
+        setActionBar(true, "&aSelected floor " + n + " (Y=" + y + ")", 3500L);
+        mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "Default export floor set: " + n + " (Y=" + y + ")"));
+    }
+
+    private static String extractExportNameFromArgs(String[] args)
+    {
+        if (args == null || args.length == 0)
+        {
+            return "";
+        }
+        String raw = args[args.length - 1];
+        return raw == null ? "" : raw.trim();
+    }
+
+    private ExportSelection getValidSelectedRows(World world)
+    {
+        ExportSelection out = new ExportSelection();
+        if (world == null)
+        {
+            return out;
+        }
+        int dim = world.provider.getDimension();
+        Set<BlockPos> set = codeSelectedGlassesByDim.get(dim);
+        if (set == null || set.isEmpty())
+        {
+            return out;
+        }
+        out.totalSelected = set.size();
+        for (BlockPos p : set)
+        {
+            if (p == null)
+            {
+                continue;
+            }
+            if (!world.isBlockLoaded(p))
+            {
+                out.skippedUnloaded++;
+                continue;
+            }
+            if (world.getBlockState(p.up()).getBlock() == Blocks.AIR)
+            {
+                out.skippedEmpty++;
+                continue;
+            }
+            out.valid.add(p);
+        }
+        return out;
+    }
+
+    private static class ExportSelection
+    {
+        int totalSelected = 0;
+        int skippedUnloaded = 0;
+        int skippedEmpty = 0;
+        final List<BlockPos> valid = new ArrayList<>();
+    }
+
     private void runCodeSelectorCommand(MinecraftServer server, ICommandSender sender, String[] args)
     {
         Minecraft mc = Minecraft.getMinecraft();
@@ -2590,94 +2738,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             mc.player.connection.sendPacket(new CPacketHeldItemChange(slot));
         }
         catch (Exception ignore) { }
-        setActionBar(true, "&aCode Selector выдан. ПКМ: выбрать/убрать строку, ЛКМ: очистить, F: закончить", 5000L);
-    }
-
-    private void runExportSelectedCommand(MinecraftServer server, ICommandSender sender, String[] args)
-    {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null || mc.world == null || mc.player == null)
-        {
-            setActionBar(false, "&cNo world/player", 2000L);
-            return;
-        }
-        int dim = mc.world.provider.getDimension();
-        Set<BlockPos> set = codeSelectedGlassesByDim.get(dim);
-        if (set == null || set.isEmpty())
-        {
-            runCodeSelectorCommand(server, sender, args);
-            setActionBar(false, "&cНет выбранных строк. ПКМ по синему стеклу/блоку над ним, затем /exportselected", 4500L);
-            mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
-                + "Выделение строк: ПКМ toggle, ЛКМ очистить, F завершить. Затем: /exportselected [name]"));
-            return;
-        }
-
-        String name = args.length > 0 ? (args[0] == null ? "" : args[0].trim()) : "";
-        if (name.isEmpty())
-        {
-            name = normalizeEntryScopeId(getScoreboardIdLine());
-        }
-        if (name.isEmpty())
-        {
-            name = "code";
-        }
-
-        List<BlockPos> filtered = new ArrayList<>();
-        int skippedUnloaded = 0;
-        int skippedEmpty = 0;
-        for (BlockPos p : set)
-        {
-            if (p == null)
-            {
-                continue;
-            }
-            if (!mc.world.isBlockLoaded(p))
-            {
-                skippedUnloaded++;
-                continue;
-            }
-            if (mc.world.getBlockState(p.up()).getBlock() == Blocks.AIR)
-            {
-                skippedEmpty++;
-                continue;
-            }
-            filtered.add(p);
-        }
-        if (filtered.isEmpty())
-        {
-            setActionBar(false, "&cВыбранные строки не загружены/пустые. Подлети ближе и выбери снова.", 4000L);
-            mc.player.sendMessage(new TextComponentString(TextFormatting.RED
-                + "exportselected: нет валидных выбранных строк (unloaded=" + skippedUnloaded + " empty=" + skippedEmpty + ")"));
-            return;
-        }
-
-        filtered.sort(Comparator.<BlockPos>comparingInt(BlockPos::getY)
-            .thenComparingInt(BlockPos::getZ)
-            .thenComparingInt(BlockPos::getX));
-
-        String json = buildExportCodeJson(mc.world, filtered, autoCodeCacheMaxSteps);
-        if (json == null || json.isEmpty())
-        {
-            setActionBar(false, "&cExport failed", 2500L);
-            return;
-        }
-
-        File out = new File(mc.mcDataDir, "exportselected_" + name + "_" + System.currentTimeMillis() + ".json");
-        try
-        {
-            java.nio.file.Files.write(out.toPath(), json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            setActionBar(true, "&aExported: " + out.getName(), 3500L);
-            mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "exportselected saved: " + out.getAbsolutePath()));
-            if (skippedUnloaded > 0 || skippedEmpty > 0)
-            {
-                mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
-                    + "Skipped rows: unloaded=" + skippedUnloaded + " empty=" + skippedEmpty));
-            }
-        }
-        catch (Exception e)
-        {
-            setActionBar(false, "&cExport failed: " + e.getMessage(), 3500L);
-        }
+        setActionBar(true, "&aCode Selector выдан. ПКМ: выбрать/убрать строку, ЛКМ: очистить, F: закончить. Затем: /exportcode [name]", 6500L);
     }
 
     private static List<Integer> parseCsvInts(String raw)
