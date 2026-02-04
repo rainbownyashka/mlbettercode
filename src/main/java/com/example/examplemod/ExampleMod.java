@@ -320,6 +320,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private final Map<Integer, Set<BlockPos>> codeSelectedGlassesByDim = new HashMap<>();
     private long lastCodeSelectorToggleMs = 0L;
     private final Map<Integer, Integer> exportSelectedFloorYByDim = new HashMap<>();
+    private File lastExportCodeFile = null;
     private int tpScrollSteps = 0;
     private int tpScrollQueue = 0;
     private int tpScrollDir = 0;
@@ -2457,6 +2458,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             "/codeselector - give Code Selector tool (RMB toggle row, LMB clear, F finish)", this::runCodeSelectorCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("selectfloor",
             "/selectfloor <1..20> - set default floor for /exportcode (Y = N*10-10)", this::runSelectFloorCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("module",
+            "/module publish [name] - create a publish folder with plan/export and open Hub", this::runModuleCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("testplace",
             "/testplace <method 1-10> [block]", this::runTestPlaceCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("regallactions",
@@ -2528,6 +2531,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             try
             {
                 java.nio.file.Files.write(out.toPath(), json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                lastExportCodeFile = out;
                 setActionBar(true, "&aExported selected rows: " + selection.valid.size(), 3500L);
                 mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "exportcode saved: " + out.getAbsolutePath()));
                 if (selection.skippedUnloaded > 0 || selection.skippedEmpty > 0)
@@ -2615,6 +2619,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         try
         {
             java.nio.file.Files.write(out.toPath(), json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            lastExportCodeFile = out;
             setActionBar(true, "&aExported: " + out.getName(), 3500L);
             mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "exportcode saved: " + out.getAbsolutePath()));
             mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
@@ -2663,6 +2668,207 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         exportSelectedFloorYByDim.put(mc.world.provider.getDimension(), y);
         setActionBar(true, "&aSelected floor " + n + " (Y=" + y + ")", 3500L);
         mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "Default export floor set: " + n + " (Y=" + y + ")"));
+    }
+
+    private void runModuleCommand(MinecraftServer server, ICommandSender sender, String[] args)
+    {
+        if (args == null || args.length == 0)
+        {
+            setActionBar(false, "&cUsage: /module publish [name]", 3500L);
+            return;
+        }
+        String sub = args[0] == null ? "" : args[0].trim().toLowerCase(Locale.ROOT);
+        if ("publish".equals(sub))
+        {
+            String name = args.length > 1 ? (args[1] == null ? "" : args[1].trim()) : "";
+            runModulePublishCommand(name);
+            return;
+        }
+        setActionBar(false, "&cUnknown subcommand: " + sub, 3500L);
+    }
+
+    private void runModulePublishCommand(String name)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.mcDataDir == null || mc.player == null)
+        {
+            return;
+        }
+
+        if (name == null || name.trim().isEmpty())
+        {
+            name = "bundle";
+        }
+        name = name.replaceAll("[^a-zA-Z0-9_\\-\\.]+", "_");
+        if (name.isEmpty())
+        {
+            name = "bundle";
+        }
+
+        File root = new File(mc.mcDataDir, "mldsl_publish");
+        File dir = new File(root, name + "_" + System.currentTimeMillis());
+        if (!dir.exists() && !dir.mkdirs())
+        {
+            setActionBar(false, "&cCan't create folder: " + dir.getAbsolutePath(), 4000L);
+            return;
+        }
+
+        int copied = 0;
+        // 1) plan.json (if exists)
+        File plan = new File(mc.mcDataDir, "plan.json");
+        if (plan.isFile())
+        {
+            if (copyFileSafe(plan, new File(dir, "plan.json")))
+            {
+                copied++;
+            }
+        }
+
+        // 2) last exportcode (if exists)
+        File export = lastExportCodeFile;
+        if (export != null && export.isFile())
+        {
+            if (copyFileSafe(export, new File(dir, export.getName())))
+            {
+                copied++;
+            }
+        }
+        else
+        {
+            File latest = findLatestExportFile(mc.mcDataDir, "exportcode_");
+            if (latest != null && latest.isFile())
+            {
+                if (copyFileSafe(latest, new File(dir, latest.getName())))
+                {
+                    copied++;
+                }
+            }
+        }
+
+        // 3) small README for user
+        try
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.append("MLDSL Hub publish bundle\n");
+            sb.append("\n");
+            sb.append("Files in this folder were prepared by BetterCode /module publish.\n");
+            sb.append("\n");
+            sb.append("- Drag&drop plan.json and exportcode_*.json into the Hub publish page.\n");
+            java.nio.file.Files.write(new File(dir, "README.txt").toPath(),
+                sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+        catch (Exception ignore) { }
+
+        String url = "https://mldsl-hub.pages.dev/publish";
+        setActionBar(true, "&aBundle ready (" + copied + " files). Opening folder + Hub...", 4500L);
+        mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "Publish folder: " + dir.getAbsolutePath()));
+        if (copied == 0)
+        {
+            mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
+                + "Nothing to copy. Put plan.json into .minecraft and/or run /exportcode first."));
+        }
+
+        openFolderAndUrl(dir, url);
+    }
+
+    private File findLatestExportFile(File dir, String prefix)
+    {
+        if (dir == null || prefix == null)
+        {
+            return null;
+        }
+        File[] files;
+        try
+        {
+            files = dir.listFiles();
+        }
+        catch (Exception e)
+        {
+            return null;
+        }
+        if (files == null || files.length == 0)
+        {
+            return null;
+        }
+        File best = null;
+        long bestTs = -1L;
+        for (File f : files)
+        {
+            if (f == null || !f.isFile())
+            {
+                continue;
+            }
+            String n = f.getName();
+            if (n == null || !n.startsWith(prefix) || !n.endsWith(".json"))
+            {
+                continue;
+            }
+            long ts = f.lastModified();
+            if (ts > bestTs)
+            {
+                bestTs = ts;
+                best = f;
+            }
+        }
+        return best;
+    }
+
+    private boolean copyFileSafe(File src, File dst)
+    {
+        if (src == null || dst == null)
+        {
+            return false;
+        }
+        try
+        {
+            java.nio.file.Files.copy(src.toPath(), dst.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            return true;
+        }
+        catch (Exception e)
+        {
+            Minecraft mc = Minecraft.getMinecraft();
+            if (mc != null && mc.player != null)
+            {
+                mc.player.sendMessage(new TextComponentString(TextFormatting.RED
+                    + "Copy failed: " + src.getName() + " -> " + dst.getName() + " (" + e.getMessage() + ")"));
+            }
+            return false;
+        }
+    }
+
+    private void openFolderAndUrl(File folder, String url)
+    {
+        try
+        {
+            if (java.awt.Desktop.isDesktopSupported())
+            {
+                java.awt.Desktop desk = java.awt.Desktop.getDesktop();
+                try
+                {
+                    if (folder != null && folder.isDirectory())
+                    {
+                        desk.open(folder);
+                    }
+                }
+                catch (Exception ignore) { }
+                try
+                {
+                    if (url != null && !url.trim().isEmpty())
+                    {
+                        desk.browse(new java.net.URI(url.trim()));
+                    }
+                }
+                catch (Exception ignore) { }
+                return;
+            }
+        }
+        catch (Exception ignore) { }
+
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc != null && mc.player != null)
+        {
+            mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW + "Open manually: " + url));
+        }
     }
 
     private static String extractExportNameFromArgs(String[] args)
