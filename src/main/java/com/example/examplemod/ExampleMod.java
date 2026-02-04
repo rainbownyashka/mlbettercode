@@ -22,6 +22,7 @@ import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.network.NetworkPlayerInfo;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.RenderHelper;
+import net.minecraft.client.renderer.RenderGlobal;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.block.model.ItemCameraTransforms;
@@ -105,6 +106,7 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.EnumHand;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraft.util.text.TextFormatting;
@@ -205,6 +207,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private static final int ENTRY_RECENT_LIMIT = 10;
     private static final int ENTRY_FREQUENT_MIN = 3;
     private static final String ARRAY_MARK = "\u2398";
+    private static final String CODE_SELECTOR_TAG = "mldsl_code_selector";
+    private static final String CODE_SELECTOR_TITLE = "\u00a7bCode Selector";
+    private static final long CODE_SELECTOR_TOGGLE_COOLDOWN_MS = 150L;
     private static final int MENU_CACHE_MAX = 48;
     private static final int ENTRY_COUNT_MAX = 300;
     private static final long EDITOR_MODE_GRACE_MS = 30000L;
@@ -306,8 +311,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private KeyBinding keyOpenCodeMenuAlt;
     private KeyBinding keyTpForward;
     private KeyBinding keyConfirmLoad;
+    private KeyBinding keyFinishCodeSelect;
     private boolean codeMenuKeyDown = false;
     private boolean tpForwardKeyDown = false;
+    private boolean codeSelectKeyDown = false;
+
+    // Code selector: set of selected blue-glass anchors by dimension (used by /exportselected).
+    private final Map<Integer, Set<BlockPos>> codeSelectedGlassesByDim = new HashMap<>();
+    private long lastCodeSelectorToggleMs = 0L;
     private int tpScrollSteps = 0;
     private int tpScrollQueue = 0;
     private int tpScrollDir = 0;
@@ -2052,6 +2063,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         handleCodeMenuKeys(mc);
         handleTpForwardKey(mc);
         handleConfirmLoadKey(mc);
+        handleFinishCodeSelectKey(mc);
         handleTpScrollQueue(mc);
         handleTpPathQueue(mc);
         handleHotbarSwap(mc);
@@ -2087,6 +2099,38 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             // ignore key errors
         }
+    }
+
+    private void handleFinishCodeSelectKey(Minecraft mc)
+    {
+        if (mc == null || mc.player == null || keyFinishCodeSelect == null)
+        {
+            return;
+        }
+        boolean down = keyFinishCodeSelect.isKeyDown();
+        if (down && !codeSelectKeyDown)
+        {
+            try
+            {
+                ItemStack held = mc.player.getHeldItemMainhand();
+                if (isCodeSelectorItem(held))
+                {
+                    int slot = mc.player.inventory.currentItem;
+                    mc.player.inventory.setInventorySlotContents(slot, ItemStack.EMPTY);
+                    sendCreativeSlotUpdate(mc, slot, ItemStack.EMPTY);
+                    setActionBar(true, "&aВыделение завершено. Строк выбрано: " + getSelectedRowCount(mc.world), 3000L);
+                }
+                else
+                {
+                    setActionBar(false, "&eДержи Code Selector в руке и нажми F", 2500L);
+                }
+            }
+            catch (Exception e)
+            {
+                setActionBar(false, "&cОшибка завершения выделения: " + e.getMessage(), 3000L);
+            }
+        }
+        codeSelectKeyDown = down;
     }
 
     private static String buildNameListJson(List<String> names)
@@ -2408,6 +2452,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             "/cancelcopy - stop /copycode", this::runCancelCopyCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("exportcode",
             "/exportcode [floorsCSV] [name] - export loaded code floors to exportcode_*.json", this::runExportCodeCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("codeselector",
+            "/codeselector - give Code Selector tool (RMB toggle row, LMB clear, F finish)", this::runCodeSelectorCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("exportselected",
+            "/exportselected [name] - export selected rows to exportselected_*.json", this::runExportSelectedCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("testplace",
             "/testplace <method 1-10> [block]", this::runTestPlaceCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("regallactions",
@@ -2515,6 +2563,116 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "exportcode saved: " + out.getAbsolutePath()));
             mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
                 + "NOTE: chest arg export is not implemented yet (blocks+signs only)."));
+        }
+        catch (Exception e)
+        {
+            setActionBar(false, "&cExport failed: " + e.getMessage(), 3500L);
+        }
+    }
+
+    private void runCodeSelectorCommand(MinecraftServer server, ICommandSender sender, String[] args)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null || mc.playerController == null)
+        {
+            return;
+        }
+        if (!mc.playerController.isInCreativeMode() || mc.playerController.getCurrentGameType() != GameType.CREATIVE)
+        {
+            setActionBar(false, "&cНужно Creative", 2500L);
+            mc.player.sendMessage(new TextComponentString(TextFormatting.RED + "Code Selector: требуется Creative режим."));
+            return;
+        }
+        int slot = giveItemToHotbarSlot(mc, buildCodeSelectorItem());
+        try
+        {
+            mc.player.inventory.currentItem = slot;
+            mc.player.connection.sendPacket(new CPacketHeldItemChange(slot));
+        }
+        catch (Exception ignore) { }
+        setActionBar(true, "&aCode Selector выдан. ПКМ: выбрать/убрать строку, ЛКМ: очистить, F: закончить", 5000L);
+    }
+
+    private void runExportSelectedCommand(MinecraftServer server, ICommandSender sender, String[] args)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.world == null || mc.player == null)
+        {
+            setActionBar(false, "&cNo world/player", 2000L);
+            return;
+        }
+        int dim = mc.world.provider.getDimension();
+        Set<BlockPos> set = codeSelectedGlassesByDim.get(dim);
+        if (set == null || set.isEmpty())
+        {
+            runCodeSelectorCommand(server, sender, args);
+            setActionBar(false, "&cНет выбранных строк. ПКМ по синему стеклу/блоку над ним, затем /exportselected", 4500L);
+            mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
+                + "Выделение строк: ПКМ toggle, ЛКМ очистить, F завершить. Затем: /exportselected [name]"));
+            return;
+        }
+
+        String name = args.length > 0 ? (args[0] == null ? "" : args[0].trim()) : "";
+        if (name.isEmpty())
+        {
+            name = normalizeEntryScopeId(getScoreboardIdLine());
+        }
+        if (name.isEmpty())
+        {
+            name = "code";
+        }
+
+        List<BlockPos> filtered = new ArrayList<>();
+        int skippedUnloaded = 0;
+        int skippedEmpty = 0;
+        for (BlockPos p : set)
+        {
+            if (p == null)
+            {
+                continue;
+            }
+            if (!mc.world.isBlockLoaded(p))
+            {
+                skippedUnloaded++;
+                continue;
+            }
+            if (mc.world.getBlockState(p.up()).getBlock() == Blocks.AIR)
+            {
+                skippedEmpty++;
+                continue;
+            }
+            filtered.add(p);
+        }
+        if (filtered.isEmpty())
+        {
+            setActionBar(false, "&cВыбранные строки не загружены/пустые. Подлети ближе и выбери снова.", 4000L);
+            mc.player.sendMessage(new TextComponentString(TextFormatting.RED
+                + "exportselected: нет валидных выбранных строк (unloaded=" + skippedUnloaded + " empty=" + skippedEmpty + ")"));
+            return;
+        }
+
+        filtered.sort(Comparator.<BlockPos>comparingInt(BlockPos::getY)
+            .thenComparingInt(BlockPos::getZ)
+            .thenComparingInt(BlockPos::getX));
+
+        String json = buildExportCodeJson(mc.world, filtered, autoCodeCacheMaxSteps);
+        if (json == null || json.isEmpty())
+        {
+            setActionBar(false, "&cExport failed", 2500L);
+            return;
+        }
+
+        File out = new File(mc.mcDataDir, "exportselected_" + name + "_" + System.currentTimeMillis() + ".json");
+        try
+        {
+            java.nio.file.Files.write(out.toPath(), json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            setActionBar(true, "&aExported: " + out.getName(), 3500L);
+            mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "exportselected saved: " + out.getAbsolutePath()));
+            if (skippedUnloaded > 0 || skippedEmpty > 0)
+            {
+                mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
+                    + "Skipped rows: unloaded=" + skippedUnloaded + " empty=" + skippedEmpty));
+            }
         }
         catch (Exception e)
         {
@@ -2763,10 +2921,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             "key.categories.mcpythonapi");
         keyTpForward = new KeyBinding("key.mcpythonapi.tpfwd", Keyboard.KEY_G, "key.categories.mcpythonapi");
         keyConfirmLoad = new KeyBinding("key.mcpythonapi.confirmload", Keyboard.KEY_NONE, "key.categories.mcpythonapi");
+        keyFinishCodeSelect = new KeyBinding("key.mcpythonapi.codeselect_finish", Keyboard.KEY_F, "key.categories.mcpythonapi");
         ClientRegistry.registerKeyBinding(keyOpenCodeMenu);
         ClientRegistry.registerKeyBinding(keyOpenCodeMenuAlt);
         ClientRegistry.registerKeyBinding(keyTpForward);
         ClientRegistry.registerKeyBinding(keyConfirmLoad);
+        ClientRegistry.registerKeyBinding(keyFinishCodeSelect);
         hubModule.setConfirmKeyHint(org.lwjgl.input.Keyboard.getKeyName(keyConfirmLoad.getKeyCode()));
     }
 
@@ -3918,6 +4078,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         Minecraft mc = Minecraft.getMinecraft();
         if (mc != null && mc.player != null)
         {
+            ItemStack heldSelector = mc.player.getHeldItemMainhand();
+            if (isCodeSelectorItem(heldSelector))
+            {
+                handleCodeSelectorRightClick(mc, event);
+                return;
+            }
             ItemStack heldEarly = mc.player.getHeldItemMainhand();
             ItemStack heldOff = mc.player.getHeldItemOffhand();
             if ((!heldEarly.isEmpty() && heldEarly.getItem() == Items.ARROW)
@@ -4128,6 +4294,18 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             return;
         }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc != null && mc.player != null)
+        {
+            ItemStack held = mc.player.getHeldItemMainhand();
+            if (isCodeSelectorItem(held))
+            {
+                clearCodeSelectionForWorld(mc.world);
+                setActionBar(true, "&eВыделение очищено", 1500L);
+                event.setCanceled(true);
+                return;
+            }
+        }
         BlockPos pos = event.getPos();
         clearChestCacheAt(pos);
         clearChestCacheAt(pos.up());
@@ -4135,6 +4313,149 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         clearChestCacheAt(pos.up().north());
         clearChestCacheAt(pos.up().east());
         clearChestCacheAt(pos.up().west());
+    }
+
+    private void handleCodeSelectorRightClick(Minecraft mc, PlayerInteractEvent.RightClickBlock event)
+    {
+        if (mc == null || mc.player == null || event == null || event.getWorld() == null)
+        {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastCodeSelectorToggleMs < CODE_SELECTOR_TOGGLE_COOLDOWN_MS)
+        {
+            event.setCanceled(true);
+            return;
+        }
+        lastCodeSelectorToggleMs = now;
+
+        World world = event.getWorld();
+        BlockPos clicked = event.getPos();
+        BlockPos glassPos = resolveCodeSelectorGlassPos(world, clicked);
+        if (glassPos == null)
+        {
+            setActionBar(false, "&cКликни по синему стеклу или по блоку над ним", 3000L);
+            event.setCanceled(true);
+            return;
+        }
+        if (!world.isBlockLoaded(glassPos))
+        {
+            setActionBar(false, "&cСтекло не загружено (подлети ближе)", 3000L);
+            event.setCanceled(true);
+            return;
+        }
+        BlockPos start = glassPos.up();
+        if (!world.isBlockLoaded(start, false))
+        {
+            setActionBar(false, "&cСтрока не загружена (подлети ближе)", 3000L);
+            event.setCanceled(true);
+            return;
+        }
+        if (world.getBlockState(start).getBlock() == Blocks.AIR)
+        {
+            setActionBar(false, "&cПустая строка: над стеклом воздух", 3000L);
+            event.setCanceled(true);
+            return;
+        }
+
+        int dim = world.provider.getDimension();
+        Set<BlockPos> set = codeSelectedGlassesByDim.get(dim);
+        if (set == null)
+        {
+            set = new LinkedHashSet<>();
+            codeSelectedGlassesByDim.put(dim, set);
+        }
+        boolean added;
+        if (set.contains(glassPos))
+        {
+            set.remove(glassPos);
+            added = false;
+        }
+        else
+        {
+            set.add(glassPos);
+            added = true;
+        }
+        setActionBar(true, (added ? "&aВыбрано" : "&eУбрано") + " строк: " + set.size(), 1800L);
+        event.setCanceled(true);
+    }
+
+    private BlockPos resolveCodeSelectorGlassPos(World world, BlockPos clicked)
+    {
+        if (world == null || clicked == null)
+        {
+            return null;
+        }
+        if (isStainedGlassMeta(world, clicked, 3))
+        {
+            return clicked;
+        }
+        BlockPos down = clicked.down();
+        if (isStainedGlassMeta(world, down, 3))
+        {
+            return down;
+        }
+        return null;
+    }
+
+    private void clearCodeSelectionForWorld(World world)
+    {
+        if (world == null)
+        {
+            return;
+        }
+        int dim = world.provider.getDimension();
+        Set<BlockPos> set = codeSelectedGlassesByDim.get(dim);
+        if (set != null)
+        {
+            set.clear();
+        }
+    }
+
+    private int getSelectedRowCount(World world)
+    {
+        if (world == null)
+        {
+            return 0;
+        }
+        int dim = world.provider.getDimension();
+        Set<BlockPos> set = codeSelectedGlassesByDim.get(dim);
+        return set == null ? 0 : set.size();
+    }
+
+    private boolean isCodeSelectorItem(ItemStack stack)
+    {
+        if (stack == null || stack.isEmpty())
+        {
+            return false;
+        }
+        try
+        {
+            NBTTagCompound tag = stack.getTagCompound();
+            return tag != null && tag.hasKey(CODE_SELECTOR_TAG) && tag.getBoolean(CODE_SELECTOR_TAG);
+        }
+        catch (Exception ignore)
+        {
+            return false;
+        }
+    }
+
+    private ItemStack buildCodeSelectorItem()
+    {
+        ItemStack stack = new ItemStack(Items.BLAZE_ROD);
+        try
+        {
+            stack.setStackDisplayName(CODE_SELECTOR_TITLE);
+            NBTTagCompound tag = stack.getTagCompound();
+            if (tag == null)
+            {
+                tag = new NBTTagCompound();
+            }
+            tag.setBoolean(CODE_SELECTOR_TAG, true);
+            stack.setTagCompound(tag);
+        }
+        catch (Exception ignore) { }
+        return stack;
     }
 
     private void handleMenuCacheTick(Minecraft mc)
@@ -9534,6 +9855,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 }
             }
             renderSignSearchMarkers(mc);
+            renderCodeSelectionMarkers(mc);
             GlStateManager.popMatrix();
         }
         catch (Throwable t)
@@ -9685,6 +10007,55 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             mc.fontRenderer.drawStringWithShadow(label, -width / 2, 0, 0x00FF00);
             GlStateManager.enableDepth();
             GlStateManager.popMatrix();
+        }
+    }
+
+    private void renderCodeSelectionMarkers(Minecraft mc)
+    {
+        if (mc == null || mc.world == null || mc.player == null)
+        {
+            return;
+        }
+        int dim = mc.world.provider.getDimension();
+        Set<BlockPos> set = codeSelectedGlassesByDim.get(dim);
+        if (set == null || set.isEmpty())
+        {
+            return;
+        }
+        GlStateManager.disableTexture2D();
+        GlStateManager.disableDepth();
+        GlStateManager.disableLighting();
+        GlStateManager.glLineWidth(2.0F);
+        try
+        {
+            for (BlockPos glass : set)
+            {
+                if (glass == null || !mc.world.isBlockLoaded(glass))
+                {
+                    continue;
+                }
+                if (mc.player.getDistanceSq(glass) > 256.0 * 256.0)
+                {
+                    continue;
+                }
+                BlockPos start = glass.up();
+                if (!mc.world.isBlockLoaded(start, false))
+                {
+                    continue;
+                }
+                AxisAlignedBB bb = new AxisAlignedBB(start).grow(0.002D);
+                RenderGlobal.drawSelectionBoundingBox(bb, 0.20F, 0.85F, 1.0F, 0.55F);
+            }
+        }
+        catch (Exception ignore)
+        {
+            // render is best-effort
+        }
+        finally
+        {
+            GlStateManager.enableLighting();
+            GlStateManager.enableDepth();
+            GlStateManager.enableTexture2D();
         }
     }
 
