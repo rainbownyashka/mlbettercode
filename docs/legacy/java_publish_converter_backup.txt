@@ -1,0 +1,463 @@
+﻿Legacy Java converter backup from ExampleMod.java
+Source commit baseline: 07bc211
+
+    private static String jString(JsonObject o, String key)
+    {
+        if (o == null || key == null || !o.has(key))
+        {
+            return "";
+        }
+        JsonElement e = o.get(key);
+        if (e == null || e.isJsonNull())
+        {
+            return "";
+        }
+        try
+        {
+            return e.getAsString();
+        }
+        catch (Exception ex)
+        {
+            return "";
+        }
+    }
+
+    private static JsonArray jArray(JsonObject o, String key)
+    {
+        if (o == null || key == null || !o.has(key))
+        {
+            return null;
+        }
+        JsonElement e = o.get(key);
+        return (e != null && e.isJsonArray()) ? e.getAsJsonArray() : null;
+    }
+
+    private static String signNameFrom(JsonObject block)
+    {
+        JsonArray sign = jArray(block, "sign");
+        if (sign == null || sign.size() == 0)
+        {
+            return "";
+        }
+        String s1 = sign.size() > 0 ? (sign.get(0).isJsonNull() ? "" : sign.get(0).getAsString()) : "";
+        String s2 = sign.size() > 1 ? (sign.get(1).isJsonNull() ? "" : sign.get(1).getAsString()) : "";
+        s1 = s1 == null ? "" : s1.trim();
+        s2 = s2 == null ? "" : s2.trim();
+        if (!s2.isEmpty())
+        {
+            return s2;
+        }
+        return s1;
+    }
+
+    private static String planNameFrom(JsonObject block)
+    {
+        JsonArray sign = jArray(block, "sign");
+        if (sign == null || sign.size() == 0)
+        {
+            return "";
+        }
+        String s1 = sign.size() > 0 ? (sign.get(0).isJsonNull() ? "" : sign.get(0).getAsString()) : "";
+        String s2 = sign.size() > 1 ? (sign.get(1).isJsonNull() ? "" : sign.get(1).getAsString()) : "";
+        s1 = s1 == null ? "" : s1.trim();
+        s2 = s2 == null ? "" : s2.trim();
+        if (!s1.isEmpty() && !s2.isEmpty())
+        {
+            return s1 + "||" + s2;
+        }
+        return !s2.isEmpty() ? s2 : s1;
+    }
+
+    private static int enumClicksFromSlot(JsonObject slot)
+    {
+        JsonArray lore = jArray(slot, "lore");
+        if (lore == null || lore.size() == 0)
+        {
+            return -1;
+        }
+        int optionIndex = -1;
+        int selected = -1;
+        for (int i = 0; i < lore.size(); i++)
+        {
+            JsonElement le = lore.get(i);
+            String line = (le == null || le.isJsonNull()) ? "" : le.getAsString();
+            boolean hasOpt = line.contains("в—Џ") || line.contains("в—‹") || line.contains("\u25cf") || line.contains("\u25cb");
+            if (!hasOpt)
+            {
+                continue;
+            }
+            optionIndex++;
+            if (line.contains("в—Џ") || line.contains("\u25cf"))
+            {
+                selected = optionIndex;
+            }
+        }
+        return selected;
+    }
+
+    private static String inferSlotValue(JsonObject slot)
+    {
+        String reg = jString(slot, "registry").toLowerCase(Locale.ROOT);
+        String display = jString(slot, "displayClean");
+        if (display.isEmpty())
+        {
+            display = jString(slot, "display");
+        }
+        String nbt = jString(slot, "nbt");
+        int count = 1;
+        try
+        {
+            if (slot != null && slot.has("count"))
+            {
+                count = slot.get("count").getAsInt();
+            }
+        }
+        catch (Exception ignore) { }
+
+        String loreJoin = "";
+        JsonArray lore = jArray(slot, "lore");
+        if (lore != null)
+        {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < lore.size(); i++)
+            {
+                if (i > 0)
+                {
+                    sb.append('\n');
+                }
+                JsonElement e = lore.get(i);
+                sb.append(e == null || e.isJsonNull() ? "" : e.getAsString());
+            }
+            loreJoin = sb.toString().toUpperCase(Locale.ROOT);
+        }
+
+        if ("minecraft:book".equals(reg))
+        {
+            return "text(\"" + escapeJson(display.isEmpty() ? "text" : display) + "\")";
+        }
+        if ("minecraft:slime_ball".equals(reg))
+        {
+            String num = (display == null ? "" : display).replaceAll("[^0-9\\.-]", "");
+            if (num.isEmpty())
+            {
+                num = "0";
+            }
+            return "num(" + num + ")";
+        }
+        if ("minecraft:magma_cream".equals(reg))
+        {
+            String name = display.isEmpty() ? "varname" : display;
+            if (loreJoin.contains("\u0421\u041e\u0425\u0420\u0410\u041d") || loreJoin.contains("SAVE"))
+            {
+                return "var_save(\"" + escapeJson(name) + "\")";
+            }
+            return "var(\"" + escapeJson(name) + "\")";
+        }
+        if ("minecraft:item_frame".equals(reg))
+        {
+            return "arr(\"" + escapeJson(display.isEmpty() ? "arr" : display) + "\")";
+        }
+        if ("minecraft:paper".equals(reg))
+        {
+            return "loc(\"" + escapeJson(display.isEmpty() ? "loc" : display) + "\")";
+        }
+        if ("minecraft:apple".equals(reg))
+        {
+            String gv = display.isEmpty() ? "gameval" : display;
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("locname\\\\\\\":\\\\\\\"([^\\\\\\\"]+)\\\\\\\"").matcher(nbt);
+            if (m.find())
+            {
+                gv = m.group(1);
+            }
+            return "apple(\"" + escapeJson(gv) + "\")";
+        }
+
+        StringBuilder out = new StringBuilder();
+        out.append("item(\"").append(escapeJson(reg.isEmpty() ? "minecraft:stone" : reg)).append("\"");
+        if (count != 1)
+        {
+            out.append(",count=").append(count);
+        }
+        if (!display.isEmpty())
+        {
+            out.append(",name=\"").append(escapeJson(display)).append("\"");
+        }
+        if (!nbt.isEmpty() && !"{}".equals(nbt))
+        {
+            out.append(",nbt=\"").append(escapeJson(nbt)).append("\"");
+        }
+        out.append(")");
+        return out.toString();
+    }
+
+    private static String argsFromChest(JsonObject block)
+    {
+        JsonObject chest = null;
+        try
+        {
+            if (block != null && block.has("chest") && block.get("chest").isJsonObject())
+            {
+                chest = block.getAsJsonObject("chest");
+            }
+        }
+        catch (Exception ignore) { }
+        if (chest == null)
+        {
+            return "no";
+        }
+        JsonArray slots = jArray(chest, "slots");
+        if (slots == null || slots.size() == 0)
+        {
+            return "no";
+        }
+        List<String> out = new ArrayList<>();
+        for (JsonElement se : slots)
+        {
+            if (se == null || !se.isJsonObject())
+            {
+                continue;
+            }
+            JsonObject s = se.getAsJsonObject();
+            int slotNo;
+            try
+            {
+                slotNo = s.get("slot").getAsInt();
+            }
+            catch (Exception e)
+            {
+                continue;
+            }
+            out.add("slotraw(" + slotNo + ")=" + inferSlotValue(s));
+            int clicks = enumClicksFromSlot(s);
+            if (clicks > 0)
+            {
+                out.add("clicks(" + slotNo + "," + clicks + ")=0");
+            }
+        }
+        if (out.isEmpty())
+        {
+            return "no";
+        }
+        return String.join(",", out);
+    }
+
+    private static String exportCodeJsonToPlanJson(JsonObject root)
+    {
+        JsonArray rows = jArray(root, "rows");
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\"entries\":[");
+        boolean first = true;
+        boolean emittedAny = false;
+        if (rows != null)
+        {
+            for (int r = 0; r < rows.size(); r++)
+            {
+                JsonElement re = rows.get(r);
+                if (re == null || !re.isJsonObject())
+                {
+                    continue;
+                }
+                JsonArray blocks = jArray(re.getAsJsonObject(), "blocks");
+                if (blocks == null || blocks.size() == 0)
+                {
+                    continue;
+                }
+                if (emittedAny)
+                {
+                    if (!first) sb.append(",");
+                    first = false;
+                    sb.append("{\"block\":\"newline\"}");
+                }
+                boolean lastWasSkip = false;
+                for (JsonElement be : blocks)
+                {
+                    if (be == null || !be.isJsonObject())
+                    {
+                        continue;
+                    }
+                    JsonObject b = be.getAsJsonObject();
+                    String block = jString(b, "block");
+                    if (block.startsWith("minecraft:"))
+                    {
+                        block = block.substring("minecraft:".length());
+                    }
+                    if (block.isEmpty())
+                    {
+                        continue;
+                    }
+                    if ("piston".equalsIgnoreCase(block) || "sticky_piston".equalsIgnoreCase(block))
+                    {
+                        if (lastWasSkip)
+                        {
+                            continue;
+                        }
+                        if (!first) sb.append(",");
+                        first = false;
+                        sb.append("{\"block\":\"skip\",\"name\":\"\",\"args\":\"no\"}");
+                        lastWasSkip = true;
+                        continue;
+                    }
+                    lastWasSkip = false;
+                    String name = planNameFrom(b);
+                    String args = argsFromChest(b);
+                    if (!first) sb.append(",");
+                    first = false;
+                    sb.append("{\"block\":\"").append(escapeJson(block)).append("\",");
+                    sb.append("\"name\":\"").append(escapeJson(name)).append("\",");
+                    sb.append("\"args\":\"").append(escapeJson(args)).append("\"}");
+                    emittedAny = true;
+                }
+            }
+        }
+        sb.append("]}");
+        return sb.toString();
+    }
+
+    private static String exportCodeJsonToMldslDraft(JsonObject root)
+    {
+        JsonArray rows = jArray(root, "rows");
+        StringBuilder out = new StringBuilder();
+        if (rows == null)
+        {
+            return "";
+        }
+        for (int r = 0; r < rows.size(); r++)
+        {
+            JsonElement re = rows.get(r);
+            if (re == null || !re.isJsonObject())
+            {
+                continue;
+            }
+            JsonObject row = re.getAsJsonObject();
+            JsonArray blocks = jArray(row, "blocks");
+            if (blocks == null || blocks.size() == 0)
+            {
+                continue;
+            }
+            int indent = 0;
+            JsonObject first = blocks.get(0).isJsonObject() ? blocks.get(0).getAsJsonObject() : null;
+            String b0 = first == null ? "" : jString(first, "block");
+            String n0 = first == null ? "" : signNameFrom(first);
+            int from = 0;
+            if ("minecraft:diamond_block".equals(b0) || "minecraft:gold_block".equals(b0))
+            {
+                out.append("event(\"").append(escapeJson(n0.isEmpty() ? "event" : n0)).append("\") {\n");
+                indent = 1;
+                from = 1;
+            }
+            else if ("minecraft:lapis_block".equals(b0))
+            {
+                out.append("func(\"").append(escapeJson(n0.isEmpty() ? "func" : n0)).append("\") {\n");
+                indent = 1;
+                from = 1;
+            }
+            else if ("minecraft:emerald_block".equals(b0))
+            {
+                JsonArray sign = jArray(first, "sign");
+                String ticks = "20";
+                if (sign != null && sign.size() >= 3)
+                {
+                    String t = sign.get(2).isJsonNull() ? "" : sign.get(2).getAsString();
+                    t = t == null ? "" : t.trim();
+                    if (!t.isEmpty())
+                    {
+                        ticks = t;
+                    }
+                }
+                out.append("loop(\"").append(escapeJson(n0.isEmpty() ? "loop" : n0)).append("\", ").append(ticks).append(") {\n");
+                indent = 1;
+                from = 1;
+            }
+            for (int i = from; i < blocks.size(); i++)
+            {
+                JsonElement be = blocks.get(i);
+                if (be == null || !be.isJsonObject())
+                {
+                    continue;
+                }
+                JsonObject b = be.getAsJsonObject();
+                String bid = jString(b, "block");
+                if ("minecraft:piston".equals(bid) || "minecraft:sticky_piston".equals(bid))
+                {
+                    if (indent > 0)
+                    {
+                        indent--;
+                        for (int k = 0; k < indent; k++) out.append("    ");
+                        out.append("}\n");
+                    }
+                    continue;
+                }
+                String sign = signNameFrom(b);
+                String args = argsFromChest(b);
+                if ("minecraft:planks".equals(bid) || "minecraft:red_nether_brick".equals(bid)
+                    || "minecraft:brick_block".equals(bid) || "minecraft:obsidian".equals(bid))
+                {
+                    for (int k = 0; k < indent; k++) out.append("    ");
+                    out.append("if_raw(\"").append(escapeJson(sign.isEmpty() ? "condition" : sign)).append("\") {\n");
+                    indent++;
+                    continue;
+                }
+                if ("minecraft:end_stone".equals(bid))
+                {
+                    if (indent > 0)
+                    {
+                        indent--;
+                    }
+                    for (int k = 0; k < indent; k++) out.append("    ");
+                    out.append("} else {\n");
+                    indent++;
+                    continue;
+                }
+                String module = null;
+                if ("minecraft:cobblestone".equals(bid))
+                {
+                    module = "player";
+                }
+                else if ("minecraft:nether_brick".equals(bid))
+                {
+                    module = "game";
+                }
+                else if ("minecraft:iron_block".equals(bid))
+                {
+                    module = "var";
+                }
+                else if ("minecraft:bookshelf".equals(bid))
+                {
+                    module = "array";
+                }
+                else if ("minecraft:purpur_block".equals(bid))
+                {
+                    module = "select";
+                }
+                else if ("minecraft:lapis_ore".equals(bid))
+                {
+                    module = "game";
+                }
+                for (int k = 0; k < indent; k++) out.append("    ");
+                if (module == null)
+                {
+                    out.append("# unsupported ").append(bid).append(": ").append(sign).append("\n");
+                }
+                else
+                {
+                    out.append(module).append(".").append(sign.isEmpty() ? "unnamed" : sign);
+                    out.append("(");
+                    if (!"no".equals(args))
+                    {
+                        out.append(args);
+                    }
+                    out.append(")\n");
+                }
+            }
+            while (indent > 0)
+            {
+                indent--;
+                for (int k = 0; k < indent; k++) out.append("    ");
+                out.append("}\n");
+            }
+            out.append("\n");
+        }
+        return out.toString();
+    }
+
+

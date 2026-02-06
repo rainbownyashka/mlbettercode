@@ -146,6 +146,7 @@ import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 import java.io.IOException;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.BufferedReader;
@@ -2752,57 +2753,53 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             copied++;
         }
 
-        // 2) Generate MLDSL draft and plan.json directly from exportcode.
-        String exportJson;
-        try
+        // 2) External toolchain only:
+        //    exportcode_*.json -> module.mldsl via python converter
+        //    module.mldsl -> plan.json via mldsl compiler
+        File moduleFile = new File(dir, "module.mldsl");
+        File planFile = new File(dir, "plan.json");
+
+        String compiler = resolveMlDslCompilerPath();
+        if (compiler == null || compiler.trim().isEmpty())
         {
-            exportJson = new String(java.nio.file.Files.readAllBytes(exportFile.toPath()), java.nio.charset.StandardCharsets.UTF_8);
-        }
-        catch (Exception e)
-        {
-            setActionBar(false, "&c/module publish: can't read export json", 4500L);
-            mc.player.sendMessage(new TextComponentString(TextFormatting.RED + "Read export failed: " + e.getMessage()));
-            return;
-        }
-        JsonObject exportRoot;
-        try
-        {
-            JsonElement parsed = new JsonParser().parse(exportJson);
-            exportRoot = parsed != null && parsed.isJsonObject() ? parsed.getAsJsonObject() : null;
-        }
-        catch (Exception e)
-        {
-            exportRoot = null;
-        }
-        if (exportRoot == null)
-        {
-            setActionBar(false, "&c/module publish: export json parse failed", 4500L);
-            mc.player.sendMessage(new TextComponentString(TextFormatting.RED + "Invalid export json."));
+            setActionBar(false, "&c/module publish: mldsl compiler not found", 4500L);
+            mc.player.sendMessage(new TextComponentString(TextFormatting.RED
+                + "mldsl compiler not found. Expected: PATH (mldsl) or %LOCALAPPDATA%\\MLDSL\\mldsl.exe"));
             return;
         }
 
-        String mldslText = exportCodeJsonToMldslDraft(exportRoot);
-        String planJson = exportCodeJsonToPlanJson(exportRoot);
-        try
+        File pyConverter = resolveExportToMldslPythonConverter();
+        if (pyConverter == null || !pyConverter.isFile())
         {
-            java.nio.file.Files.write(new File(dir, "module.mldsl").toPath(),
-                mldslText.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            copied++;
+            setActionBar(false, "&c/module publish: export->mldsl converter missing", 4500L);
+            mc.player.sendMessage(new TextComponentString(TextFormatting.RED
+                + "Missing converter: %LOCALAPPDATA%\\MLDSL\\app\\tools\\exportcode_to_mldsl.py"));
+            mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
+                + "Update MLDSL installer to a version with python converter tool."));
+            return;
         }
-        catch (Exception e)
+
+        ExecResult conv = runExportToMldslConverter(pyConverter, exportFile, moduleFile);
+        if (!conv.ok || !moduleFile.isFile())
         {
-            mc.player.sendMessage(new TextComponentString(TextFormatting.RED + "Write module.mldsl failed: " + e.getMessage()));
+            setActionBar(false, "&c/module publish: export->mldsl failed", 4500L);
+            mc.player.sendMessage(new TextComponentString(TextFormatting.RED
+                + "Converter failed (code=" + conv.exitCode + "): " + trimForChat(conv.stderr)));
+            return;
         }
-        try
+        copied++;
+
+        ExecResult comp = runMlDslCompileToPlan(compiler, moduleFile, planFile);
+        if (!comp.ok || !planFile.isFile())
         {
-            java.nio.file.Files.write(new File(dir, "plan.json").toPath(),
-                planJson.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            copied++;
+            setActionBar(false, "&c/module publish: mldsl compile failed", 4500L);
+            mc.player.sendMessage(new TextComponentString(TextFormatting.RED
+                + "Compile failed (code=" + comp.exitCode + "): " + trimForChat(comp.stderr)));
+            mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
+                + "Compiler used: " + compiler));
+            return;
         }
-        catch (Exception e)
-        {
-            mc.player.sendMessage(new TextComponentString(TextFormatting.RED + "Write plan.json failed: " + e.getMessage()));
-        }
+        copied++;
 
         // 3) small README for user
         try
@@ -2812,9 +2809,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             sb.append("\n");
             sb.append("Files in this folder were prepared by BetterCode /module publish.\n");
             sb.append("\n");
-            sb.append("- module.mldsl (draft source)\n");
-            sb.append("- plan.json (ready for /mldsl run)\n");
-            sb.append("- exportcode_*.json (raw export for audit)\n");
+            sb.append("- module.mldsl (generated from export)\n");
+            sb.append("- plan.json (compiled by mldsl compiler)\n");
+            sb.append("- exportcode_*.json (raw export)\n");
             java.nio.file.Files.write(new File(dir, "README.txt").toPath(),
                 sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
         }
@@ -3471,6 +3468,199 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW + "Open manually: " + url));
         }
+    }
+
+    private static final class ExecResult
+    {
+        final boolean ok;
+        final int exitCode;
+        final String stdout;
+        final String stderr;
+
+        ExecResult(boolean ok, int exitCode, String stdout, String stderr)
+        {
+            this.ok = ok;
+            this.exitCode = exitCode;
+            this.stdout = stdout == null ? "" : stdout;
+            this.stderr = stderr == null ? "" : stderr;
+        }
+    }
+
+    private static String trimForChat(String s)
+    {
+        if (s == null)
+        {
+            return "";
+        }
+        String t = s.replace('\r', ' ').replace('\n', ' ').trim();
+        if (t.length() > 180)
+        {
+            return t.substring(0, 180) + "...";
+        }
+        return t;
+    }
+
+    private File resolveExportToMldslPythonConverter()
+    {
+        String local = System.getenv("LOCALAPPDATA");
+        if (local != null && !local.trim().isEmpty())
+        {
+            File f = new File(local, "MLDSL\\app\\tools\\exportcode_to_mldsl.py");
+            if (f.isFile())
+            {
+                return f;
+            }
+        }
+        return null;
+    }
+
+    private String resolveMlDslCompilerPath()
+    {
+        if (isCommandAvailable("mldsl"))
+        {
+            return "mldsl";
+        }
+        String local = System.getenv("LOCALAPPDATA");
+        if (local != null && !local.trim().isEmpty())
+        {
+            File exe = new File(local, "MLDSL\\mldsl.exe");
+            if (exe.isFile())
+            {
+                return exe.getAbsolutePath();
+            }
+        }
+        return null;
+    }
+
+    private static boolean isCommandAvailable(String cmd)
+    {
+        try
+        {
+            ProcessBuilder pb = new ProcessBuilder("cmd", "/c", "where", cmd);
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            int code = p.waitFor();
+            return code == 0;
+        }
+        catch (Exception e)
+        {
+            return false;
+        }
+    }
+
+    private ExecResult runExportToMldslConverter(File pyScript, File exportFile, File outMldsl)
+    {
+        ExecResult r1 = runProcess(new String[]{
+            "python",
+            pyScript.getAbsolutePath(),
+            exportFile.getAbsolutePath(),
+            "-o",
+            outMldsl.getAbsolutePath()
+        }, 60_000L);
+        if (r1.ok)
+        {
+            return r1;
+        }
+
+        ExecResult r2 = runProcess(new String[]{
+            "py",
+            "-3",
+            pyScript.getAbsolutePath(),
+            exportFile.getAbsolutePath(),
+            "-o",
+            outMldsl.getAbsolutePath()
+        }, 60_000L);
+        if (r2.ok)
+        {
+            return r2;
+        }
+        return new ExecResult(false, r2.exitCode, r1.stdout + "\n" + r2.stdout, r1.stderr + "\n" + r2.stderr);
+    }
+
+    private ExecResult runMlDslCompileToPlan(String compilerPath, File mldslFile, File planFile)
+    {
+        ExecResult r1 = runProcess(new String[]{
+            compilerPath,
+            "compile",
+            mldslFile.getAbsolutePath(),
+            "--plan",
+            planFile.getAbsolutePath()
+        }, 60_000L);
+        if (r1.ok)
+        {
+            return r1;
+        }
+
+        ExecResult r2 = runProcess(new String[]{
+            compilerPath,
+            mldslFile.getAbsolutePath(),
+            "--plan",
+            planFile.getAbsolutePath()
+        }, 60_000L);
+        if (r2.ok)
+        {
+            return r2;
+        }
+        return new ExecResult(false, r2.exitCode, r1.stdout + "\n" + r2.stdout, r1.stderr + "\n" + r2.stderr);
+    }
+
+    private ExecResult runProcess(String[] cmd, long timeoutMs)
+    {
+        try
+        {
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.redirectErrorStream(false);
+            Process p = pb.start();
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            ByteArrayOutputStream err = new ByteArrayOutputStream();
+            Thread tOut = new Thread(() -> pumpStream(p.getInputStream(), out), "proc-out");
+            Thread tErr = new Thread(() -> pumpStream(p.getErrorStream(), err), "proc-err");
+            tOut.setDaemon(true);
+            tErr.setDaemon(true);
+            tOut.start();
+            tErr.start();
+
+            boolean done = p.waitFor(Math.max(1000L, timeoutMs), TimeUnit.MILLISECONDS);
+            if (!done)
+            {
+                try
+                {
+                    p.destroyForcibly();
+                }
+                catch (Exception ignore) { }
+                return new ExecResult(false, -1, out.toString("UTF-8"), "timeout");
+            }
+            try { tOut.join(200L); } catch (Exception ignore) { }
+            try { tErr.join(200L); } catch (Exception ignore) { }
+            int code = p.exitValue();
+            return new ExecResult(code == 0, code, out.toString("UTF-8"), err.toString("UTF-8"));
+        }
+        catch (Exception e)
+        {
+            return new ExecResult(false, -1, "", e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+    }
+
+    private static void pumpStream(InputStream in, OutputStream out)
+    {
+        if (in == null || out == null)
+        {
+            return;
+        }
+        byte[] buf = new byte[8192];
+        try
+        {
+            while (true)
+            {
+                int n = in.read(buf);
+                if (n < 0)
+                {
+                    break;
+                }
+                out.write(buf, 0, n);
+            }
+        }
+        catch (Exception ignore) { }
     }
 
     private static String extractExportNameFromArgs(String[] args)
