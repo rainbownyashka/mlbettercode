@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-release:
+  release-legacy112:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -43,3 +43,65 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
             build/libs/bettercode-*.jar
+
+  build-fabric120:
+    needs: release-legacy112
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build Fabric 1.20.1
+        run: |
+          chmod +x ./modern/fabric120/gradlew
+          python tools/build_matrix.py fabric120 --task build
+
+      - name: Upload Fabric 1.20.1 assets
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            modern/fabric120/build/libs/bettercode-fabric120-*.jar
+
+  build-fabric121:
+    needs: build-fabric120
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build Fabric 1.21.1
+        run: |
+          chmod +x ./modern/fabric121/gradlew
+          python tools/build_matrix.py fabric121 --task build
+
+      - name: Upload Fabric 1.21.1 assets
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            modern/fabric121/build/libs/bettercode-fabric121-*.jar
