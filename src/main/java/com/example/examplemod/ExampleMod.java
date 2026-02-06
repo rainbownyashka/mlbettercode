@@ -2543,7 +2543,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                         + "Skipped selected rows: unloaded=" + selection.skippedUnloaded + " empty=" + selection.skippedEmpty));
                 }
                 mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
-                    + "NOTE: chest arg export is not implemented yet (blocks+signs only)."));
+                    + "Rows exported: " + selection.valid.size() + " (with chest snapshots when found)"));
             }
             catch (Exception e)
             {
@@ -2617,7 +2617,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
                 + "Rows exported: " + glasses.size()));
             mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
-                + "NOTE: chest arg export is not implemented yet (blocks+signs only)."));
+                + "Chest snapshots included when nearby param chest was detected."));
         }
         catch (Exception e)
         {
@@ -3214,9 +3214,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
             emptyPairs = 0;
 
+            String chestJson = buildNearbyExportChestJson(world, entryPos, signPos);
+
             if (!first) sb.append(",");
             first = false;
-            sb.append(blockJson(entryPos, entryState, signLines, null));
+            sb.append(blockJson(entryPos, entryState, signLines, null, chestJson));
 
             if (sideBlock == Blocks.PISTON || sideBlock == Blocks.STICKY_PISTON)
             {
@@ -3228,7 +3230,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 }
                 catch (Exception ignore) { }
                 sb.append(",");
-                sb.append(blockJson(sidePos, sideState, null, facing));
+                sb.append(blockJson(sidePos, sideState, null, facing, null));
             }
         }
 
@@ -3261,7 +3263,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         return "{\"x\":" + pos.getX() + ",\"y\":" + pos.getY() + ",\"z\":" + pos.getZ() + "}";
     }
 
-    private String blockJson(BlockPos pos, IBlockState state, String[] signLines, String facing)
+    private String blockJson(BlockPos pos, IBlockState state, String[] signLines, String facing, String chestJson)
     {
         Block b = state == null ? Blocks.AIR : state.getBlock();
         ResourceLocation id = b == null ? null : b.getRegistryName();
@@ -3287,6 +3289,153 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
             sb.append("]");
         }
+        if (chestJson != null && !chestJson.isEmpty())
+        {
+            sb.append(",\"chest\":").append(chestJson);
+        }
+        sb.append("}");
+        return sb.toString();
+    }
+
+    private String buildNearbyExportChestJson(World world, BlockPos entryPos, BlockPos signPos)
+    {
+        BlockPos chestPos = findNearbyExportChestPos(world, entryPos, signPos);
+        if (chestPos == null)
+        {
+            return null;
+        }
+        TileEntity te = world.getTileEntity(chestPos);
+        if (!(te instanceof IInventory))
+        {
+            return null;
+        }
+        IInventory inv = (IInventory) te;
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        sb.append("\"pos\":").append(posJson(chestPos)).append(",");
+        String title = "";
+        try
+        {
+            title = inv.getDisplayName() == null ? "" : inv.getDisplayName().getUnformattedText();
+        }
+        catch (Exception ignore) { }
+        sb.append("\"title\":\"").append(escapeJson(title == null ? "" : title)).append("\",");
+        sb.append("\"size\":").append(inv.getSizeInventory()).append(",");
+        sb.append("\"slots\":[");
+        boolean first = true;
+        for (int i = 0; i < inv.getSizeInventory(); i++)
+        {
+            ItemStack st;
+            try
+            {
+                st = inv.getStackInSlot(i);
+            }
+            catch (Exception e)
+            {
+                continue;
+            }
+            if (st == null || st.isEmpty())
+            {
+                continue;
+            }
+            if (!first)
+            {
+                sb.append(",");
+            }
+            first = false;
+            sb.append(exportChestSlotJson(i, st));
+        }
+        sb.append("]}");
+        return sb.toString();
+    }
+
+    private BlockPos findNearbyExportChestPos(World world, BlockPos entryPos, BlockPos signPos)
+    {
+        if (world == null || entryPos == null)
+        {
+            return null;
+        }
+        List<BlockPos> probes = new ArrayList<>();
+        probes.add(entryPos.add(0, 1, 1));
+        probes.add(entryPos.add(0, 1, 0));
+        probes.add(entryPos.add(0, 0, 1));
+        probes.add(entryPos.add(0, 1, -1));
+        probes.add(entryPos.add(0, 0, -1));
+        if (signPos != null)
+        {
+            probes.add(signPos.add(0, 1, 1));
+            probes.add(signPos.add(0, 1, 2));
+            probes.add(signPos.add(0, 0, 1));
+        }
+        for (BlockPos p : probes)
+        {
+            if (p == null || !world.isBlockLoaded(p, false))
+            {
+                continue;
+            }
+            Block b = world.getBlockState(p).getBlock();
+            if (isExportChestBlock(b))
+            {
+                return p;
+            }
+        }
+        return null;
+    }
+
+    private static boolean isExportChestBlock(Block b)
+    {
+        return b == Blocks.CHEST || b == Blocks.TRAPPED_CHEST || b == Blocks.ENDER_CHEST
+            || b == Blocks.WHITE_SHULKER_BOX || b == Blocks.ORANGE_SHULKER_BOX || b == Blocks.MAGENTA_SHULKER_BOX
+            || b == Blocks.LIGHT_BLUE_SHULKER_BOX || b == Blocks.YELLOW_SHULKER_BOX || b == Blocks.LIME_SHULKER_BOX
+            || b == Blocks.PINK_SHULKER_BOX || b == Blocks.GRAY_SHULKER_BOX || b == Blocks.SILVER_SHULKER_BOX
+            || b == Blocks.CYAN_SHULKER_BOX || b == Blocks.PURPLE_SHULKER_BOX || b == Blocks.BLUE_SHULKER_BOX
+            || b == Blocks.BROWN_SHULKER_BOX || b == Blocks.GREEN_SHULKER_BOX || b == Blocks.RED_SHULKER_BOX
+            || b == Blocks.BLACK_SHULKER_BOX;
+    }
+
+    private String exportChestSlotJson(int slot, ItemStack st)
+    {
+        String reg = "unknown";
+        int meta = 0;
+        int count = 1;
+        String display = "";
+        String displayClean = "";
+        String nbt = "";
+        try
+        {
+            ResourceLocation id = st.getItem() == null ? null : st.getItem().getRegistryName();
+            reg = id == null ? "unknown" : id.toString();
+            meta = st.getMetadata();
+            count = st.getCount();
+            display = st.getDisplayName() == null ? "" : st.getDisplayName();
+            String clean = TextFormatting.getTextWithoutFormattingCodes(display);
+            displayClean = clean == null ? "" : clean;
+            NBTTagCompound t = new NBTTagCompound();
+            st.writeToNBT(t);
+            nbt = t.toString();
+        }
+        catch (Exception ignore) { }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        sb.append("\"slot\":").append(slot).append(",");
+        sb.append("\"registry\":\"").append(escapeJson(reg)).append("\",");
+        sb.append("\"meta\":").append(meta).append(",");
+        sb.append("\"count\":").append(count).append(",");
+        sb.append("\"display\":\"").append(escapeJson(display)).append("\",");
+        sb.append("\"displayClean\":\"").append(escapeJson(displayClean)).append("\",");
+        sb.append("\"lore\":[");
+        List<String> lore = getStackLore(st, true);
+        for (int i = 0; i < lore.size(); i++)
+        {
+            if (i > 0)
+            {
+                sb.append(",");
+            }
+            sb.append("\"").append(escapeJson(lore.get(i) == null ? "" : lore.get(i))).append("\"");
+        }
+        sb.append("],");
+        sb.append("\"nbt\":\"").append(escapeJson(nbt)).append("\"");
         sb.append("}");
         return sb.toString();
     }
