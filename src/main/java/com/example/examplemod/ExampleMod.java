@@ -60,6 +60,7 @@ import net.minecraft.nbt.CompressedStreamTools;
 import net.minecraft.network.PacketBuffer;
 import net.minecraft.network.play.client.CPacketHeldItemChange;
 import net.minecraft.network.play.client.CPacketPlayer;
+import net.minecraft.network.play.client.CPacketPlayerDigging;
 import net.minecraft.network.play.client.CPacketPlayerTryUseItemOnBlock;
 import net.minecraft.network.play.client.CPacketCreativeInventoryAction;
 import net.minecraft.network.play.client.CPacketCustomPayload;
@@ -218,6 +219,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private static final String CODE_SELECTOR_TAG = "mldsl_code_selector";
     private static final String CODE_SELECTOR_TITLE = "\u00a7bCode Selector";
     private static final long CODE_SELECTOR_TOGGLE_COOLDOWN_MS = 150L;
+    private static final long CODE_SELECTOR_ABORT_COOLDOWN_MS = 120L;
     private static final int MENU_CACHE_MAX = 48;
     private static final int ENTRY_COUNT_MAX = 300;
     private static final long EDITOR_MODE_GRACE_MS = 30000L;
@@ -327,6 +329,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     // Code selector: set of selected blue-glass anchors by dimension (used by /exportcode selection mode).
     private final Map<Integer, Set<BlockPos>> codeSelectedGlassesByDim = new HashMap<>();
     private long lastCodeSelectorToggleMs = 0L;
+    private long lastCodeSelectorAbortMs = 0L;
     private final Map<Integer, Integer> exportSelectedFloorYByDim = new HashMap<>();
     private File lastExportCodeFile = null;
     private int tpScrollSteps = 0;
@@ -2074,6 +2077,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         handleTpForwardKey(mc);
         handleConfirmLoadKey(mc);
         handleFinishCodeSelectKey(mc);
+        handleCodeSelectorAttackSuppression(mc);
         handleTpScrollQueue(mc);
         handleTpPathQueue(mc);
         handleHotbarSwap(mc);
@@ -2141,6 +2145,47 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
         }
         codeSelectKeyDown = down;
+    }
+
+    private void handleCodeSelectorAttackSuppression(Minecraft mc)
+    {
+        if (mc == null || mc.player == null || mc.world == null || mc.gameSettings == null)
+        {
+            return;
+        }
+        ItemStack held = mc.player.getHeldItemMainhand();
+        if (!isCodeSelectorItem(held))
+        {
+            return;
+        }
+        if (!Mouse.isButtonDown(0) && !mc.gameSettings.keyBindAttack.isKeyDown())
+        {
+            return;
+        }
+        try
+        {
+            KeyBinding.setKeyBindState(mc.gameSettings.keyBindAttack.getKeyCode(), false);
+        }
+        catch (Exception ignore) { }
+
+        long now = System.currentTimeMillis();
+        if (now - lastCodeSelectorAbortMs < CODE_SELECTOR_ABORT_COOLDOWN_MS)
+        {
+            return;
+        }
+        lastCodeSelectorAbortMs = now;
+
+        try
+        {
+            if (mc.objectMouseOver != null && mc.objectMouseOver.getBlockPos() != null)
+            {
+                BlockPos pos = mc.objectMouseOver.getBlockPos();
+                EnumFacing face = mc.objectMouseOver.sideHit == null ? EnumFacing.UP : mc.objectMouseOver.sideHit;
+                mc.player.connection.sendPacket(
+                    new CPacketPlayerDigging(CPacketPlayerDigging.Action.ABORT_DESTROY_BLOCK, pos, face));
+            }
+        }
+        catch (Exception ignore) { }
     }
 
     private static String buildNameListJson(List<String> names)
@@ -2871,9 +2916,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             copied++;
         }
 
-        // 2) External toolchain only:
-        //    exportcode_*.json -> module.mldsl via python converter
-        //    module.mldsl -> plan.json via mldsl compiler
+        // 2) External toolchain via mldsl.exe:
+        //    exportcode_*.json -> module.mldsl via `mldsl exportcode`
+        //    module.mldsl -> plan.json via `mldsl compile`
         File moduleFile = new File(dir, "module.mldsl");
         File planFile = new File(dir, "plan.json");
 
@@ -2886,23 +2931,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             return;
         }
 
-        File pyConverter = resolveExportToMldslPythonConverter();
-        if (pyConverter == null || !pyConverter.isFile())
-        {
-            setActionBar(false, "&c/module publish: export->mldsl converter missing", 4500L);
-            mc.player.sendMessage(new TextComponentString(TextFormatting.RED
-                + "Missing converter: %LOCALAPPDATA%\\MLDSL\\app\\tools\\exportcode_to_mldsl.py"));
-            mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
-                + "Update MLDSL installer to a version with python converter tool."));
-            return;
-        }
-
-        ExecResult conv = runExportToMldslConverter(pyConverter, exportFile, moduleFile);
+        ExecResult conv = runMlDslExportToMldsl(compiler, exportFile, moduleFile);
         if (!conv.ok || !moduleFile.isFile())
         {
             setActionBar(false, "&c/module publish: export->mldsl failed", 4500L);
             mc.player.sendMessage(new TextComponentString(TextFormatting.RED
                 + "Converter failed (code=" + conv.exitCode + "): " + trimForChat(conv.stderr)));
+            mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
+                + "Make sure MLDSL is updated and supports: mldsl exportcode <file> -o <out>"));
             return;
         }
         copied++;
@@ -3386,20 +3422,6 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         return t;
     }
 
-    private File resolveExportToMldslPythonConverter()
-    {
-        String local = System.getenv("LOCALAPPDATA");
-        if (local != null && !local.trim().isEmpty())
-        {
-            File f = new File(local, "MLDSL\\app\\tools\\exportcode_to_mldsl.py");
-            if (f.isFile())
-            {
-                return f;
-            }
-        }
-        return null;
-    }
-
     private String resolveMlDslCompilerPath()
     {
         if (isCommandAvailable("mldsl"))
@@ -3434,11 +3456,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
     }
 
-    private ExecResult runExportToMldslConverter(File pyScript, File exportFile, File outMldsl)
+    private ExecResult runMlDslExportToMldsl(String compilerPath, File exportFile, File outMldsl)
     {
         ExecResult r1 = runProcess(new String[]{
-            "python",
-            pyScript.getAbsolutePath(),
+            compilerPath,
+            "exportcode",
             exportFile.getAbsolutePath(),
             "-o",
             outMldsl.getAbsolutePath()
@@ -3449,9 +3471,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
 
         ExecResult r2 = runProcess(new String[]{
-            "py",
-            "-3",
-            pyScript.getAbsolutePath(),
+            compilerPath,
             exportFile.getAbsolutePath(),
             "-o",
             outMldsl.getAbsolutePath()
@@ -5546,6 +5566,36 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         clearChestCacheAt(pos.up().north());
         clearChestCacheAt(pos.up().east());
         clearChestCacheAt(pos.up().west());
+    }
+
+    @SubscribeEvent
+    public void onLeftClickBlockSelectorRowSync(PlayerInteractEvent.LeftClickBlock event)
+    {
+        if (event == null || !event.getWorld().isRemote)
+        {
+            return;
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.world == null)
+        {
+            return;
+        }
+        BlockPos pos = event.getPos();
+        if (pos == null)
+        {
+            return;
+        }
+        BlockPos glassPos = resolveCodeSelectorGlassPos(mc.world, pos);
+        if (glassPos == null)
+        {
+            return;
+        }
+        int dim = mc.world.provider.getDimension();
+        Set<BlockPos> selected = codeSelectedGlassesByDim.get(dim);
+        if (selected != null && selected.remove(glassPos))
+        {
+            setActionBar(true, "&eCode Selector: row removed (" + selected.size() + ")", 1500L);
+        }
     }
 
     private void handleCodeSelectorRightClick(Minecraft mc, PlayerInteractEvent.RightClickBlock event)
