@@ -20,6 +20,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class HubModule
 {
@@ -75,7 +76,8 @@ public final class HubModule
         final String postIdF = postId;
         final String fileNameF = fileName;
         final File outDirF = outDir;
-        new Thread(() -> {
+        final AtomicBoolean finished = new AtomicBoolean(false);
+        Thread worker = new Thread(() -> {
             try
             {
                 if (!outDirF.exists() && !outDirF.mkdirs())
@@ -107,7 +109,33 @@ public final class HubModule
             {
                 scheduleChat("&c/loadmodule: " + e.getClass().getSimpleName());
             }
-        }, "mldsl-hub-download").start();
+            finally
+            {
+                finished.set(true);
+            }
+        }, "mldsl-hub-download");
+        worker.setDaemon(true);
+        worker.start();
+
+        Thread watchdog = new Thread(() -> {
+            try
+            {
+                Thread.sleep(30000L);
+            }
+            catch (InterruptedException ignore) { }
+            if (!finished.get())
+            {
+                scheduleChat("&c/loadmodule: timeout (30s), retry later.");
+                host.setActionBar(false, "&c/loadmodule timeout", 3000L);
+                try
+                {
+                    worker.interrupt();
+                }
+                catch (Exception ignore) { }
+            }
+        }, "mldsl-hub-download-watchdog");
+        watchdog.setDaemon(true);
+        watchdog.start();
     }
 
     public void runConfirmCommand(MinecraftServer server, ICommandSender sender, String[] args)
@@ -324,7 +352,13 @@ public final class HubModule
         {
             return;
         }
-        mc.addScheduledTask(() -> host.debugChat(msg));
+        mc.addScheduledTask(() -> {
+            if (mc.player != null)
+            {
+                String clean = msg == null ? "" : msg.replace('&', '\u00a7');
+                mc.player.sendMessage(new net.minecraft.util.text.TextComponentString("[BetterCode] " + clean));
+            }
+        });
     }
 
     private static String stripQuotes(String s)
