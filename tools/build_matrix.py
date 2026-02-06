@@ -31,11 +31,29 @@ def build_legacy112(repo: Path, task: str) -> None:
     run([*gradle_cmd(repo), task], repo)
 
 
-def _pick_java17_home() -> str | None:
+def _pick_java_home(version: int) -> str | None:
     # Common CI and local env vars first.
-    for key in ("JAVA_HOME_17_X64", "JAVA_HOME_17", "JDK17_HOME"):
+    keys = []
+    if version == 21:
+        keys.extend(("JAVA_HOME_21_X64", "JAVA_HOME_21", "JDK21_HOME"))
+    if version == 17:
+        keys.extend(("JAVA_HOME_17_X64", "JAVA_HOME_17", "JDK17_HOME"))
+    keys.append("JAVA_HOME")
+    for key in keys:
         value = os.environ.get(key, "").strip()
-        if value and Path(value).exists():
+        if value and Path(value).exists() and (Path(value) / "bin" / "java.exe").exists():
+            # Ensure requested major version when JAVA_HOME is generic.
+            if key == "JAVA_HOME":
+                try:
+                    out = subprocess.check_output(
+                        [str(Path(value) / "bin" / "java.exe"), "-version"],
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                    )
+                    if f'"{version}.' not in out and f' {version} ' not in out:
+                        continue
+                except Exception:
+                    continue
             return value
 
     # Typical Windows install locations.
@@ -47,7 +65,7 @@ def _pick_java17_home() -> str | None:
     for base in candidates:
         if not base.exists():
             continue
-        for child in sorted(base.glob("**/*jdk-17*"), reverse=True):
+        for child in sorted(base.glob(f"**/*jdk-{version}*"), reverse=True):
             if child.is_dir() and (child / "bin" / "java.exe").exists():
                 return str(child)
     return None
@@ -55,7 +73,7 @@ def _pick_java17_home() -> str | None:
 
 def build_fabric120(repo: Path, task: str) -> None:
     module = repo / "modern" / "fabric120"
-    java17 = _pick_java17_home()
+    java17 = _pick_java_home(17)
     if not java17:
         raise SystemExit(
             "Fabric 1.20 build requires JDK 17+.\n"
@@ -66,12 +84,25 @@ def build_fabric120(repo: Path, task: str) -> None:
     env["PATH"] = str(Path(java17) / "bin") + os.pathsep + env.get("PATH", "")
     run([*gradle_cmd_for_module(module, repo), "-p", str(module), task], repo, env=env)
 
+def build_fabric121(repo: Path, task: str) -> None:
+    module = repo / "modern" / "fabric121"
+    java21 = _pick_java_home(21)
+    if not java21:
+        raise SystemExit(
+            "Fabric 1.21 build requires JDK 21.\n"
+            "Set JAVA_HOME_21_X64 (or JAVA_HOME_21) and rerun."
+        )
+    env = os.environ.copy()
+    env["JAVA_HOME"] = java21
+    env["PATH"] = str(Path(java21) / "bin") + os.pathsep + env.get("PATH", "")
+    run([*gradle_cmd_for_module(module, repo), "-p", str(module), task], repo, env=env)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build matrix for BetterCode multi-version targets")
     parser.add_argument(
         "target",
-        choices=["legacy112", "fabric120", "all"],
+        choices=["legacy112", "fabric120", "fabric121", "all"],
         help="Build target profile",
     )
     parser.add_argument(
@@ -86,9 +117,12 @@ def main() -> int:
         build_legacy112(repo, args.task)
     elif args.target == "fabric120":
         build_fabric120(repo, args.task)
+    elif args.target == "fabric121":
+        build_fabric121(repo, args.task)
     else:
         build_legacy112(repo, args.task)
         build_fabric120(repo, args.task)
+        build_fabric121(repo, args.task)
     return 0
 
 

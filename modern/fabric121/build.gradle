@@ -1,0 +1,46 @@
+plugins {
+    id "fabric-loom" version "1.8.13"
+    id "maven-publish"
+}
+
+def ciTag = System.getenv("GITHUB_REF_NAME")
+def tagVersion = null
+if (ciTag != null && ciTag.trim()) {
+    tagVersion = ciTag.startsWith("v") ? ciTag.substring(1) : ciTag
+}
+def propVersion = project.hasProperty("modVersion") ? String.valueOf(project.property("modVersion")) : null
+def resolvedVersion = (propVersion != null && propVersion.trim()) ? propVersion.trim() : ((tagVersion != null && tagVersion.trim()) ? tagVersion.trim() : "0.1.0-fabric121")
+
+version = resolvedVersion
+group = "com.rainbow_universe.bettercode"
+archivesBaseName = "bettercode-fabric121"
+
+repositories {
+    mavenCentral()
+    maven { url = "https://maven.fabricmc.net/" }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+    withSourcesJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 21
+}
+
+processResources {
+    inputs.property "version", project.version
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}

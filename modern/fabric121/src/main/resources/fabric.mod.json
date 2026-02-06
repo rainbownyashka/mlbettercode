@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "bettercode_fabric121",
+  "version": "${version}",
+  "name": "BetterCode Fabric 1.21",
+  "description": "Minimal BetterCode feature set for Fabric 1.21.1 (printer/export selector).",
+  "authors": [
+    "rainbownyashka"
+  ],
+  "contact": {
+    "homepage": "https://github.com/rainbownyashka/mlbettercode",
+    "sources": "https://github.com/rainbownyashka/mlbettercode"
+  },
+  "license": "All Rights Reserved",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.rainbow_universe.bettercode.fabric121.BetterCodeFabric121"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "fabric-api": "*"
+  }
+}

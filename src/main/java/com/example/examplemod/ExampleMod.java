@@ -19,6 +19,7 @@ import net.minecraft.client.gui.inventory.GuiContainer;
 import net.minecraft.client.gui.inventory.GuiInventory;
 import net.minecraft.client.gui.inventory.GuiShulkerBox;
 import net.minecraft.client.gui.ScaledResolution;
+import net.minecraft.client.multiplayer.ChunkProviderClient;
 import net.minecraft.client.network.NetworkPlayerInfo;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.RenderHelper;
@@ -112,6 +113,7 @@ import net.minecraft.util.text.TextComponentString;
 import net.minecraft.util.text.TextFormatting;
 import net.minecraft.world.GameType;
 import net.minecraft.world.World;
+import net.minecraft.world.chunk.Chunk;
 import net.minecraftforge.client.ClientCommandHandler;
 import net.minecraftforge.client.event.ClientChatEvent;
 import net.minecraftforge.client.event.ClientChatReceivedEvent;
@@ -149,6 +151,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.BindException;
 import java.net.HttpURLConnection;
@@ -2506,10 +2509,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 return;
             }
 
-            String name = extractExportNameFromArgs(args);
+            String name = sanitizeExportFilenameToken(extractExportNameFromArgs(args));
             if (name.isEmpty())
             {
-                name = normalizeEntryScopeId(getScoreboardIdLine());
+                name = sanitizeExportFilenameToken(normalizeEntryScopeId(getScoreboardIdLine()));
             }
             if (name.isEmpty())
             {
@@ -2556,59 +2559,48 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             return;
         }
 
-        List<Integer> floors = parseCsvInts(args.length > 0 ? args[0] : null);
+        List<Integer> floors = parseFloorArgsToY(args.length > 0 ? args[0] : null);
         if (floors.isEmpty())
         {
             Integer forced = exportSelectedFloorYByDim.get(mc.world.provider.getDimension());
             floors.add(forced == null ? seed.getY() : forced);
         }
-        String name = args.length > 1 ? (args[1] == null ? "" : args[1].trim()) : "";
+        String name = args.length > 1 ? sanitizeExportFilenameToken(args[1]) : "";
         if (name.isEmpty())
         {
-            name = normalizeEntryScopeId(getScoreboardIdLine());
+            name = sanitizeExportFilenameToken(normalizeEntryScopeId(getScoreboardIdLine()));
         }
         if (name.isEmpty())
         {
             name = "code";
         }
 
-        List<BlockPos> seeds = new ArrayList<>();
-        seeds.add(seed);
-        List<BlockPos> glasses = BlueGlassCodeMap.scan(mc.world, seeds);
-        if (glasses == null || glasses.isEmpty())
+        List<BlockPos> glasses = collectLoadedBlueGlassesOnFloors(mc.world, floors);
+        if (glasses.isEmpty())
         {
-            setActionBar(false, "&cNo blue glass nodes found", 2500L);
-            return;
+            // Fallback to graph scan from seed, for compatibility with old behavior.
+            List<BlockPos> seeds = new ArrayList<>();
+            seeds.add(seed);
+            List<BlockPos> scanned = BlueGlassCodeMap.scan(mc.world, seeds);
+            for (BlockPos p : scanned)
+            {
+                if (p != null && floors.contains(p.getY()) && mc.world.isBlockLoaded(p))
+                {
+                    glasses.add(p);
+                }
+            }
+            if (glasses.isEmpty())
+            {
+                setActionBar(false, "&cNo loaded blue glass on requested floors", 3000L);
+                return;
+            }
         }
 
-        List<BlockPos> filtered = new ArrayList<>();
-        for (BlockPos p : glasses)
-        {
-            if (p == null)
-            {
-                continue;
-            }
-            if (!floors.contains(p.getY()))
-            {
-                continue;
-            }
-            if (!mc.world.isBlockLoaded(p))
-            {
-                continue;
-            }
-            filtered.add(p);
-        }
-        if (filtered.isEmpty())
-        {
-            setActionBar(false, "&cNo loaded blue glass on requested floors", 3000L);
-            return;
-        }
-
-        filtered.sort(Comparator.<BlockPos>comparingInt(BlockPos::getY)
+        glasses.sort(Comparator.<BlockPos>comparingInt(BlockPos::getY)
             .thenComparingInt(BlockPos::getZ)
             .thenComparingInt(BlockPos::getX));
 
-        String json = buildExportCodeJson(mc.world, filtered, autoCodeCacheMaxSteps);
+        String json = buildExportCodeJson(mc.world, glasses, autoCodeCacheMaxSteps);
         if (json == null || json.isEmpty())
         {
             setActionBar(false, "&cExport failed", 2500L);
@@ -2622,6 +2614,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             lastExportCodeFile = out;
             setActionBar(true, "&aExported: " + out.getName(), 3500L);
             mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "exportcode saved: " + out.getAbsolutePath()));
+            mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
+                + "Rows exported: " + glasses.size()));
             mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
                 + "NOTE: chest arg export is not implemented yet (blocks+signs only)."));
         }
@@ -2973,6 +2967,145 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             catch (Exception ignore) { }
         }
         return out;
+    }
+
+    private static List<Integer> parseFloorArgsToY(String raw)
+    {
+        List<Integer> nums = parseCsvInts(raw);
+        List<Integer> out = new ArrayList<>();
+        for (Integer n : nums)
+        {
+            if (n == null)
+            {
+                continue;
+            }
+            int v = n;
+            // Support floor indexes (1..20) and direct Y values for backward compatibility.
+            if (v >= 1 && v <= 20)
+            {
+                v = (v * 10) - 10;
+            }
+            out.add(v);
+        }
+        return out;
+    }
+
+    private static String sanitizeExportFilenameToken(String raw)
+    {
+        if (raw == null)
+        {
+            return "";
+        }
+        String s = raw.trim();
+        if (s.isEmpty())
+        {
+            return "";
+        }
+        s = s.replaceAll("[\\\\/:*?\"<>|]", "_");
+        s = s.replaceAll("[\\p{Cntrl}]+", "_");
+        s = s.replaceAll("\\s+", "_");
+        s = s.replaceAll("_+", "_");
+        s = s.replaceAll("^[_\\.]+", "");
+        if (s.length() > 64)
+        {
+            s = s.substring(0, 64);
+        }
+        return s;
+    }
+
+    private List<BlockPos> collectLoadedBlueGlassesOnFloors(World world, Collection<Integer> floors)
+    {
+        if (world == null || floors == null || floors.isEmpty())
+        {
+            return Collections.emptyList();
+        }
+        Set<Integer> ys = new HashSet<>();
+        ys.addAll(floors);
+        if (ys.isEmpty())
+        {
+            return Collections.emptyList();
+        }
+        Set<BlockPos> out = new LinkedHashSet<>();
+        try
+        {
+            if (!(world.getChunkProvider() instanceof ChunkProviderClient))
+            {
+                return Collections.emptyList();
+            }
+            ChunkProviderClient cpc = (ChunkProviderClient) world.getChunkProvider();
+            Field mapField;
+            try
+            {
+                mapField = ChunkProviderClient.class.getDeclaredField("chunkMapping");
+            }
+            catch (NoSuchFieldException nsf)
+            {
+                mapField = ChunkProviderClient.class.getDeclaredField("field_73236_b");
+            }
+            mapField.setAccessible(true);
+            Object mapObj = mapField.get(cpc);
+            if (mapObj == null)
+            {
+                return Collections.emptyList();
+            }
+            Collection<?> chunks;
+            if (mapObj instanceof Map)
+            {
+                chunks = ((Map<?, ?>) mapObj).values();
+            }
+            else
+            {
+                // fastutil Long2ObjectMap in 1.12
+                Method valuesMethod = mapObj.getClass().getMethod("values");
+                Object valuesObj = valuesMethod.invoke(mapObj);
+                if (!(valuesObj instanceof Collection))
+                {
+                    return Collections.emptyList();
+                }
+                chunks = (Collection<?>) valuesObj;
+            }
+            for (Object o : chunks)
+            {
+                if (!(o instanceof Chunk))
+                {
+                    continue;
+                }
+                Chunk ch = (Chunk) o;
+                int baseX = ch.x * 16;
+                int baseZ = ch.z * 16;
+                for (Integer y : ys)
+                {
+                    if (y == null || y < 0 || y > 255)
+                    {
+                        continue;
+                    }
+                    for (int dz = 0; dz < 16; dz++)
+                    {
+                        for (int dx = 0; dx < 16; dx++)
+                        {
+                            BlockPos p = new BlockPos(baseX + dx, y, baseZ + dz);
+                            if (!world.isBlockLoaded(p, false))
+                            {
+                                continue;
+                            }
+                            if (BlueGlassCodeMap.isBlueGlass(world, p))
+                            {
+                                out.add(p.toImmutable());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ignore)
+        {
+            return Collections.emptyList();
+        }
+        List<BlockPos> list = new ArrayList<>(out);
+        list.sort(Comparator.<BlockPos>comparingInt(BlockPos::getY)
+            .thenComparingInt(BlockPos::getZ)
+            .thenComparingInt(BlockPos::getX));
+        return list;
     }
 
     private String buildExportCodeJson(World world, List<BlockPos> glasses, int maxSteps)
