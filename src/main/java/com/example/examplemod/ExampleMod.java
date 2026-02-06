@@ -2468,6 +2468,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             "/selectfloor <1..20> - set default floor for /exportcode (Y = N*10-10)", this::runSelectFloorCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("module",
             "/module publish [name] - create a publish folder with plan/export and open Hub", this::runModuleCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("modbc",
+            "/modbc update - download and install latest BetterCode on game exit", this::runModBcCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("testplace",
             "/testplace <method 1-10> [block]", this::runTestPlaceCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("regallactions",
@@ -2710,6 +2712,122 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         setActionBar(false, "&cUnknown subcommand: " + sub, 3500L);
     }
 
+    private void runModBcCommand(MinecraftServer server, ICommandSender sender, String[] args)
+    {
+        if (args == null || args.length == 0)
+        {
+            setActionBar(false, "&cUsage: /modbc update", 3500L);
+            return;
+        }
+        String sub = args[0] == null ? "" : args[0].trim().toLowerCase(Locale.ROOT);
+        if (!"update".equals(sub))
+        {
+            setActionBar(false, "&cUsage: /modbc update", 3500L);
+            return;
+        }
+        runModBcUpdate();
+    }
+
+    private static final class ReleaseAssetInfo
+    {
+        final String tag;
+        final String name;
+        final String url;
+
+        ReleaseAssetInfo(String tag, String name, String url)
+        {
+            this.tag = tag == null ? "" : tag;
+            this.name = name == null ? "" : name;
+            this.url = url == null ? "" : url;
+        }
+    }
+
+    private void runModBcUpdate()
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.mcDataDir == null || mc.player == null)
+        {
+            return;
+        }
+        setActionBar(true, "&e/modbc: checking latest release...", 3000L);
+
+        new Thread(() -> {
+            try
+            {
+                ReleaseAssetInfo asset = fetchLatestModReleaseAsset();
+                if (asset == null || asset.url.isEmpty() || asset.name.isEmpty())
+                {
+                    scheduleMainChat("&c/modbc update: no release asset found.");
+                    return;
+                }
+
+                File currentJar = detectCurrentModJar();
+                if (currentJar != null && currentJar.getName().equalsIgnoreCase(asset.name))
+                {
+                    scheduleMainChat("&a/modbc update: already latest (&f" + asset.name + "&a).");
+                    return;
+                }
+
+                File modsDir = resolveModsDir(mc);
+                if (modsDir == null || (!modsDir.exists() && !modsDir.mkdirs()))
+                {
+                    scheduleMainChat("&c/modbc update: can't access mods dir.");
+                    return;
+                }
+                File tmpDir = new File(mc.mcDataDir, "bettercode_update");
+                if (!tmpDir.exists())
+                {
+                    //noinspection ResultOfMethodCallIgnored
+                    tmpDir.mkdirs();
+                }
+                File downloaded = new File(tmpDir, asset.name);
+                boolean ok = downloadBinary(asset.url, downloaded, 20L * 1024L * 1024L);
+                if (!ok || !downloaded.isFile())
+                {
+                    scheduleMainChat("&c/modbc update: download failed.");
+                    return;
+                }
+
+                File target = new File(modsDir, asset.name);
+                File oldJar = currentJar != null && currentJar.isFile() ? currentJar : null;
+                File updaterBat = new File(tmpDir, "bettercode_apply_update.bat");
+                if (!writeUpdaterScript(updaterBat, downloaded, target, oldJar))
+                {
+                    scheduleMainChat("&c/modbc update: can't create updater script.");
+                    return;
+                }
+
+                ProcessBuilder pb = new ProcessBuilder("cmd", "/c", "start", "\"\"", updaterBat.getAbsolutePath());
+                pb.start();
+
+                scheduleMainChat("&a/modbc update: downloaded &f" + asset.name + "&a, applying on exit...");
+                try
+                {
+                    Thread.sleep(500L);
+                }
+                catch (InterruptedException ignore) { }
+                mc.addScheduledTask(() -> {
+                    try
+                    {
+                        mc.shutdown();
+                    }
+                    catch (Exception e)
+                    {
+                        try
+                        {
+                            mc.shutdownMinecraftApplet();
+                        }
+                        catch (Exception ignore) { }
+                    }
+                });
+            }
+            catch (Exception e)
+            {
+                scheduleMainChat("&c/modbc update: " + e.getClass().getSimpleName());
+            }
+        }, "bettercode-update").start();
+    }
+
     private void runModulePublishCommand(String name)
     {
         Minecraft mc = Minecraft.getMinecraft();
@@ -2911,465 +3029,6 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
     }
 
-    private static String jString(JsonObject o, String key)
-    {
-        if (o == null || key == null || !o.has(key))
-        {
-            return "";
-        }
-        JsonElement e = o.get(key);
-        if (e == null || e.isJsonNull())
-        {
-            return "";
-        }
-        try
-        {
-            return e.getAsString();
-        }
-        catch (Exception ex)
-        {
-            return "";
-        }
-    }
-
-    private static JsonArray jArray(JsonObject o, String key)
-    {
-        if (o == null || key == null || !o.has(key))
-        {
-            return null;
-        }
-        JsonElement e = o.get(key);
-        return (e != null && e.isJsonArray()) ? e.getAsJsonArray() : null;
-    }
-
-    private static String signNameFrom(JsonObject block)
-    {
-        JsonArray sign = jArray(block, "sign");
-        if (sign == null || sign.size() == 0)
-        {
-            return "";
-        }
-        String s1 = sign.size() > 0 ? (sign.get(0).isJsonNull() ? "" : sign.get(0).getAsString()) : "";
-        String s2 = sign.size() > 1 ? (sign.get(1).isJsonNull() ? "" : sign.get(1).getAsString()) : "";
-        s1 = s1 == null ? "" : s1.trim();
-        s2 = s2 == null ? "" : s2.trim();
-        if (!s2.isEmpty())
-        {
-            return s2;
-        }
-        return s1;
-    }
-
-    private static String planNameFrom(JsonObject block)
-    {
-        JsonArray sign = jArray(block, "sign");
-        if (sign == null || sign.size() == 0)
-        {
-            return "";
-        }
-        String s1 = sign.size() > 0 ? (sign.get(0).isJsonNull() ? "" : sign.get(0).getAsString()) : "";
-        String s2 = sign.size() > 1 ? (sign.get(1).isJsonNull() ? "" : sign.get(1).getAsString()) : "";
-        s1 = s1 == null ? "" : s1.trim();
-        s2 = s2 == null ? "" : s2.trim();
-        if (!s1.isEmpty() && !s2.isEmpty())
-        {
-            return s1 + "||" + s2;
-        }
-        return !s2.isEmpty() ? s2 : s1;
-    }
-
-    private static int enumClicksFromSlot(JsonObject slot)
-    {
-        JsonArray lore = jArray(slot, "lore");
-        if (lore == null || lore.size() == 0)
-        {
-            return -1;
-        }
-        int optionIndex = -1;
-        int selected = -1;
-        for (int i = 0; i < lore.size(); i++)
-        {
-            JsonElement le = lore.get(i);
-            String line = (le == null || le.isJsonNull()) ? "" : le.getAsString();
-            boolean hasOpt = line.contains("●") || line.contains("○") || line.contains("\u25cf") || line.contains("\u25cb");
-            if (!hasOpt)
-            {
-                continue;
-            }
-            optionIndex++;
-            if (line.contains("●") || line.contains("\u25cf"))
-            {
-                selected = optionIndex;
-            }
-        }
-        return selected;
-    }
-
-    private static String inferSlotValue(JsonObject slot)
-    {
-        String reg = jString(slot, "registry").toLowerCase(Locale.ROOT);
-        String display = jString(slot, "displayClean");
-        if (display.isEmpty())
-        {
-            display = jString(slot, "display");
-        }
-        String nbt = jString(slot, "nbt");
-        int count = 1;
-        try
-        {
-            if (slot != null && slot.has("count"))
-            {
-                count = slot.get("count").getAsInt();
-            }
-        }
-        catch (Exception ignore) { }
-
-        String loreJoin = "";
-        JsonArray lore = jArray(slot, "lore");
-        if (lore != null)
-        {
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < lore.size(); i++)
-            {
-                if (i > 0)
-                {
-                    sb.append('\n');
-                }
-                JsonElement e = lore.get(i);
-                sb.append(e == null || e.isJsonNull() ? "" : e.getAsString());
-            }
-            loreJoin = sb.toString().toUpperCase(Locale.ROOT);
-        }
-
-        if ("minecraft:book".equals(reg))
-        {
-            return "text(\"" + escapeJson(display.isEmpty() ? "text" : display) + "\")";
-        }
-        if ("minecraft:slime_ball".equals(reg))
-        {
-            String num = (display == null ? "" : display).replaceAll("[^0-9\\.-]", "");
-            if (num.isEmpty())
-            {
-                num = "0";
-            }
-            return "num(" + num + ")";
-        }
-        if ("minecraft:magma_cream".equals(reg))
-        {
-            String name = display.isEmpty() ? "varname" : display;
-            if (loreJoin.contains("\u0421\u041e\u0425\u0420\u0410\u041d") || loreJoin.contains("SAVE"))
-            {
-                return "var_save(\"" + escapeJson(name) + "\")";
-            }
-            return "var(\"" + escapeJson(name) + "\")";
-        }
-        if ("minecraft:item_frame".equals(reg))
-        {
-            return "arr(\"" + escapeJson(display.isEmpty() ? "arr" : display) + "\")";
-        }
-        if ("minecraft:paper".equals(reg))
-        {
-            return "loc(\"" + escapeJson(display.isEmpty() ? "loc" : display) + "\")";
-        }
-        if ("minecraft:apple".equals(reg))
-        {
-            String gv = display.isEmpty() ? "gameval" : display;
-            java.util.regex.Matcher m = java.util.regex.Pattern.compile("locname\\\\\\\":\\\\\\\"([^\\\\\\\"]+)\\\\\\\"").matcher(nbt);
-            if (m.find())
-            {
-                gv = m.group(1);
-            }
-            return "apple(\"" + escapeJson(gv) + "\")";
-        }
-
-        StringBuilder out = new StringBuilder();
-        out.append("item(\"").append(escapeJson(reg.isEmpty() ? "minecraft:stone" : reg)).append("\"");
-        if (count != 1)
-        {
-            out.append(",count=").append(count);
-        }
-        if (!display.isEmpty())
-        {
-            out.append(",name=\"").append(escapeJson(display)).append("\"");
-        }
-        if (!nbt.isEmpty() && !"{}".equals(nbt))
-        {
-            out.append(",nbt=\"").append(escapeJson(nbt)).append("\"");
-        }
-        out.append(")");
-        return out.toString();
-    }
-
-    private static String argsFromChest(JsonObject block)
-    {
-        JsonObject chest = null;
-        try
-        {
-            if (block != null && block.has("chest") && block.get("chest").isJsonObject())
-            {
-                chest = block.getAsJsonObject("chest");
-            }
-        }
-        catch (Exception ignore) { }
-        if (chest == null)
-        {
-            return "no";
-        }
-        JsonArray slots = jArray(chest, "slots");
-        if (slots == null || slots.size() == 0)
-        {
-            return "no";
-        }
-        List<String> out = new ArrayList<>();
-        for (JsonElement se : slots)
-        {
-            if (se == null || !se.isJsonObject())
-            {
-                continue;
-            }
-            JsonObject s = se.getAsJsonObject();
-            int slotNo;
-            try
-            {
-                slotNo = s.get("slot").getAsInt();
-            }
-            catch (Exception e)
-            {
-                continue;
-            }
-            out.add("slotraw(" + slotNo + ")=" + inferSlotValue(s));
-            int clicks = enumClicksFromSlot(s);
-            if (clicks > 0)
-            {
-                out.add("clicks(" + slotNo + "," + clicks + ")=0");
-            }
-        }
-        if (out.isEmpty())
-        {
-            return "no";
-        }
-        return String.join(",", out);
-    }
-
-    private static String exportCodeJsonToPlanJson(JsonObject root)
-    {
-        JsonArray rows = jArray(root, "rows");
-        StringBuilder sb = new StringBuilder();
-        sb.append("{\"entries\":[");
-        boolean first = true;
-        boolean emittedAny = false;
-        if (rows != null)
-        {
-            for (int r = 0; r < rows.size(); r++)
-            {
-                JsonElement re = rows.get(r);
-                if (re == null || !re.isJsonObject())
-                {
-                    continue;
-                }
-                JsonArray blocks = jArray(re.getAsJsonObject(), "blocks");
-                if (blocks == null || blocks.size() == 0)
-                {
-                    continue;
-                }
-                if (emittedAny)
-                {
-                    if (!first) sb.append(",");
-                    first = false;
-                    sb.append("{\"block\":\"newline\"}");
-                }
-                boolean lastWasSkip = false;
-                for (JsonElement be : blocks)
-                {
-                    if (be == null || !be.isJsonObject())
-                    {
-                        continue;
-                    }
-                    JsonObject b = be.getAsJsonObject();
-                    String block = jString(b, "block");
-                    if (block.startsWith("minecraft:"))
-                    {
-                        block = block.substring("minecraft:".length());
-                    }
-                    if (block.isEmpty())
-                    {
-                        continue;
-                    }
-                    if ("piston".equalsIgnoreCase(block) || "sticky_piston".equalsIgnoreCase(block))
-                    {
-                        if (lastWasSkip)
-                        {
-                            continue;
-                        }
-                        if (!first) sb.append(",");
-                        first = false;
-                        sb.append("{\"block\":\"skip\",\"name\":\"\",\"args\":\"no\"}");
-                        lastWasSkip = true;
-                        continue;
-                    }
-                    lastWasSkip = false;
-                    String name = planNameFrom(b);
-                    String args = argsFromChest(b);
-                    if (!first) sb.append(",");
-                    first = false;
-                    sb.append("{\"block\":\"").append(escapeJson(block)).append("\",");
-                    sb.append("\"name\":\"").append(escapeJson(name)).append("\",");
-                    sb.append("\"args\":\"").append(escapeJson(args)).append("\"}");
-                    emittedAny = true;
-                }
-            }
-        }
-        sb.append("]}");
-        return sb.toString();
-    }
-
-    private static String exportCodeJsonToMldslDraft(JsonObject root)
-    {
-        JsonArray rows = jArray(root, "rows");
-        StringBuilder out = new StringBuilder();
-        if (rows == null)
-        {
-            return "";
-        }
-        for (int r = 0; r < rows.size(); r++)
-        {
-            JsonElement re = rows.get(r);
-            if (re == null || !re.isJsonObject())
-            {
-                continue;
-            }
-            JsonObject row = re.getAsJsonObject();
-            JsonArray blocks = jArray(row, "blocks");
-            if (blocks == null || blocks.size() == 0)
-            {
-                continue;
-            }
-            int indent = 0;
-            JsonObject first = blocks.get(0).isJsonObject() ? blocks.get(0).getAsJsonObject() : null;
-            String b0 = first == null ? "" : jString(first, "block");
-            String n0 = first == null ? "" : signNameFrom(first);
-            int from = 0;
-            if ("minecraft:diamond_block".equals(b0) || "minecraft:gold_block".equals(b0))
-            {
-                out.append("event(\"").append(escapeJson(n0.isEmpty() ? "event" : n0)).append("\") {\n");
-                indent = 1;
-                from = 1;
-            }
-            else if ("minecraft:lapis_block".equals(b0))
-            {
-                out.append("func(\"").append(escapeJson(n0.isEmpty() ? "func" : n0)).append("\") {\n");
-                indent = 1;
-                from = 1;
-            }
-            else if ("minecraft:emerald_block".equals(b0))
-            {
-                JsonArray sign = jArray(first, "sign");
-                String ticks = "20";
-                if (sign != null && sign.size() >= 3)
-                {
-                    String t = sign.get(2).isJsonNull() ? "" : sign.get(2).getAsString();
-                    t = t == null ? "" : t.trim();
-                    if (!t.isEmpty())
-                    {
-                        ticks = t;
-                    }
-                }
-                out.append("loop(\"").append(escapeJson(n0.isEmpty() ? "loop" : n0)).append("\", ").append(ticks).append(") {\n");
-                indent = 1;
-                from = 1;
-            }
-            for (int i = from; i < blocks.size(); i++)
-            {
-                JsonElement be = blocks.get(i);
-                if (be == null || !be.isJsonObject())
-                {
-                    continue;
-                }
-                JsonObject b = be.getAsJsonObject();
-                String bid = jString(b, "block");
-                if ("minecraft:piston".equals(bid) || "minecraft:sticky_piston".equals(bid))
-                {
-                    if (indent > 0)
-                    {
-                        indent--;
-                        for (int k = 0; k < indent; k++) out.append("    ");
-                        out.append("}\n");
-                    }
-                    continue;
-                }
-                String sign = signNameFrom(b);
-                String args = argsFromChest(b);
-                if ("minecraft:planks".equals(bid) || "minecraft:red_nether_brick".equals(bid)
-                    || "minecraft:brick_block".equals(bid) || "minecraft:obsidian".equals(bid))
-                {
-                    for (int k = 0; k < indent; k++) out.append("    ");
-                    out.append("if_raw(\"").append(escapeJson(sign.isEmpty() ? "condition" : sign)).append("\") {\n");
-                    indent++;
-                    continue;
-                }
-                if ("minecraft:end_stone".equals(bid))
-                {
-                    if (indent > 0)
-                    {
-                        indent--;
-                    }
-                    for (int k = 0; k < indent; k++) out.append("    ");
-                    out.append("} else {\n");
-                    indent++;
-                    continue;
-                }
-                String module = null;
-                if ("minecraft:cobblestone".equals(bid))
-                {
-                    module = "player";
-                }
-                else if ("minecraft:nether_brick".equals(bid))
-                {
-                    module = "game";
-                }
-                else if ("minecraft:iron_block".equals(bid))
-                {
-                    module = "var";
-                }
-                else if ("minecraft:bookshelf".equals(bid))
-                {
-                    module = "array";
-                }
-                else if ("minecraft:purpur_block".equals(bid))
-                {
-                    module = "select";
-                }
-                else if ("minecraft:lapis_ore".equals(bid))
-                {
-                    module = "game";
-                }
-                for (int k = 0; k < indent; k++) out.append("    ");
-                if (module == null)
-                {
-                    out.append("# unsupported ").append(bid).append(": ").append(sign).append("\n");
-                }
-                else
-                {
-                    out.append(module).append(".").append(sign.isEmpty() ? "unnamed" : sign);
-                    out.append("(");
-                    if (!"no".equals(args))
-                    {
-                        out.append(args);
-                    }
-                    out.append(")\n");
-                }
-            }
-            while (indent > 0)
-            {
-                indent--;
-                for (int k = 0; k < indent; k++) out.append("    ");
-                out.append("}\n");
-            }
-            out.append("\n");
-        }
-        return out.toString();
-    }
-
     private File findLatestExportFile(File dir, String prefix)
     {
         if (dir == null || prefix == null)
@@ -3467,6 +3126,233 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         if (mc != null && mc.player != null)
         {
             mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW + "Open manually: " + url));
+        }
+    }
+
+    private void scheduleMainChat(String msg)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null)
+        {
+            return;
+        }
+        mc.addScheduledTask(() -> {
+            if (mc.player != null)
+            {
+                mc.player.sendMessage(new TextComponentString("[BetterCode] " + (msg == null ? "" : msg.replace('&', '\u00a7'))));
+            }
+        });
+    }
+
+    private File resolveModsDir(Minecraft mc)
+    {
+        if (mc == null || mc.mcDataDir == null)
+        {
+            return null;
+        }
+        File mods = new File(mc.mcDataDir, "mods");
+        if (mods.isDirectory())
+        {
+            return mods;
+        }
+        File parent = mc.mcDataDir.getParentFile();
+        if (parent != null)
+        {
+            File alt = new File(parent, "mods");
+            if (alt.isDirectory())
+            {
+                return alt;
+            }
+        }
+        return mods;
+    }
+
+    private File detectCurrentModJar()
+    {
+        try
+        {
+            java.security.CodeSource src = ExampleMod.class.getProtectionDomain().getCodeSource();
+            if (src == null || src.getLocation() == null)
+            {
+                return null;
+            }
+            java.net.URI uri = src.getLocation().toURI();
+            File f = new File(uri);
+            if (f.isFile() && f.getName().toLowerCase(Locale.ROOT).endsWith(".jar"))
+            {
+                return f;
+            }
+        }
+        catch (Exception ignore) { }
+        return null;
+    }
+
+    private ReleaseAssetInfo fetchLatestModReleaseAsset() throws Exception
+    {
+        HttpURLConnection conn = null;
+        try
+        {
+            URL u = new URL("https://api.github.com/repos/rainbownyashka/mlbettercode/releases/latest");
+            conn = (HttpURLConnection) u.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(15000);
+            conn.setRequestProperty("Accept", "application/vnd.github+json");
+            conn.setRequestProperty("User-Agent", "BetterCode-Updater");
+            int code = conn.getResponseCode();
+            if (code != 200)
+            {
+                return null;
+            }
+            String body;
+            try (InputStream is = conn.getInputStream())
+            {
+                body = readAllUtf8(is);
+            }
+            JsonElement root = new JsonParser().parse(body);
+            if (root == null || !root.isJsonObject())
+            {
+                return null;
+            }
+            JsonObject obj = root.getAsJsonObject();
+            String tag = obj.has("tag_name") && !obj.get("tag_name").isJsonNull() ? obj.get("tag_name").getAsString() : "";
+            JsonArray assets = obj.has("assets") && obj.get("assets").isJsonArray() ? obj.getAsJsonArray("assets") : null;
+            if (assets == null)
+            {
+                return null;
+            }
+            for (JsonElement ae : assets)
+            {
+                if (ae == null || !ae.isJsonObject())
+                {
+                    continue;
+                }
+                JsonObject a = ae.getAsJsonObject();
+                String name = a.has("name") && !a.get("name").isJsonNull() ? a.get("name").getAsString() : "";
+                String url = a.has("browser_download_url") && !a.get("browser_download_url").isJsonNull()
+                    ? a.get("browser_download_url").getAsString() : "";
+                if (name.toLowerCase(Locale.ROOT).startsWith("bettercode-") && name.toLowerCase(Locale.ROOT).endsWith(".jar"))
+                {
+                    return new ReleaseAssetInfo(tag, name, url);
+                }
+            }
+            return null;
+        }
+        finally
+        {
+            if (conn != null)
+            {
+                conn.disconnect();
+            }
+        }
+    }
+
+    private static String readAllUtf8(InputStream is) throws IOException
+    {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        while (true)
+        {
+            int n = is.read(buf);
+            if (n < 0)
+            {
+                break;
+            }
+            out.write(buf, 0, n);
+        }
+        return out.toString("UTF-8");
+    }
+
+    private boolean downloadBinary(String url, File dst, long maxBytes)
+    {
+        HttpURLConnection conn = null;
+        try
+        {
+            conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(12000);
+            conn.setReadTimeout(30000);
+            conn.setRequestProperty("User-Agent", "BetterCode-Updater");
+            int code = conn.getResponseCode();
+            if (code != 200)
+            {
+                return false;
+            }
+            long total = 0L;
+            File parent = dst.getParentFile();
+            if (parent != null && !parent.exists())
+            {
+                //noinspection ResultOfMethodCallIgnored
+                parent.mkdirs();
+            }
+            try (InputStream in = conn.getInputStream(); FileOutputStream fos = new FileOutputStream(dst))
+            {
+                byte[] buf = new byte[8192];
+                while (true)
+                {
+                    int n = in.read(buf);
+                    if (n < 0)
+                    {
+                        break;
+                    }
+                    total += n;
+                    if (total > maxBytes)
+                    {
+                        return false;
+                    }
+                    fos.write(buf, 0, n);
+                }
+            }
+            return dst.isFile() && dst.length() > 0L;
+        }
+        catch (Exception e)
+        {
+            return false;
+        }
+        finally
+        {
+            if (conn != null)
+            {
+                conn.disconnect();
+            }
+        }
+    }
+
+    private boolean writeUpdaterScript(File scriptFile, File downloaded, File target, File oldJar)
+    {
+        try
+        {
+            String src = downloaded.getAbsolutePath().replace("\"", "");
+            String dst = target.getAbsolutePath().replace("\"", "");
+            String old = oldJar == null ? "" : oldJar.getAbsolutePath().replace("\"", "");
+            String self = scriptFile.getAbsolutePath().replace("\"", "");
+            StringBuilder sb = new StringBuilder();
+            sb.append("@echo off\r\n");
+            sb.append("setlocal\r\n");
+            sb.append("set SRC=").append(src).append("\r\n");
+            sb.append("set DST=").append(dst).append("\r\n");
+            if (!old.isEmpty())
+            {
+                sb.append("set OLD=").append(old).append("\r\n");
+            }
+            sb.append("set SELF=").append(self).append("\r\n");
+            sb.append("timeout /t 3 /nobreak >nul\r\n");
+            sb.append(":waitjava\r\n");
+            sb.append("tasklist /FI \"IMAGENAME eq javaw.exe\" | find /I \"javaw.exe\" >nul\r\n");
+            sb.append("if %ERRORLEVEL%==0 (timeout /t 1 /nobreak >nul & goto waitjava)\r\n");
+            if (!old.isEmpty())
+            {
+                sb.append("if /I not \"%OLD%\"==\"%DST%\" (del /F /Q \"%OLD%\" >nul 2>nul)\r\n");
+            }
+            sb.append("copy /Y \"%SRC%\" \"%DST%\" >nul\r\n");
+            sb.append("del /F /Q \"%SRC%\" >nul 2>nul\r\n");
+            sb.append("del /F /Q \"%SELF%\" >nul 2>nul\r\n");
+            java.nio.file.Files.write(scriptFile.toPath(), sb.toString().getBytes(StandardCharsets.UTF_8));
+            return scriptFile.isFile();
+        }
+        catch (Exception e)
+        {
+            return false;
         }
     }
 
