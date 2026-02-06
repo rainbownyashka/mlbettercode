@@ -29,7 +29,13 @@ jobs:
       - name: Build
         run: |
           chmod +x ./gradlew
-          ./gradlew build
+          VERSION="${GITHUB_REF_NAME#v}"
+          ./gradlew -PmodVersion="$VERSION" build
+
+      - name: Verify release jar name
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          test -f "build/libs/bettercode-${VERSION}.jar"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
