@@ -218,6 +218,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private static final String ARRAY_MARK = "\u2398";
     private static final String CODE_SELECTOR_TAG = "mldsl_code_selector";
     private static final String CODE_SELECTOR_TITLE = "\u00a7bCode Selector";
+    private static final String DEV_UTILS_MENU_TITLE = "\u0423\u0442\u0438\u043b\u0438\u0442\u044b \u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0447\u0438\u043a\u0430";
     private static final long CODE_SELECTOR_TOGGLE_COOLDOWN_MS = 150L;
     private static final long CODE_SELECTOR_ABORT_COOLDOWN_MS = 120L;
     private static final int MENU_CACHE_MAX = 48;
@@ -3424,17 +3425,74 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
     private String resolveMlDslCompilerPath()
     {
-        if (isCommandAvailable("mldsl"))
-        {
-            return "mldsl";
-        }
         String local = System.getenv("LOCALAPPDATA");
         if (local != null && !local.trim().isEmpty())
         {
+            File exeProgram = new File(local, "Programs\\MLDSL\\mldsl.exe");
+            if (exeProgram.isFile())
+            {
+                return exeProgram.getAbsolutePath();
+            }
             File exe = new File(local, "MLDSL\\mldsl.exe");
             if (exe.isFile())
             {
                 return exe.getAbsolutePath();
+            }
+        }
+        if (isCommandAvailable("mldsl"))
+        {
+            return "mldsl";
+        }
+        return null;
+    }
+
+    private File resolveMlDslApiAliasesPath(String compilerPath)
+    {
+        try
+        {
+            ExecResult paths = runProcess(new String[]{compilerPath, "paths"}, 6000L);
+            if (paths.ok && paths.stdout != null)
+            {
+                for (String line : paths.stdout.split("\\r?\\n"))
+                {
+                    if (line == null)
+                    {
+                        continue;
+                    }
+                    String t = line.trim();
+                    if (!t.startsWith("api_aliases="))
+                    {
+                        continue;
+                    }
+                    String p = t.substring("api_aliases=".length()).trim();
+                    if (!p.isEmpty())
+                    {
+                        File f = new File(p);
+                        if (f.isFile())
+                        {
+                            return f;
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ignore) { }
+
+        String local = System.getenv("LOCALAPPDATA");
+        if (local != null && !local.trim().isEmpty())
+        {
+            File[] candidates = new File[]{
+                new File(local, "Programs\\MLDSL\\app\\out\\api_aliases.json"),
+                new File(local, "Programs\\MLDSL\\seed_out\\api_aliases.json"),
+                new File(local, "MLDSL\\app\\out\\api_aliases.json"),
+                new File(local, "MLDSL\\seed_out\\api_aliases.json")
+            };
+            for (File c : candidates)
+            {
+                if (c.isFile())
+                {
+                    return c;
+                }
             }
         }
         return null;
@@ -3458,13 +3516,30 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
     private ExecResult runMlDslExportToMldsl(String compilerPath, File exportFile, File outMldsl)
     {
-        ExecResult r1 = runProcess(new String[]{
-            compilerPath,
-            "exportcode",
-            exportFile.getAbsolutePath(),
-            "-o",
-            outMldsl.getAbsolutePath()
-        }, 60_000L);
+        File apiAliases = resolveMlDslApiAliasesPath(compilerPath);
+        ExecResult r1;
+        if (apiAliases != null && apiAliases.isFile())
+        {
+            r1 = runProcess(new String[]{
+                compilerPath,
+                "exportcode",
+                exportFile.getAbsolutePath(),
+                "--api",
+                apiAliases.getAbsolutePath(),
+                "-o",
+                outMldsl.getAbsolutePath()
+            }, 60_000L);
+        }
+        else
+        {
+            r1 = runProcess(new String[]{
+                compilerPath,
+                "exportcode",
+                exportFile.getAbsolutePath(),
+                "-o",
+                outMldsl.getAbsolutePath()
+            }, 60_000L);
+        }
         if (r1.ok)
         {
             return r1;
@@ -3472,6 +3547,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
         ExecResult r2 = runProcess(new String[]{
             compilerPath,
+            "exportcode",
             exportFile.getAbsolutePath(),
             "-o",
             outMldsl.getAbsolutePath()
@@ -4914,6 +4990,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
             catch (Exception ignored) { }
         }
+        if (Mouse.getEventButtonState() && Mouse.getEventButton() == 0 && handleDevUtilsSelectorClick((GuiContainer) gui))
+        {
+            event.setCanceled(true);
+            return;
+        }
+
         if (inputActive)
         {
             if (Mouse.getEventButtonState())
@@ -5130,6 +5212,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             return;
         }
+        ensureDevUtilsSelectorSlot((GuiContainer) gui);
 
         GlStateManager.disableLighting();
         GlStateManager.disableDepth();
@@ -5244,6 +5327,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         if (gui instanceof GuiContainer)
         {
+            ensureDevUtilsSelectorSlot((GuiContainer) gui);
             boolean shouldSnapshot = false;
             boolean isPlayerInventory = gui instanceof GuiInventory;
             if (gui instanceof GuiChest)
@@ -5721,6 +5805,96 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             return false;
         }
+    }
+
+    private boolean isDevUtilsMenu(GuiContainer gui)
+    {
+        if (!(gui instanceof GuiChest))
+        {
+            return false;
+        }
+        String title = getGuiTitle((GuiChest) gui);
+        if (title == null)
+        {
+            return false;
+        }
+        String clean = TextFormatting.getTextWithoutFormattingCodes(title);
+        if (clean == null)
+        {
+            clean = title;
+        }
+        clean = clean.trim().toLowerCase(Locale.ROOT);
+        return clean.contains(DEV_UTILS_MENU_TITLE.toLowerCase(Locale.ROOT));
+    }
+
+    private void ensureDevUtilsSelectorSlot(GuiContainer gui)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null || mc.playerController == null)
+        {
+            return;
+        }
+        if (!editorModeActive || !mc.playerController.isInCreativeMode()
+            || mc.playerController.getCurrentGameType() != GameType.CREATIVE)
+        {
+            return;
+        }
+        if (!isDevUtilsMenu(gui))
+        {
+            return;
+        }
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || slot.inventory == mc.player.inventory)
+            {
+                continue;
+            }
+            if (slot.getSlotIndex() == 4 || slot.slotNumber == 4 || slot.slotNumber == 5)
+            {
+                ItemStack cur = slot.getStack();
+                if (!isCodeSelectorItem(cur))
+                {
+                    slot.putStack(buildCodeSelectorItem());
+                }
+                break;
+            }
+        }
+    }
+
+    private boolean handleDevUtilsSelectorClick(GuiContainer gui)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null || mc.playerController == null)
+        {
+            return false;
+        }
+        if (!editorModeActive || !mc.playerController.isInCreativeMode()
+            || mc.playerController.getCurrentGameType() != GameType.CREATIVE)
+        {
+            return false;
+        }
+        if (!isDevUtilsMenu(gui))
+        {
+            return false;
+        }
+        Slot hovered = getSlotUnderMouse(gui);
+        if (hovered == null)
+        {
+            return false;
+        }
+        if (!(hovered.getSlotIndex() == 4 || hovered.slotNumber == 4 || hovered.slotNumber == 5))
+        {
+            return false;
+        }
+        int slot = giveItemToHotbarSlot(mc, buildCodeSelectorItem());
+        try
+        {
+            mc.player.inventory.currentItem = slot;
+            mc.player.connection.sendPacket(new CPacketHeldItemChange(slot));
+        }
+        catch (Exception ignore) { }
+        setActionBar(true, "&aCode Selector выдан локально (dev utils)", 1800L);
+        return true;
     }
 
     private ItemStack buildCodeSelectorItem()
