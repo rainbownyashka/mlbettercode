@@ -3942,11 +3942,13 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
         boolean first = true;
         int emptyPairs = 0;
+        int stepX = detectExportRowStepX(world, start);
+        int sideOffsetX = stepX < 0 ? 1 : -1;
 
         for (int p = 0; p < maxSteps; p++)
         {
-            BlockPos entryPos = start.add(-2 * p, 0, 0);
-            BlockPos sidePos = entryPos.add(1, 0, 0);
+            BlockPos entryPos = start.add(stepX * p, 0, 0);
+            BlockPos sidePos = entryPos.add(sideOffsetX, 0, 0);
             if (!world.isBlockLoaded(entryPos, false) || !world.isBlockLoaded(sidePos, false))
             {
                 break;
@@ -4016,6 +4018,52 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
         sb.append("]}");
         return sb.toString();
+    }
+
+    private int detectExportRowStepX(World world, BlockPos start)
+    {
+        // Rows can be built either to -X or +X depending on local coding orientation.
+        // Probe several cells and choose the direction with more non-empty content.
+        int neg = 0;
+        int pos = 0;
+        for (int i = 1; i <= 6; i++)
+        {
+            BlockPos n = start.add(-2 * i, 0, 0);
+            BlockPos p = start.add(2 * i, 0, 0);
+            if (isExportRowCellNonEmpty(world, n))
+            {
+                neg++;
+            }
+            if (isExportRowCellNonEmpty(world, p))
+            {
+                pos++;
+            }
+        }
+        return pos > neg ? 2 : -2;
+    }
+
+    private boolean isExportRowCellNonEmpty(World world, BlockPos entryPos)
+    {
+        if (world == null || entryPos == null || !world.isBlockLoaded(entryPos, false))
+        {
+            return false;
+        }
+        IBlockState st = world.getBlockState(entryPos);
+        Block b = st == null ? Blocks.AIR : st.getBlock();
+        if (b != null && b != Blocks.AIR)
+        {
+            return true;
+        }
+        BlockPos signPos = findSignAtZMinus1(world, entryPos);
+        if (signPos != null)
+        {
+            String[] lines = getCachedSignLines(world, signPos);
+            if (lines != null && !allEmpty(lines))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean allEmpty(String[] lines)
