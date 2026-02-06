@@ -28,7 +28,16 @@ def gradle_cmd_for_module(module_dir: Path, repo: Path) -> list[str]:
 
 
 def build_legacy112(repo: Path, task: str) -> None:
-    run([*gradle_cmd(repo), task], repo)
+    java8 = _pick_java_home(8)
+    if not java8:
+        raise SystemExit(
+            "Legacy 1.12 build requires JDK 8.\n"
+            "Set JAVA_HOME_8_X64 (or JAVA_HOME_8) and rerun."
+        )
+    env = os.environ.copy()
+    env["JAVA_HOME"] = java8
+    env["PATH"] = str(Path(java8) / "bin") + os.pathsep + env.get("PATH", "")
+    run([*gradle_cmd(repo), task], repo, env=env)
 
 def _java_bin(home: Path) -> Path:
     if sys.platform.startswith("win"):
@@ -53,6 +62,8 @@ def _java_matches_major(home: Path, version: int) -> bool:
 def _pick_java_home(version: int) -> str | None:
     # Common CI and local env vars first.
     keys = []
+    if version == 8:
+        keys.extend(("JAVA_HOME_8_X64", "JAVA_HOME_8", "JDK8_HOME"))
     if version == 21:
         keys.extend(("JAVA_HOME_21_X64", "JAVA_HOME_21", "JDK21_HOME"))
     if version == 17:
