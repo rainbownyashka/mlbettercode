@@ -30,6 +30,25 @@ def gradle_cmd_for_module(module_dir: Path, repo: Path) -> list[str]:
 def build_legacy112(repo: Path, task: str) -> None:
     run([*gradle_cmd(repo), task], repo)
 
+def _java_bin(home: Path) -> Path:
+    if sys.platform.startswith("win"):
+        return home / "bin" / "java.exe"
+    return home / "bin" / "java"
+
+
+def _java_matches_major(home: Path, version: int) -> bool:
+    java = _java_bin(home)
+    if not java.exists():
+        return False
+    try:
+        out = subprocess.check_output([str(java), "-version"], stderr=subprocess.STDOUT, text=True)
+    except Exception:
+        return False
+    # Works for common outputs:
+    #  - openjdk version "17.0.12"
+    #  - openjdk 21.0.4 ...
+    return (f'"{version}.' in out) or (f"openjdk {version}" in out) or (f" version \"{version}" in out)
+
 
 def _pick_java_home(version: int) -> str | None:
     # Common CI and local env vars first.
@@ -41,19 +60,16 @@ def _pick_java_home(version: int) -> str | None:
     keys.append("JAVA_HOME")
     for key in keys:
         value = os.environ.get(key, "").strip()
-        if value and Path(value).exists() and (Path(value) / "bin" / "java.exe").exists():
-            # Ensure requested major version when JAVA_HOME is generic.
-            if key == "JAVA_HOME":
-                try:
-                    out = subprocess.check_output(
-                        [str(Path(value) / "bin" / "java.exe"), "-version"],
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                    )
-                    if f'"{version}.' not in out and f' {version} ' not in out:
-                        continue
-                except Exception:
-                    continue
+        if not value:
+            continue
+        home = Path(value)
+        if not home.exists():
+            continue
+        if key == "JAVA_HOME":
+            if _java_matches_major(home, version):
+                return value
+            continue
+        if _java_bin(home).exists():
             return value
 
     # Typical Windows install locations.
@@ -66,7 +82,7 @@ def _pick_java_home(version: int) -> str | None:
         if not base.exists():
             continue
         for child in sorted(base.glob(f"**/*jdk-{version}*"), reverse=True):
-            if child.is_dir() and (child / "bin" / "java.exe").exists():
+            if child.is_dir() and _java_bin(child).exists():
                 return str(child)
     return None
 

@@ -8832,8 +8832,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         int btnX = rightX + 4;
         int btnY2 = rightY + ySize - btnHeight - 4;
         int btnY1 = btnY2 - btnHeight - 2;
+        int btnY0 = btnY1 - btnHeight - 2;
+        net.minecraft.client.gui.Gui.drawRect(btnX, btnY0, btnX + btnWidth, btnY0 + btnHeight, 0x88000000);
         net.minecraft.client.gui.Gui.drawRect(btnX, btnY1, btnX + btnWidth, btnY1 + btnHeight, 0x88000000);
         net.minecraft.client.gui.Gui.drawRect(btnX, btnY2, btnX + btnWidth, btnY2 + btnHeight, 0x88000000);
+        mc.fontRenderer.drawStringWithShadow("Export All", btnX + 4, btnY0 + 2, 0xFFFFFF);
         mc.fontRenderer.drawStringWithShadow("Export Raw", btnX + 4, btnY1 + 2, 0xFFFFFF);
         mc.fontRenderer.drawStringWithShadow("Export Clean", btnX + 4, btnY2 + 2, 0xFFFFFF);
 
@@ -8940,6 +8943,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         int btnX = rightX + 4;
         int btnY2 = rightY + ySize - btnHeight - 4;
         int btnY1 = btnY2 - btnHeight - 2;
+        int btnY0 = btnY1 - btnHeight - 2;
+        if (mouseX >= btnX && mouseX <= btnX + btnWidth && mouseY >= btnY0 && mouseY <= btnY0 + btnHeight)
+        {
+            exportGuiToClipboard(gui, true, true);
+            return true;
+        }
         if (mouseX >= btnX && mouseX <= btnX + btnWidth && mouseY >= btnY1 && mouseY <= btnY1 + btnHeight)
         {
             exportGuiToClipboard(gui, true, false);
