@@ -7094,7 +7094,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
         // Multi-page chest capture:
         // save pages into one absolute-slots cache (slot = local + page*size).
+        // IMPORTANT: page auto-clicking is allowed only for explicit flows
+        // (regallactions/module publish warmup), never for generic chest snapshots.
         boolean pageTurnRequested = false;
+        boolean pageTurnAllowed = modulePublishWarmupActive || regAllActionsModule.isActive();
         if (lastClickedChest && allowChestSnapshot && chestPos != null && size > 0)
         {
             String key = chestKey(chestDim, chestPos);
@@ -7103,6 +7106,13 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 resetChestPageScanState();
                 chestPageScanKey = key;
                 chestPageScanSize = size;
+            }
+            if (!pageTurnAllowed)
+            {
+                chestPageAwaitCursorClear = false;
+                chestPageAwaitStartMs = 0L;
+                chestPageRetryCount = 0;
+                chestPageNextActionMs = now;
             }
 
             if (chestPageAwaitCursorClear)
@@ -7140,7 +7150,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
                 ItemStack lastSlot = items.isEmpty() ? ItemStack.EMPTY : items.get(size - 1);
                 boolean hasNextPage = isNextPageArrow(lastSlot);
-                if (hasNextPage && now >= chestPageNextActionMs)
+                if (hasNextPage && !pageTurnAllowed)
+                {
+                    if (logger != null) logger.info("CHEST_PAGE_CLICK skip key={} reason=not_allowed mode=normal_snapshot", key);
+                }
+                if (hasNextPage && pageTurnAllowed && now >= chestPageNextActionMs)
                 {
                     if (chestPageRetryCount < CHEST_PAGE_MAX_RETRIES && mc != null && mc.player != null && mc.playerController != null)
                     {
