@@ -7148,11 +7148,13 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
         // Multi-page chest capture:
         // save pages into one absolute-slots cache (slot = local + page*size).
-        // IMPORTANT: page auto-clicking is allowed only for module publish warmup flow.
-        // RegAllActions owns its own pagination logic and must not be mixed here.
+        // Page auto-clicking is allowed only for:
+        // - module publish warmup
+        // - explicit auto-cache allow
+        // - active RegAllActions capture flow
         boolean pageTurnRequested = false;
         boolean regAllOwnsPaging = regAllActionsModule != null && regAllActionsModule.isActive();
-        boolean pageTurnAllowed = modulePublishWarmupActive || autoCachePageTurnAllowed;
+        boolean pageTurnAllowed = modulePublishWarmupActive || autoCachePageTurnAllowed || regAllOwnsPaging;
         if (lastClickedChest && allowChestSnapshot && chestPos != null && size > 0)
         {
             String key = chestKey(chestDim, chestPos);
