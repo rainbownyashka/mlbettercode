@@ -50,6 +50,10 @@ public final class RegAllActionsModule
     private boolean signAliasesLoaded = false;
     private static final Logger LOGGER = LogManager.getLogger("BetterCode-RegAllActions");
     private static final Pattern FORMATTED_ITEM_RE = Pattern.compile("^\\[([^\\s]+) meta=(\\d+)\\]\\s*(.*)$");
+    private static final int MENU_PAGE_TURN_MAX_RETRIES = 5;
+    private static final long MENU_PAGE_TURN_TIMEOUT_MS = 1500L;
+    private static final String NEXT_PAGE_PHRASE_1 = "нажми, чтобы открыть";
+    private static final String NEXT_PAGE_PHRASE_2 = "следующую страницу";
 
     public RegAllActionsModule(RegAllActionsHost host)
     {
@@ -585,6 +589,56 @@ public final class RegAllActionsModule
             return;
         }
 
+        if (state.menuPageTurnPending)
+        {
+            String currentHash = buildTopInventoryHash(gui);
+            if (!currentHash.equals(state.menuPageLastHash))
+            {
+                state.menuPageTurnPending = false;
+                state.menuPageRetryCount = 0;
+                state.menuPageTurnStartMs = 0L;
+                state.menuPageLastHash = currentHash;
+                state.menuPageIndex++;
+                state.nextActionMs = nowMs + actionDelayMs();
+                debugLog("page turn ok page=" + state.menuPageIndex + " path=" + RegAllActionsState.pathKey(state.menuPathKeys));
+                debugBar("page " + state.menuPageIndex);
+                return;
+            }
+            if (nowMs - state.menuPageTurnStartMs >= MENU_PAGE_TURN_TIMEOUT_MS)
+            {
+                if (state.menuPageRetryCount >= MENU_PAGE_TURN_MAX_RETRIES)
+                {
+                    state.menuPageTurnPending = false;
+                    state.menuPageRetryCount = 0;
+                    state.menuPageTurnStartMs = 0L;
+                    host.setActionBar(false, "&eWARN: page turn timeout, partial export", 3000L);
+                    debugLog("page turn timeout retries exhausted path=" + RegAllActionsState.pathKey(state.menuPathKeys));
+                    return;
+                }
+                Slot arrow = findNextPageArrowSlot(gui);
+                if (arrow == null)
+                {
+                    state.menuPageTurnPending = false;
+                    state.menuPageRetryCount = 0;
+                    state.menuPageTurnStartMs = 0L;
+                    host.setActionBar(false, "&eWARN: next page arrow missing, partial export", 3000L);
+                    debugLog("page turn timeout + arrow missing path=" + RegAllActionsState.pathKey(state.menuPathKeys));
+                    return;
+                }
+                state.menuPageRetryCount++;
+                state.menuPageTurnStartMs = nowMs;
+                state.menuPageLastHash = currentHash;
+                host.queueClick(new ClickAction(arrow.slotNumber, 0, ClickType.PICKUP));
+                state.waitingForCursorClear = true;
+                state.cursorClearSinceMs = 0L;
+                state.nextActionMs = nowMs + actionDelayMs();
+                debugLog("page turn retry " + state.menuPageRetryCount + "/" + MENU_PAGE_TURN_MAX_RETRIES
+                    + " slot=" + arrow.slotNumber + " path=" + RegAllActionsState.pathKey(state.menuPathKeys));
+                return;
+            }
+            return;
+        }
+
         if (state.pendingClick && !state.pendingIsReplay)
         {
             if (nowMs - state.pendingClickMs > 1500L)
@@ -725,6 +779,10 @@ public final class RegAllActionsModule
         Slot next = findNextMenuSlot(gui, pathKey, done);
         if (next == null)
         {
+            if (tryStartPageTurn(gui, nowMs))
+            {
+                return;
+            }
             if (state.menuPathKeys.isEmpty())
             {
                 if (state.resaveMode)
@@ -806,6 +864,88 @@ public final class RegAllActionsModule
             return host.getGuiTitle((GuiChest) gui);
         }
         return "";
+    }
+
+    private boolean tryStartPageTurn(GuiContainer gui, long nowMs)
+    {
+        Slot arrow = findNextPageArrowSlot(gui);
+        if (arrow == null)
+        {
+            return false;
+        }
+        state.menuPageTurnPending = true;
+        state.menuPageRetryCount = 0;
+        state.menuPageTurnStartMs = nowMs;
+        state.menuPageLastHash = buildTopInventoryHash(gui);
+        host.queueClick(new ClickAction(arrow.slotNumber, 0, ClickType.PICKUP));
+        state.waitingForCursorClear = true;
+        state.cursorClearSinceMs = 0L;
+        state.nextActionMs = nowMs + actionDelayMs();
+        debugLog("page turn start page=" + state.menuPageIndex + " slot=" + arrow.slotNumber
+            + " path=" + RegAllActionsState.pathKey(state.menuPathKeys));
+        return true;
+    }
+
+    private String buildTopInventoryHash(GuiContainer gui)
+    {
+        StringBuilder sb = new StringBuilder();
+        if (gui == null || gui.inventorySlots == null)
+        {
+            return "";
+        }
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || host.isPlayerInventorySlot(gui, slot))
+            {
+                continue;
+            }
+            sb.append(slot.slotNumber).append(':').append(buildMenuItemKey(slot.getStack(), slot.slotNumber)).append(';');
+        }
+        return Integer.toHexString(sb.toString().hashCode());
+    }
+
+    private Slot findNextPageArrowSlot(GuiContainer gui)
+    {
+        if (gui == null || gui.inventorySlots == null)
+        {
+            return null;
+        }
+        Slot last = null;
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || host.isPlayerInventorySlot(gui, slot))
+            {
+                continue;
+            }
+            if (last == null || slot.slotNumber > last.slotNumber)
+            {
+                last = slot;
+            }
+        }
+        if (last == null)
+        {
+            return null;
+        }
+        ItemStack st = last.getStack();
+        if (st == null || st.isEmpty())
+        {
+            return null;
+        }
+        if (st.getItem() == null || st.getItem().getRegistryName() == null)
+        {
+            return null;
+        }
+        String reg = st.getItem().getRegistryName().toString().toLowerCase(Locale.ROOT);
+        if (!reg.contains("arrow"))
+        {
+            return null;
+        }
+        String lore = normalizeForKey(readLore(st));
+        if (lore.isEmpty())
+        {
+            return null;
+        }
+        return (lore.contains(NEXT_PAGE_PHRASE_1) && lore.contains(NEXT_PAGE_PHRASE_2)) ? last : null;
     }
 
     private Set<String> doneSetForPath(String pathKey)

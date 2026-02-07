@@ -70,6 +70,11 @@ final class RegAllActionsState
     boolean debugSlow = false;
     boolean waitingForCursorClear = false;
     long cursorClearSinceMs = 0L;
+    boolean menuPageTurnPending = false;
+    int menuPageIndex = 0;
+    int menuPageRetryCount = 0;
+    long menuPageTurnStartMs = 0L;
+    String menuPageLastHash = "";
     boolean importLoaded = false;
     final Set<String> importedRecordKeys = new HashSet<>();
     final Set<String> importedLooseKeys = new HashSet<>();
@@ -149,6 +154,11 @@ final class RegAllActionsState
         debugSlow = false;
         waitingForCursorClear = false;
         cursorClearSinceMs = 0L;
+        menuPageTurnPending = false;
+        menuPageIndex = 0;
+        menuPageRetryCount = 0;
+        menuPageTurnStartMs = 0L;
+        menuPageLastHash = "";
         records.clear();
         resaveMode = false;
         resaveQueryNorm = null;
