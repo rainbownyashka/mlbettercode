@@ -966,6 +966,8 @@ public final class RegAllActionsModule
 
     private void queueClickFromRegAllActions(int slotNumber, String reason)
     {
+        LOGGER.info("RGA_CLICK reason={} slot={} active={} path={}",
+            reason, slotNumber, state.active, RegAllActionsState.pathKey(state.menuPathKeys));
         debugLog("RGA_CLICK reason=" + reason + " slot=" + slotNumber
             + " active=" + state.active
             + " path=" + RegAllActionsState.pathKey(state.menuPathKeys));
