@@ -868,6 +868,12 @@ public final class RegAllActionsModule
 
     private boolean tryStartPageTurn(GuiContainer gui, long nowMs)
     {
+        if (!isRegAllMenuForPagination(gui))
+        {
+            debugLog("page turn skipped: not regallactions menu title=" + getGuiTitleSafe(gui)
+                + " path=" + RegAllActionsState.pathKey(state.menuPathKeys));
+            return false;
+        }
         Slot arrow = findNextPageArrowSlot(gui);
         if (arrow == null)
         {
@@ -884,6 +890,16 @@ public final class RegAllActionsModule
         debugLog("page turn start page=" + state.menuPageIndex + " slot=" + arrow.slotNumber
             + " path=" + RegAllActionsState.pathKey(state.menuPathKeys));
         return true;
+    }
+
+    private boolean isRegAllMenuForPagination(GuiContainer gui)
+    {
+        if (!(gui instanceof GuiChest))
+        {
+            return false;
+        }
+        GuiChest chest = (GuiChest) gui;
+        return looksLikeActionListMenu(chest) || looksLikeCategoryRootMenu(chest);
     }
 
     private String buildTopInventoryHash(GuiContainer gui)
