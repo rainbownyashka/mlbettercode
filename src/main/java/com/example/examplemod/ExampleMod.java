@@ -7122,12 +7122,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     chestPageAwaitCursorClear = false;
                     chestPageAwaitStartMs = 0L;
                     chestPageNextActionMs = now + 150L;
+                    if (logger != null) logger.info("CHEST_PAGE_CLICK switched key={} page={}", chestPageScanKey, chestPageScanIndex + 1);
                     exportCodeDbg(mc, "chest-page: switched to page " + (chestPageScanIndex + 1) + " key=" + chestPageScanKey);
                 }
                 else if (now - chestPageAwaitStartMs > CHEST_PAGE_WAIT_TIMEOUT_MS)
                 {
                     chestPageAwaitCursorClear = false;
                     chestPageAwaitStartMs = 0L;
+                    if (logger != null) logger.info("CHEST_PAGE_CLICK wait_timeout key={} retry={}", chestPageScanKey, chestPageRetryCount);
                     exportCodeDbg(mc, "chest-page: wait timeout key=" + chestPageScanKey + " retry=" + chestPageRetryCount);
                 }
             }
@@ -7154,17 +7156,21 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                                 chestPageRetryCount++;
                                 chestPageNextActionMs = now + 250L;
                                 pageTurnRequested = true;
+                                if (logger != null) logger.info("CHEST_PAGE_CLICK click_next key={} page={} try={} windowSlot={}",
+                                    chestPageScanKey, chestPageScanIndex + 1, chestPageRetryCount, slotNumber);
                                 exportCodeDbg(mc, "chest-page: click next page key=" + chestPageScanKey
                                     + " page=" + (chestPageScanIndex + 1) + " try=" + chestPageRetryCount);
                             }
                             catch (Exception e)
                             {
+                                if (logger != null) logger.info("CHEST_PAGE_CLICK click_failed key={} err={}", chestPageScanKey, e.getClass().getSimpleName());
                                 exportCodeDbg(mc, "chest-page: click failed key=" + chestPageScanKey + " err=" + e.getClass().getSimpleName());
                             }
                         }
                     }
                     else if (chestPageRetryCount >= CHEST_PAGE_MAX_RETRIES)
                     {
+                        if (logger != null) logger.info("CHEST_PAGE_CLICK retries_exhausted key={} pages={}", chestPageScanKey, chestPageScanIndex + 1);
                         exportCodeDbg(mc, "chest-page: retries exhausted key=" + chestPageScanKey + " pages=" + (chestPageScanIndex + 1));
                     }
                 }

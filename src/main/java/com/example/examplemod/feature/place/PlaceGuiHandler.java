@@ -14,6 +14,8 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.init.Items;
 import net.minecraft.network.play.client.CPacketCreativeInventoryAction;
 import net.minecraft.util.text.TextFormatting;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -22,6 +24,7 @@ import java.util.Set;
 
 final class PlaceGuiHandler
 {
+    private static final Logger LOGGER = LogManager.getLogger("BetterCode-Place");
     private static final int PAGE_TURN_MAX_RETRIES = 5;
     private static final long PAGE_TURN_TIMEOUT_MS = 1500L;
 
@@ -1153,6 +1156,8 @@ final class PlaceGuiHandler
         if (entry.argsGuiPage > targetPage)
         {
             host.setActionBar(false, "&cplaceadvanced: нельзя листать назад к странице аргумента", 2500L);
+            LOGGER.info("PLACE_PAGE_CLICK blocked_back currentPage={} targetPage={} slot={}",
+                entry.argsGuiPage + 1, targetPage + 1, abs);
             if (host.isDebugUi())
             {
                 host.debugChat("placeadvanced page route: currentPage=" + entry.argsGuiPage + " targetPage=" + targetPage
@@ -1192,6 +1197,8 @@ final class PlaceGuiHandler
                 {
                     host.debugChat("placeadvanced page switched to " + (entry.argsGuiPage + 1));
                 }
+                LOGGER.info("PLACE_PAGE_CLICK switched page={} targetPage={} slot={}",
+                    entry.argsGuiPage + 1, targetPage + 1, abs);
                 if (entry.argsGuiPage >= targetPage)
                 {
                     return new SlotRouteResult(false, false, targetLocal);
@@ -1209,6 +1216,8 @@ final class PlaceGuiHandler
                     host.debugChat("placeadvanced page wait timeout: retry=" + entry.argsPageRetryCount
                         + "/" + PAGE_TURN_MAX_RETRIES + " targetPage=" + (targetPage + 1));
                 }
+                LOGGER.info("PLACE_PAGE_CLICK wait_timeout retry={}/{} targetPage={} slot={}",
+                    entry.argsPageRetryCount, PAGE_TURN_MAX_RETRIES, targetPage + 1, abs);
             }
             else
             {
@@ -1219,6 +1228,7 @@ final class PlaceGuiHandler
         if (entry.argsPageRetryCount >= PAGE_TURN_MAX_RETRIES)
         {
             host.setActionBar(false, "&cplaceadvanced: таймаут листания страницы аргумента", 2500L);
+            LOGGER.info("PLACE_PAGE_CLICK retries_exhausted targetPage={} slot={}", targetPage + 1, abs);
             if (host.isDebugUi())
             {
                 host.debugChat("placeadvanced page route failed: retries exhausted targetPage=" + (targetPage + 1));
@@ -1235,6 +1245,7 @@ final class PlaceGuiHandler
         if (nextArrow == null)
         {
             host.setActionBar(false, "&cplaceadvanced: стрелка следующей страницы не найдена", 2500L);
+            LOGGER.info("PLACE_PAGE_CLICK no_next_arrow targetPage={} slot={}", targetPage + 1, abs);
             if (host.isDebugUi())
             {
                 host.debugChat("placeadvanced page route failed: no next arrow targetPage=" + (targetPage + 1));
@@ -1243,6 +1254,8 @@ final class PlaceGuiHandler
         }
 
         host.queueClick(new ClickAction(nextArrow.slotNumber, 0, ClickType.PICKUP));
+        LOGGER.info("PLACE_PAGE_CLICK click currentPage={} targetPage={} slot={} arrowSlot={}",
+            entry.argsGuiPage + 1, targetPage + 1, abs, nextArrow.slotNumber);
         entry.lastArgsActionMs = nowMs;
         entry.argsPageLastHash = buildNonPlayerHash(gui);
         entry.argsPageTurnPending = true;
