@@ -102,6 +102,7 @@ import com.example.examplemod.cmd.ScoreLineCommand;
 import com.example.examplemod.cmd.ScoreTitleCommand;
 import com.example.examplemod.util.ItemStackUtils;
 import com.example.examplemod.feature.codemap.BlueGlassCodeMap;
+import com.example.examplemod.feature.export.ExportCodeCore;
 import com.example.examplemod.feature.place.PlaceModule;
 import com.example.examplemod.feature.place.PlaceModuleHost;
 import com.example.examplemod.feature.copy.CopyCodeModule;
@@ -167,6 +168,7 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Collection;
 import java.util.Comparator;
@@ -365,6 +367,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private int signSearchDim = 0;
     private final List<BlockPos> signSearchMatches = new ArrayList<>();
     private boolean debugUi = false;
+    private boolean exportCodeDebug = false;
     private long lastDevCommandMs = 0L;
     private boolean pendingDev = false;
     private long pendingDevUntilMs = 0L;
@@ -456,6 +459,17 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private long allowChestUntilMs = 0L;
     private long lastChestSnapshotMs = 0L;
     private long lastChestSnapshotTick = -1L;
+    // Multi-page chest snapshot state (export/publish warmup).
+    private String chestPageScanKey = null;
+    private int chestPageScanSize = 0;
+    private int chestPageScanIndex = 0;
+    private String chestPageLastHash = "";
+    private boolean chestPageAwaitCursorClear = false;
+    private long chestPageAwaitStartMs = 0L;
+    private long chestPageNextActionMs = 0L;
+    private int chestPageRetryCount = 0;
+    private static final int CHEST_PAGE_MAX_RETRIES = 5;
+    private static final long CHEST_PAGE_WAIT_TIMEOUT_MS = 1500L;
 
     // --- Auto chest cache runtime state ---
     private long nextAutoCacheScanMs = 0L;
@@ -467,6 +481,15 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private final Deque<BlockPos> cacheAllQueue = new ArrayDeque<>();
     private BlockPos cacheAllCurrentTarget = null;
     private int cacheAllCurrentDim = 0;
+    // /module publish nocache warmup state:
+    // preload selected row chests via tp path + open chest before export.
+    private boolean modulePublishWarmupActive = false;
+    private final Deque<BlockPos> modulePublishWarmupQueue = new ArrayDeque<>();
+    private BlockPos modulePublishWarmupCurrent = null;
+    private int modulePublishWarmupDim = 0;
+    private long modulePublishWarmupStartMs = 0L;
+    private File modulePublishWarmupDir = null;
+    private String modulePublishWarmupName = null;
     private boolean lastEditorModeActive = false;
     private boolean chestIdDirty = false;
     private long lastChestIdSaveMs = 0L;
@@ -1587,6 +1610,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         Minecraft mc = Minecraft.getMinecraft();
         if (mc != null && mc.world != lastWorldRef)
         {
+            // World/server changed: drop stale selector state from previous world.
+            clearAllCodeSelections();
             lastWorldRef = mc.world;
             if (mc.world != null)
             {
@@ -2083,6 +2108,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         handleTpPathQueue(mc);
         handleHotbarSwap(mc);
         handleCacheAllTick(mc, now);
+        handleModulePublishWarmupTick(mc, now);
         copyCodeModule.onClientTick(mc, now);
         placeModule.onClientTick(mc, now);
         regAllActionsModule.onClientTick(mc, now);
@@ -2134,10 +2160,6 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     mc.player.inventory.setInventorySlotContents(slot, ItemStack.EMPTY);
                     sendCreativeSlotUpdate(mc, slot, ItemStack.EMPTY);
                     setActionBar(true, "&aВыделение завершено. Строк выбрано: " + getSelectedRowCount(mc.world), 3000L);
-                }
-                else
-                {
-                    setActionBar(false, "&eДержи Code Selector в руке и нажми F", 2500L);
                 }
             }
             catch (Exception e)
@@ -2507,13 +2529,15 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("cancelcopy",
             "/cancelcopy - stop /copycode", this::runCancelCopyCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("exportcode",
-            "/exportcode [floorsCSV] [name] - export loaded code floors to exportcode_*.json", this::runExportCodeCommand));
+            "/exportcode [floorsCSV] [name] - экспорт загруженных этажей кода в exportcode_*.json", this::runExportCodeCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("exportcodedebug",
+            "/exportcodedebug [on|off] - подробная диагностика exportcode в чат/лог", this::runExportCodeDebugCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("codeselector",
-            "/codeselector - give Code Selector tool (RMB toggle row, LMB clear, F finish)", this::runCodeSelectorCommand));
+            "/codeselector - выдать инструмент выделения строк (ПКМ: вкл/выкл, ЛКМ: очистить, F: завершить)", this::runCodeSelectorCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("selectfloor",
-            "/selectfloor <1..20> - set default floor for /exportcode (Y = N*10-10)", this::runSelectFloorCommand));
+            "/selectfloor <1..20> - выбрать этаж по умолчанию для /exportcode (Y = N*10-10)", this::runSelectFloorCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("module",
-            "/module publish [name] - create a publish folder with plan/export and open Hub", this::runModuleCommand));
+            "/module publish [name] [nocache] - создать папку публикации (plan/export) и открыть Hub", this::runModuleCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("modbc",
             "/modbc update - download and install latest BetterCode on game exit", this::runModBcCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("testplace",
@@ -2541,24 +2565,28 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         Minecraft mc = Minecraft.getMinecraft();
         if (mc == null || mc.world == null || mc.player == null)
         {
-            setActionBar(false, "&cNo world/player", 2000L);
+            setActionBar(false, "&cНет мира или игрока", 2000L);
             return;
         }
         if (!editorModeActive || !isDevCreativeScoreboard(mc))
         {
-            setActionBar(false, "&cDEV mode only (creative + scoreboard)", 3000L);
+            setActionBar(false, "&cТолько DEV-режим (креатив + scoreboard)", 3000L);
             return;
         }
 
         // By default, if there is an active Code Selector selection, export it instead of scanning floors.
         ExportSelection selection = getValidSelectedRows(mc.world);
+        exportCodeDbg(mc, "runExportCodeCommand: args=" + Arrays.toString(args)
+            + " selected.total=" + selection.totalSelected
+            + " selected.valid=" + selection.valid.size()
+            + " skipped(unloaded=" + selection.skippedUnloaded + ", empty=" + selection.skippedEmpty + ")");
         if (selection.totalSelected > 0)
         {
             if (selection.valid.isEmpty())
             {
-                setActionBar(false, "&cSelected rows are unloaded/empty. Fly closer and re-select.", 4000L);
+                setActionBar(false, "&cВыбранные строки пустые/не загружены. Подлети ближе и выдели заново.", 4000L);
                 mc.player.sendMessage(new TextComponentString(TextFormatting.RED
-                    + "exportcode: no valid selected rows (unloaded=" + selection.skippedUnloaded + " empty=" + selection.skippedEmpty + ")"));
+                    + "exportcode: нет валидных выбранных строк (unloaded=" + selection.skippedUnloaded + " empty=" + selection.skippedEmpty + ")"));
                 return;
             }
 
@@ -2575,6 +2603,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             selection.valid.sort(Comparator.<BlockPos>comparingInt(BlockPos::getY)
                 .thenComparingInt(BlockPos::getZ)
                 .thenComparingInt(BlockPos::getX));
+            exportCodeDbg(mc, "selected rows(sorted)=" + summarizeRows(selection.valid, 24));
 
             String json = buildExportCodeJson(mc.world, selection.valid, autoCodeCacheMaxSteps);
             if (json == null || json.isEmpty())
@@ -2588,35 +2617,37 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             {
                 java.nio.file.Files.write(out.toPath(), json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 lastExportCodeFile = out;
-                setActionBar(true, "&aExported selected rows: " + selection.valid.size(), 3500L);
-                mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "exportcode saved: " + out.getAbsolutePath()));
+                setActionBar(true, "&aЭкспортировано выделенных строк: " + selection.valid.size(), 3500L);
+                mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "exportcode сохранен: " + out.getAbsolutePath()));
                 if (selection.skippedUnloaded > 0 || selection.skippedEmpty > 0)
                 {
                     mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
-                        + "Skipped selected rows: unloaded=" + selection.skippedUnloaded + " empty=" + selection.skippedEmpty));
+                        + "Пропущено выделенных строк: unloaded=" + selection.skippedUnloaded + " empty=" + selection.skippedEmpty));
                 }
                 mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
-                    + "Rows exported: " + selection.valid.size() + " (with chest snapshots when found)"));
+                    + "Экспортировано строк: " + selection.valid.size() + " (снимки сундуков добавлены, где найдены)"));
             }
             catch (Exception e)
             {
-                setActionBar(false, "&cExport failed: " + e.getMessage(), 3500L);
+                setActionBar(false, "&cОшибка экспорта: " + e.getMessage(), 3500L);
             }
             return;
         }
 
-        BlockPos seed = resolveExportGlassPos(mc.world);
-        if (seed == null || !mc.world.isBlockLoaded(seed))
+        if (args == null || args.length == 0 || args[0] == null || args[0].trim().isEmpty())
         {
-            setActionBar(false, "&cNo blue glass seed loaded", 2500L);
+            setActionBar(false, "&cНет выделения. Используй Code Selector или передай этажи: /exportcode <floorsCSV> [name]", 4500L);
+            mc.player.sendMessage(new TextComponentString(TextFormatting.RED
+                + "exportcode: по умолчанию требуется выделение. "
+                + "Используй Code Selector (рекомендуется) или укажи этажи явно, например: /exportcode 0,10,20 myname"));
             return;
         }
 
         List<Integer> floors = parseFloorArgsToY(args.length > 0 ? args[0] : null);
         if (floors.isEmpty())
         {
-            Integer forced = exportSelectedFloorYByDim.get(mc.world.provider.getDimension());
-            floors.add(forced == null ? seed.getY() : forced);
+            setActionBar(false, "&cНекорректные этажи. Пример: /exportcode 0,10,20 [name]", 3500L);
+            return;
         }
         String name = args.length > 1 ? sanitizeExportFilenameToken(args[1]) : "";
         if (name.isEmpty())
@@ -2629,24 +2660,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
 
         List<BlockPos> glasses = collectLoadedBlueGlassesOnFloors(mc.world, floors);
+        exportCodeDbg(mc, "floors=" + floors + " loadedBlueGlasses=" + glasses.size() + " (no fallback scan)");
         if (glasses.isEmpty())
         {
-            // Fallback to graph scan from seed, for compatibility with old behavior.
-            List<BlockPos> seeds = new ArrayList<>();
-            seeds.add(seed);
-            List<BlockPos> scanned = BlueGlassCodeMap.scan(mc.world, seeds);
-            for (BlockPos p : scanned)
-            {
-                if (p != null && floors.contains(p.getY()) && mc.world.isBlockLoaded(p))
-                {
-                    glasses.add(p);
-                }
-            }
-            if (glasses.isEmpty())
-            {
-                setActionBar(false, "&cNo loaded blue glass on requested floors", 3000L);
-                return;
-            }
+            setActionBar(false, "&cНа указанных этажах нет загруженного синего стекла", 3000L);
+            return;
         }
 
         glasses.sort(Comparator.<BlockPos>comparingInt(BlockPos::getY)
@@ -2656,7 +2674,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         String json = buildExportCodeJson(mc.world, glasses, autoCodeCacheMaxSteps);
         if (json == null || json.isEmpty())
         {
-            setActionBar(false, "&cExport failed", 2500L);
+            setActionBar(false, "&cОшибка экспорта", 2500L);
             return;
         }
 
@@ -2665,16 +2683,16 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             java.nio.file.Files.write(out.toPath(), json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             lastExportCodeFile = out;
-            setActionBar(true, "&aExported: " + out.getName(), 3500L);
-            mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "exportcode saved: " + out.getAbsolutePath()));
+            setActionBar(true, "&aЭкспортировано: " + out.getName(), 3500L);
+            mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "exportcode сохранен: " + out.getAbsolutePath()));
             mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
-                + "Rows exported: " + glasses.size()));
+                + "Экспортировано строк: " + glasses.size()));
             mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
-                + "Chest snapshots included when nearby param chest was detected."));
+                + "Снимки сундуков добавлены, если рядом был обнаружен сундук параметров."));
         }
         catch (Exception e)
         {
-            setActionBar(false, "&cExport failed: " + e.getMessage(), 3500L);
+            setActionBar(false, "&cОшибка экспорта: " + e.getMessage(), 3500L);
         }
     }
 
@@ -2687,12 +2705,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         if (!editorModeActive || !isDevCreativeScoreboard(mc))
         {
-            setActionBar(false, "&cDEV mode only (creative + scoreboard)", 3000L);
+            setActionBar(false, "&cТолько DEV-режим (креатив + scoreboard)", 3000L);
             return;
         }
         if (args == null || args.length == 0)
         {
-            setActionBar(false, "&cUsage: /selectfloor <1..20>", 3000L);
+            setActionBar(false, "&cИспользование: /selectfloor <1..20>", 3000L);
             return;
         }
         String raw = args[0] == null ? "" : args[0].trim();
@@ -2703,12 +2721,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         catch (Exception e)
         {
-            setActionBar(false, "&cUsage: /selectfloor <1..20>", 3000L);
+            setActionBar(false, "&cИспользование: /selectfloor <1..20>", 3000L);
             return;
         }
         if (n < 1 || n > 20)
         {
-            setActionBar(false, "&cFloor must be 1..20", 3000L);
+            setActionBar(false, "&cЭтаж должен быть в диапазоне 1..20", 3000L);
             return;
         }
         int y = (n * 10) - 10;
@@ -2736,23 +2754,41 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             withBlock++;
         }
 
-        setActionBar(true, "&aSelected floor " + n + " (Y=" + y + "), rows=" + withBlock, 4000L);
-        mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "Default export floor set: " + n + " (Y=" + y + ")"));
-        mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW + "Loaded selected rows on this floor: " + withBlock));
+        setActionBar(true, "&aВыбран этаж " + n + " (Y=" + y + "), строк=" + withBlock, 4000L);
+        mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "Этаж экспорта по умолчанию: " + n + " (Y=" + y + ")"));
+        mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW + "Загружено выделенных строк на этом этаже: " + withBlock));
     }
 
     private void runModuleCommand(MinecraftServer server, ICommandSender sender, String[] args)
     {
         if (args == null || args.length == 0)
         {
-            setActionBar(false, "&cUsage: /module publish [name]", 3500L);
+            setActionBar(false, "&cИспользование: /module publish [name] [nocache]", 3500L);
             return;
         }
         String sub = args[0] == null ? "" : args[0].trim().toLowerCase(Locale.ROOT);
         if ("publish".equals(sub))
         {
-            String name = args.length > 1 ? (args[1] == null ? "" : args[1].trim()) : "";
-            runModulePublishCommand(name);
+            String name = "";
+            boolean noCache = false;
+            for (int i = 1; i < args.length; i++)
+            {
+                String tok = args[i] == null ? "" : args[i].trim();
+                if (tok.isEmpty())
+                {
+                    continue;
+                }
+                if ("nocache".equalsIgnoreCase(tok))
+                {
+                    noCache = true;
+                    continue;
+                }
+                if (name.isEmpty())
+                {
+                    name = tok;
+                }
+            }
+            runModulePublishCommand(name, noCache);
             return;
         }
         setActionBar(false, "&cUnknown subcommand: " + sub, 3500L);
@@ -2874,7 +2910,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }, "bettercode-update").start();
     }
 
-    private void runModulePublishCommand(String name)
+    private void runModulePublishCommand(String name, boolean noCache)
+    {
+        runModulePublishCommandWithDir(name, noCache, null);
+    }
+
+    private void runModulePublishCommandWithDir(String name, boolean noCache, File predefinedDir)
     {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc == null || mc.mcDataDir == null || mc.player == null)
@@ -2892,23 +2933,106 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             name = "bundle";
         }
 
-        File publishRoot = new File(mc.mcDataDir, "mldsl_publish");
-        File dir = new File(publishRoot, name + "_" + System.currentTimeMillis());
-        if (!dir.exists() && !dir.mkdirs())
+        File dir = predefinedDir;
+        if (dir == null)
         {
-            setActionBar(false, "&cCan't create folder: " + dir.getAbsolutePath(), 4000L);
+            File publishRoot = new File(mc.mcDataDir, "mldsl_publish");
+            dir = new File(publishRoot, name + "_" + System.currentTimeMillis());
+            if (!dir.exists() && !dir.mkdirs())
+            {
+                setActionBar(false, "&cНе удалось создать папку: " + dir.getAbsolutePath(), 4000L);
+                return;
+            }
+        }
+
+        if (noCache)
+        {
+            List<BlockPos> glasses = collectPublishGlasses(mc.world);
+            if (glasses == null || glasses.isEmpty())
+            {
+                setActionBar(false, "&c/module publish: нет выбранных/видимых строк", 3500L);
+                mc.player.sendMessage(new TextComponentString(TextFormatting.RED
+                    + "/module publish nocache: нет выбранных/видимых строк."));
+                return;
+            }
+            LinkedHashSet<BlockPos> chests = collectExportRowChests(mc.world, glasses, autoCodeCacheMaxSteps);
+            int dim = mc.world.provider.getDimension();
+            ensureChestCaches(dim);
+            for (BlockPos p : chests)
+            {
+                String key = chestKey(dim, p);
+                if (key != null)
+                {
+                    chestCaches.remove(key);
+                }
+            }
+            chestIdDirty = true;
+
+            modulePublishWarmupActive = true;
+            modulePublishWarmupQueue.clear();
+            modulePublishWarmupQueue.addAll(chests);
+            modulePublishWarmupCurrent = null;
+            modulePublishWarmupDim = dim;
+            modulePublishWarmupStartMs = System.currentTimeMillis();
+            modulePublishWarmupDir = dir;
+            modulePublishWarmupName = name;
+
+            mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
+                + "/module publish nocache: прогрев сундуков (tp/open) перед экспортом: " + chests.size()));
+            setActionBar(true, "&e/module publish nocache: прогрев " + chests.size() + " сундуков...", 3500L);
             return;
+        }
+
+        // Cache mode: if some row chests are missing in cache, warm only missing ones first.
+        // Do this only on first call (predefinedDir == null) to avoid warmup loops.
+        if (!noCache && predefinedDir == null)
+        {
+            List<BlockPos> glasses = collectPublishGlasses(mc.world);
+            if (glasses != null && !glasses.isEmpty())
+            {
+                LinkedHashSet<BlockPos> chests = collectExportRowChests(mc.world, glasses, autoCodeCacheMaxSteps);
+                int dim = mc.world.provider.getDimension();
+                ensureChestCaches(dim);
+                LinkedHashSet<BlockPos> missing = new LinkedHashSet<>();
+                for (BlockPos p : chests)
+                {
+                    if (p == null || !isTargetChestBlock(mc.world, p))
+                    {
+                        continue;
+                    }
+                    if (!isChestCached(dim, p))
+                    {
+                        missing.add(p);
+                    }
+                }
+                if (!missing.isEmpty())
+                {
+                    modulePublishWarmupActive = true;
+                    modulePublishWarmupQueue.clear();
+                    modulePublishWarmupQueue.addAll(missing);
+                    modulePublishWarmupCurrent = null;
+                    modulePublishWarmupDim = dim;
+                    modulePublishWarmupStartMs = System.currentTimeMillis();
+                    modulePublishWarmupDir = dir;
+                    modulePublishWarmupName = name;
+
+                    mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
+                        + "/module publish: прогрев недостающих сундуков (tp/open): " + missing.size()));
+                    setActionBar(true, "&e/module publish: прогрев недостающих " + missing.size() + " сундуков...", 3500L);
+                    return;
+                }
+            }
         }
 
         int copied = 0;
 
         // 1) Always generate a fresh exportcode from current selection/floor context.
-        GeneratedExport generated = generateExportCodeNow(name);
+        GeneratedExport generated = generateExportCodeNow(name, !noCache);
         if (generated == null || generated.file == null || !generated.file.isFile())
         {
-            setActionBar(false, "&c/module publish: export failed", 4500L);
+            setActionBar(false, "&c/module publish: ошибка экспорта", 4500L);
             mc.player.sendMessage(new TextComponentString(TextFormatting.RED
-                + "/module publish failed: couldn't generate exportcode from loaded selection/floor."));
+                + "/module publish: не удалось сгенерировать exportcode из текущего выделения/этажа."));
             return;
         }
         File exportFile = generated.file;
@@ -2926,20 +3050,21 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         String compiler = resolveMlDslCompilerPath();
         if (compiler == null || compiler.trim().isEmpty())
         {
-            setActionBar(false, "&c/module publish: mldsl compiler not found", 4500L);
+            setActionBar(false, "&c/module publish: компилятор mldsl не найден", 4500L);
             mc.player.sendMessage(new TextComponentString(TextFormatting.RED
-                + "mldsl compiler not found. Expected: PATH (mldsl) or %LOCALAPPDATA%\\MLDSL\\mldsl.exe"));
+                + "Компилятор mldsl не найден. Ожидается: PATH (mldsl) или %LOCALAPPDATA%\\MLDSL\\mldsl.exe"));
             return;
         }
 
         ExecResult conv = runMlDslExportToMldsl(compiler, exportFile, moduleFile);
         if (!conv.ok || !moduleFile.isFile())
         {
-            setActionBar(false, "&c/module publish: export->mldsl failed", 4500L);
+            setActionBar(false, "&c/module publish: ошибка конвертации export->mldsl", 4500L);
             mc.player.sendMessage(new TextComponentString(TextFormatting.RED
-                + "Converter failed (code=" + conv.exitCode + "): " + trimForChat(conv.stderr)));
+                + "Конвертер завершился с ошибкой (code=" + conv.exitCode + "): " + trimForChat(conv.stderr)));
             mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
-                + "Make sure MLDSL is updated and supports: mldsl exportcode <file> -o <out>"));
+                + "Проверь, что MLDSL обновлен и поддерживает: mldsl exportcode <file> -o <out>"));
+            spamExecResultToChat(mc, "converter", conv);
             return;
         }
         copied++;
@@ -2947,11 +3072,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         ExecResult comp = runMlDslCompileToPlan(compiler, moduleFile, planFile);
         if (!comp.ok || !planFile.isFile())
         {
-            setActionBar(false, "&c/module publish: mldsl compile failed", 4500L);
+            setActionBar(false, "&c/module publish: ошибка компиляции mldsl", 4500L);
             mc.player.sendMessage(new TextComponentString(TextFormatting.RED
-                + "Compile failed (code=" + comp.exitCode + "): " + trimForChat(comp.stderr)));
+                + "Компиляция завершилась с ошибкой (code=" + comp.exitCode + "): " + trimForChat(comp.stderr)));
             mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
-                + "Compiler used: " + compiler));
+                + "Используемый компилятор: " + compiler));
+            spamExecResultToChat(mc, "compile", comp);
             return;
         }
         copied++;
@@ -2973,10 +3099,15 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         catch (Exception ignore) { }
 
         String url = "https://mldsl-hub.pages.dev/publish";
-        setActionBar(true, "&aBundle ready (" + copied + " files). Opening folder + Hub...", 4500L);
-        mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "Publish folder: " + dir.getAbsolutePath()));
+        setActionBar(true, "&aПакет готов (" + copied + " файлов). Открываю папку и Hub...", 4500L);
+        mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "Папка публикации: " + dir.getAbsolutePath()));
         mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
-            + "Rows exported: " + generated.rows + " | MLDSL + plan generated."));
+            + "Экспортировано строк: " + generated.rows + " | MLDSL + plan сгенерированы."));
+        if (noCache)
+        {
+            mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
+                + "Режим публикации: nocache (fallback кэша сундуков отключен)."));
+        }
 
         openFolderAndUrl(dir, url);
     }
@@ -2993,7 +3124,91 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
     }
 
-    private GeneratedExport generateExportCodeNow(String name)
+    private List<BlockPos> collectPublishGlasses(World world)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || world == null)
+        {
+            return Collections.emptyList();
+        }
+        List<BlockPos> glasses = new ArrayList<>();
+        ExportSelection selection = getValidSelectedRows(world);
+        if (!selection.valid.isEmpty())
+        {
+            glasses.addAll(selection.valid);
+        }
+        else
+        {
+            BlockPos seed = resolveExportGlassPos(world);
+            if (seed == null || !world.isBlockLoaded(seed))
+            {
+                return Collections.emptyList();
+            }
+            Integer forced = exportSelectedFloorYByDim.get(world.provider.getDimension());
+            List<Integer> floors = new ArrayList<>();
+            floors.add(forced == null ? seed.getY() : forced);
+            glasses.addAll(collectLoadedBlueGlassesOnFloors(world, floors));
+        }
+        glasses.sort(Comparator.<BlockPos>comparingInt(BlockPos::getY)
+            .thenComparingInt(BlockPos::getZ)
+            .thenComparingInt(BlockPos::getX));
+        return glasses;
+    }
+
+    private LinkedHashSet<BlockPos> collectExportRowChests(World world, List<BlockPos> glasses, int maxSteps)
+    {
+        LinkedHashSet<BlockPos> out = new LinkedHashSet<>();
+        if (world == null || glasses == null || glasses.isEmpty())
+        {
+            return out;
+        }
+        int steps = Math.max(32, maxSteps);
+        for (BlockPos glassPos : glasses)
+        {
+            if (glassPos == null || !world.isBlockLoaded(glassPos))
+            {
+                continue;
+            }
+            BlockPos start = glassPos.up();
+            int emptyPairs = 0;
+            for (int p = 0; p < steps; p++)
+            {
+                BlockPos entry = start.add(-2 * p, 0, 0);
+                BlockPos side = entry.add(-1, 0, 0);
+                if (!world.isBlockLoaded(entry, false) || !world.isBlockLoaded(side, false))
+                {
+                    break;
+                }
+                IBlockState entryState = world.getBlockState(entry);
+                IBlockState sideState = world.getBlockState(side);
+                Block entryBlock = entryState == null ? Blocks.AIR : entryState.getBlock();
+                Block sideBlock = sideState == null ? Blocks.AIR : sideState.getBlock();
+                boolean sidePiston = sideBlock == Blocks.PISTON || sideBlock == Blocks.STICKY_PISTON;
+
+                boolean entryHasSign = findSignAtZMinus1(world, entry) != null;
+                boolean emptySlot = entryBlock == Blocks.AIR && !sidePiston && !entryHasSign;
+                if (emptySlot)
+                {
+                    emptyPairs++;
+                    if (emptyPairs >= 2)
+                    {
+                        break;
+                    }
+                    continue;
+                }
+                emptyPairs = 0;
+
+                BlockPos chestPos = findNearbyExportChestPos(world, entry, null);
+                if (chestPos != null)
+                {
+                    out.add(chestPos);
+                }
+            }
+        }
+        return out;
+    }
+
+    private GeneratedExport generateExportCodeNow(String name, boolean preferChestCache)
     {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc == null || mc.world == null || mc.player == null)
@@ -3010,45 +3225,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             outName = "code";
         }
 
-        List<BlockPos> glasses = new ArrayList<>();
-        ExportSelection selection = getValidSelectedRows(mc.world);
-        if (!selection.valid.isEmpty())
-        {
-            glasses.addAll(selection.valid);
-        }
-        else
-        {
-            BlockPos seed = resolveExportGlassPos(mc.world);
-            if (seed == null || !mc.world.isBlockLoaded(seed))
-            {
-                return null;
-            }
-            Integer forced = exportSelectedFloorYByDim.get(mc.world.provider.getDimension());
-            List<Integer> floors = new ArrayList<>();
-            floors.add(forced == null ? seed.getY() : forced);
-            glasses.addAll(collectLoadedBlueGlassesOnFloors(mc.world, floors));
-            if (glasses.isEmpty())
-            {
-                List<BlockPos> seeds = new ArrayList<>();
-                seeds.add(seed);
-                List<BlockPos> scanned = BlueGlassCodeMap.scan(mc.world, seeds);
-                for (BlockPos p : scanned)
-                {
-                    if (p != null && floors.contains(p.getY()) && mc.world.isBlockLoaded(p))
-                    {
-                        glasses.add(p);
-                    }
-                }
-            }
-        }
+        List<BlockPos> glasses = collectPublishGlasses(mc.world);
         if (glasses.isEmpty())
         {
             return null;
         }
-        glasses.sort(Comparator.<BlockPos>comparingInt(BlockPos::getY)
-            .thenComparingInt(BlockPos::getZ)
-            .thenComparingInt(BlockPos::getX));
-        String json = buildExportCodeJson(mc.world, glasses, autoCodeCacheMaxSteps);
+        String json = buildExportCodeJson(mc.world, glasses, autoCodeCacheMaxSteps, preferChestCache);
         if (json == null || json.trim().isEmpty())
         {
             return null;
@@ -3162,7 +3344,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         Minecraft mc = Minecraft.getMinecraft();
         if (mc != null && mc.player != null)
         {
-            mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW + "Open manually: " + url));
+            mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW + "Открой вручную: " + url));
         }
     }
 
@@ -3423,20 +3605,76 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         return t;
     }
 
+    private void spamExecResultToChat(Minecraft mc, String stage, ExecResult r)
+    {
+        if (mc == null || mc.player == null || r == null)
+        {
+            return;
+        }
+        String hdr = "[BetterCode] " + (stage == null ? "process" : stage) + " full log:";
+        mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW + hdr));
+        spamTextLines(mc, TextFormatting.RED, "stderr", r.stderr);
+        spamTextLines(mc, TextFormatting.GRAY, "stdout", r.stdout);
+    }
+
+    private void spamTextLines(Minecraft mc, TextFormatting color, String label, String text)
+    {
+        if (mc == null || mc.player == null)
+        {
+            return;
+        }
+        String src = text == null ? "" : text.replace("\r\n", "\n").replace('\r', '\n');
+        if (src.trim().isEmpty())
+        {
+            mc.player.sendMessage(new TextComponentString(color + label + ": <empty>"));
+            return;
+        }
+        String[] lines = src.split("\n");
+        int sent = 0;
+        for (String ln : lines)
+        {
+            if (ln == null)
+            {
+                continue;
+            }
+            String t = ln.trim();
+            if (t.isEmpty())
+            {
+                continue;
+            }
+            // Keep each chat message small enough for client/server chat pipeline.
+            int max = 220;
+            for (int i = 0; i < t.length(); i += max)
+            {
+                String part = t.substring(i, Math.min(t.length(), i + max));
+                mc.player.sendMessage(new TextComponentString(color + label + ": " + part));
+                sent++;
+                if (sent >= 120)
+                {
+                    mc.player.sendMessage(new TextComponentString(color + label + ": <truncated>"));
+                    return;
+                }
+            }
+        }
+    }
+
     private String resolveMlDslCompilerPath()
     {
         String local = System.getenv("LOCALAPPDATA");
         if (local != null && !local.trim().isEmpty())
         {
-            File exeProgram = new File(local, "Programs\\MLDSL\\mldsl.exe");
-            if (exeProgram.isFile())
+            File[] candidates = new File[]{
+                new File(local, "MLDSL\\mldsl.exe"),
+                new File(local, "Programs\\MLDSL\\mldsl.exe"),
+                new File(local, "MLDSL\\mldsl.py"),
+                new File(local, "Programs\\MLDSL\\mldsl.py")
+            };
+            for (File c : candidates)
             {
-                return exeProgram.getAbsolutePath();
-            }
-            File exe = new File(local, "MLDSL\\mldsl.exe");
-            if (exe.isFile())
-            {
-                return exe.getAbsolutePath();
+                if (c.isFile())
+                {
+                    return c.getAbsolutePath();
+                }
             }
         }
         if (isCommandAvailable("mldsl"))
@@ -3446,11 +3684,43 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         return null;
     }
 
+    private void runExportCodeDebugCommand(MinecraftServer server, ICommandSender sender, String[] args)
+    {
+        if (args != null && args.length > 0)
+        {
+            String v = args[0] == null ? "" : args[0].trim().toLowerCase(Locale.ROOT);
+            if ("on".equals(v) || "1".equals(v) || "true".equals(v))
+            {
+                exportCodeDebug = true;
+            }
+            else if ("off".equals(v) || "0".equals(v) || "false".equals(v))
+            {
+                exportCodeDebug = false;
+            }
+            else
+            {
+                setActionBar(false, "&cUsage: /exportcodedebug [on|off]", 3000L);
+                return;
+            }
+        }
+        else
+        {
+            exportCodeDebug = !exportCodeDebug;
+        }
+        setActionBar(true, exportCodeDebug ? "&aExportCode debug ON" : "&cExportCode debug OFF", 3000L);
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc != null && mc.player != null)
+        {
+            mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
+                + "exportcodedebug=" + exportCodeDebug + " (details in chat + latest.log)"));
+        }
+    }
+
     private File resolveMlDslApiAliasesPath(String compilerPath)
     {
         try
         {
-            ExecResult paths = runProcess(new String[]{compilerPath, "paths"}, 6000L);
+            ExecResult paths = runMlDslCommand(compilerPath, 6000L, "paths");
             if (paths.ok && paths.stdout != null)
             {
                 for (String line : paths.stdout.split("\\r?\\n"))
@@ -3517,73 +3787,95 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private ExecResult runMlDslExportToMldsl(String compilerPath, File exportFile, File outMldsl)
     {
         File apiAliases = resolveMlDslApiAliasesPath(compilerPath);
-        ExecResult r1;
-        if (apiAliases != null && apiAliases.isFile())
+        if (apiAliases == null || !apiAliases.isFile())
         {
-            r1 = runProcess(new String[]{
-                compilerPath,
-                "exportcode",
-                exportFile.getAbsolutePath(),
-                "--api",
-                apiAliases.getAbsolutePath(),
-                "-o",
-                outMldsl.getAbsolutePath()
-            }, 60_000L);
+            return new ExecResult(false, 2, "",
+                "api_aliases.json not found; conversion without --api is disabled to prevent wrong action mapping.");
         }
-        else
-        {
-            r1 = runProcess(new String[]{
-                compilerPath,
-                "exportcode",
-                exportFile.getAbsolutePath(),
-                "-o",
-                outMldsl.getAbsolutePath()
-            }, 60_000L);
-        }
-        if (r1.ok)
-        {
-            return r1;
-        }
-
-        ExecResult r2 = runProcess(new String[]{
-            compilerPath,
+        return runMlDslCommand(compilerPath, 60_000L,
             "exportcode",
             exportFile.getAbsolutePath(),
+            "--api",
+            apiAliases.getAbsolutePath(),
             "-o",
             outMldsl.getAbsolutePath()
-        }, 60_000L);
-        if (r2.ok)
-        {
-            return r2;
-        }
-        return new ExecResult(false, r2.exitCode, r1.stdout + "\n" + r2.stdout, r1.stderr + "\n" + r2.stderr);
+        );
     }
 
     private ExecResult runMlDslCompileToPlan(String compilerPath, File mldslFile, File planFile)
     {
-        ExecResult r1 = runProcess(new String[]{
-            compilerPath,
+        return runMlDslCommand(compilerPath, 60_000L,
             "compile",
             mldslFile.getAbsolutePath(),
             "--plan",
             planFile.getAbsolutePath()
-        }, 60_000L);
-        if (r1.ok)
+        );
+    }
+
+    private ExecResult runMlDslCommand(String compilerPath, long timeoutMs, String... args)
+    {
+        List<String[]> attempts = new ArrayList<>();
+        String cp = compilerPath == null ? "" : compilerPath.trim();
+        if (cp.isEmpty())
         {
-            return r1;
+            return new ExecResult(false, -1, "", "compiler path is empty");
         }
 
-        ExecResult r2 = runProcess(new String[]{
-            compilerPath,
-            mldslFile.getAbsolutePath(),
-            "--plan",
-            planFile.getAbsolutePath()
-        }, 60_000L);
-        if (r2.ok)
+        boolean isPy = cp.toLowerCase(Locale.ROOT).endsWith(".py");
+        if (isPy)
         {
-            return r2;
+            attempts.add(concatCmd(new String[]{"py", "-3", cp}, args));
+            attempts.add(concatCmd(new String[]{"python", cp}, args));
+            attempts.add(concatCmd(new String[]{cp}, args));
         }
-        return new ExecResult(false, r2.exitCode, r1.stdout + "\n" + r2.stdout, r1.stderr + "\n" + r2.stderr);
+        else
+        {
+            attempts.add(concatCmd(new String[]{cp}, args));
+        }
+
+        ExecResult last = new ExecResult(false, -1, "", "no attempts");
+        for (String[] cmd : attempts)
+        {
+            ExecResult r = runProcess(cmd, timeoutMs);
+            if (r.ok)
+            {
+                return r;
+            }
+            last = r;
+            String msg = (r.stderr == null ? "" : r.stderr).toLowerCase(Locale.ROOT);
+            // If launcher is missing, try next attempt.
+            if (msg.contains("cannot find the file") || msg.contains("is not recognized")
+                || msg.contains("filenotfoundexception") || msg.contains("no such file"))
+            {
+                continue;
+            }
+            // For real command/runtime errors, stop and return immediately.
+            break;
+        }
+        return last;
+    }
+
+    private static String[] concatCmd(String[] prefix, String[] args)
+    {
+        int n1 = prefix == null ? 0 : prefix.length;
+        int n2 = args == null ? 0 : args.length;
+        String[] out = new String[n1 + n2];
+        int k = 0;
+        if (prefix != null)
+        {
+            for (String s : prefix)
+            {
+                out[k++] = s;
+            }
+        }
+        if (args != null)
+        {
+            for (String s : args)
+            {
+                out[k++] = s;
+            }
+        }
+        return out;
     }
 
     private ExecResult runProcess(String[] cmd, long timeoutMs)
@@ -3591,6 +3883,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         try
         {
             ProcessBuilder pb = new ProcessBuilder(cmd);
+            Map<String, String> env = pb.environment();
+            // Force UTF-8 process I/O to avoid mojibake in stderr/stdout on Windows.
+            env.put("PYTHONUTF8", "1");
+            env.put("PYTHONIOENCODING", "UTF-8");
+            env.put("LC_ALL", "C.UTF-8");
+            env.put("LANG", "C.UTF-8");
             pb.redirectErrorStream(false);
             Process p = pb.start();
             ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -3610,12 +3908,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     p.destroyForcibly();
                 }
                 catch (Exception ignore) { }
-                return new ExecResult(false, -1, out.toString("UTF-8"), "timeout");
+                return new ExecResult(false, -1, out.toString(StandardCharsets.UTF_8.name()), "timeout");
             }
             try { tOut.join(200L); } catch (Exception ignore) { }
             try { tErr.join(200L); } catch (Exception ignore) { }
             int code = p.exitValue();
-            return new ExecResult(code == 0, code, out.toString("UTF-8"), err.toString("UTF-8"));
+            return new ExecResult(code == 0, code,
+                out.toString(StandardCharsets.UTF_8.name()),
+                err.toString(StandardCharsets.UTF_8.name()));
         }
         catch (Exception e)
         {
@@ -3707,8 +4007,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         if (!mc.playerController.isInCreativeMode() || mc.playerController.getCurrentGameType() != GameType.CREATIVE)
         {
-            setActionBar(false, "&cНужно Creative", 2500L);
-            mc.player.sendMessage(new TextComponentString(TextFormatting.RED + "Code Selector: требуется Creative режим."));
+            setActionBar(false, "&c\u041d\u0443\u0436\u0435\u043d Creative", 2500L);
+            mc.player.sendMessage(new TextComponentString(TextFormatting.RED
+                + "Code Selector: \u0442\u0440\u0435\u0431\u0443\u0435\u0442\u0441\u044f Creative \u0440\u0435\u0436\u0438\u043c."));
             return;
         }
         int slot = giveItemToHotbarSlot(mc, buildCodeSelectorItem());
@@ -3718,7 +4019,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             mc.player.connection.sendPacket(new CPacketHeldItemChange(slot));
         }
         catch (Exception ignore) { }
-        setActionBar(true, "&aCode Selector выдан. ПКМ: выбрать/убрать строку, ЛКМ: очистить, F: закончить. Затем: /exportcode [name]", 6500L);
+        setActionBar(true,
+            "&aCode Selector \u0432\u044b\u0434\u0430\u043d. "
+                + "\u041f\u041a\u041c: \u0432\u044b\u0431\u0440\u0430\u0442\u044c/\u0443\u0431\u0440\u0430\u0442\u044c \u0441\u0442\u0440\u043e\u043a\u0443, "
+                + "\u041b\u041a\u041c: \u043e\u0447\u0438\u0441\u0442\u0438\u0442\u044c, F: \u0437\u0430\u043a\u043e\u043d\u0447\u0438\u0442\u044c. "
+                + "\u0417\u0430\u0442\u0435\u043c: /exportcode [name]",
+            6500L);
     }
 
     private static List<Integer> parseCsvInts(String raw)
@@ -3890,6 +4196,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
     private String buildExportCodeJson(World world, List<BlockPos> glasses, int maxSteps)
     {
+        return buildExportCodeJson(world, glasses, maxSteps, true);
+    }
+
+    private String buildExportCodeJson(World world, List<BlockPos> glasses, int maxSteps, boolean preferChestCache)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        exportCodeDbg(mc, "buildExportCodeJson: glasses=" + (glasses == null ? 0 : glasses.size())
+            + " maxSteps=" + maxSteps);
         String scope = getCodeGlassScopeKey(world);
         StringBuilder sb = new StringBuilder();
         sb.append("{");
@@ -3906,9 +4220,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             {
                 continue;
             }
-            String rowJson = buildExportRowJson(world, glassPos, Math.max(32, maxSteps), rowIndex++);
+            String rowJson = buildExportRowJson(world, glassPos, Math.max(32, maxSteps), rowIndex++, preferChestCache);
             if (rowJson == null || rowJson.isEmpty())
             {
+                exportCodeDbg(mc, "row skipped: glass=" + glassPos + " rowJson empty");
                 continue;
             }
             if (!firstRow)
@@ -3922,100 +4237,140 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         return sb.toString();
     }
 
-    private String buildExportRowJson(World world, BlockPos glassPos, int maxSteps, int rowIndex)
+    private String buildExportRowJson(World world, BlockPos glassPos, int maxSteps, int rowIndex, boolean preferChestCache)
     {
+        Minecraft mc = Minecraft.getMinecraft();
         if (world == null || glassPos == null || !world.isBlockLoaded(glassPos))
         {
-            return null;
-        }
-        BlockPos start = glassPos.up();
-        if (!world.isBlockLoaded(start, false))
-        {
+            exportCodeDbg(mc, "row[" + rowIndex + "] abort: glass null/unloaded glass=" + glassPos);
             return null;
         }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("{");
-        sb.append("\"row\":").append(rowIndex).append(",");
-        sb.append("\"glass\":").append(posJson(glassPos)).append(",");
-        sb.append("\"blocks\":[");
-
-        boolean first = true;
-        int emptyPairs = 0;
-
-        for (int p = 0; p < maxSteps; p++)
+        ExportCodeCore.RowContext ctx = new ExportCodeCore.RowContext()
         {
-            BlockPos entryPos = start.add(-2 * p, 0, 0);
-            BlockPos sidePos = entryPos.add(1, 0, 0);
-            if (!world.isBlockLoaded(entryPos, false) || !world.isBlockLoaded(sidePos, false))
+            @Override
+            public boolean isLoaded(ExportCodeCore.Pos pos)
             {
-                break;
+                return world.isBlockLoaded(new BlockPos(pos.x, pos.y, pos.z), false);
             }
 
-            IBlockState entryState = world.getBlockState(entryPos);
-            IBlockState sideState = world.getBlockState(sidePos);
-            Block entryBlock = entryState == null ? Blocks.AIR : entryState.getBlock();
-            Block sideBlock = sideState == null ? Blocks.AIR : sideState.getBlock();
-
-            BlockPos signPos = findSignAtZMinus1(world, entryPos);
-            String[] signLines = null;
-            if (signPos != null)
+            @Override
+            public String getBlockId(ExportCodeCore.Pos pos)
             {
+                IBlockState st = world.getBlockState(new BlockPos(pos.x, pos.y, pos.z));
+                Block b = st == null ? Blocks.AIR : st.getBlock();
+                ResourceLocation id = b == null ? null : b.getRegistryName();
+                return id == null ? "minecraft:air" : id.toString();
+            }
+
+            @Override
+            public String[] getSignLinesAtEntry(ExportCodeCore.Pos entryPos)
+            {
+                BlockPos entry = new BlockPos(entryPos.x, entryPos.y, entryPos.z);
+                BlockPos signPos = findSignAtZMinus1(world, entry);
+                if (signPos == null)
+                {
+                    return null;
+                }
                 TileEntity te = world.getTileEntity(signPos);
-                if (te instanceof TileEntitySign)
+                if (!(te instanceof TileEntitySign))
                 {
-                    TileEntitySign sign = (TileEntitySign) te;
-                    signLines = new String[]{"", "", "", ""};
-                    for (int i = 0; i < 4 && i < sign.signText.length; i++)
-                    {
-                        String raw = sign.signText[i] == null ? "" : sign.signText[i].getUnformattedText();
-                        raw = TextFormatting.getTextWithoutFormattingCodes(raw);
-                        signLines[i] = raw == null ? "" : raw;
-                    }
+                    return null;
                 }
-                else
+                TileEntitySign sign = (TileEntitySign) te;
+                String[] out = new String[]{"", "", "", ""};
+                for (int i = 0; i < 4 && i < sign.signText.length; i++)
                 {
-                    signLines = getCachedSignLines(world, signPos);
+                    String raw = sign.signText[i] == null ? "" : sign.signText[i].getUnformattedText();
+                    raw = TextFormatting.getTextWithoutFormattingCodes(raw);
+                    out[i] = raw == null ? "" : raw;
                 }
+                return out;
             }
 
-            boolean emptySlot = (entryBlock == null || entryBlock == Blocks.AIR)
-                && (sideBlock == null || sideBlock == Blocks.AIR)
-                && (signLines == null || allEmpty(signLines));
-
-            if (emptySlot)
+            @Override
+            public String getChestJsonAtEntry(ExportCodeCore.Pos entryPos, boolean preferChestCacheInner)
             {
-                emptyPairs++;
-                if (emptyPairs >= 2)
-                {
-                    break;
-                }
-                continue;
+                BlockPos entry = new BlockPos(entryPos.x, entryPos.y, entryPos.z);
+                BlockPos signPos = findSignAtZMinus1(world, entry);
+                return buildNearbyExportChestJson(world, entry, signPos, preferChestCacheInner);
             }
-            emptyPairs = 0;
 
-            String chestJson = buildNearbyExportChestJson(world, entryPos, signPos);
-
-            if (!first) sb.append(",");
-            first = false;
-            sb.append(blockJson(entryPos, entryState, signLines, null, chestJson));
-
-            if (sideBlock == Blocks.PISTON || sideBlock == Blocks.STICKY_PISTON)
+            @Override
+            public String getFacing(ExportCodeCore.Pos pos)
             {
-                String facing = "";
                 try
                 {
-                    EnumFacing f = sideState.getValue(BlockPistonBase.FACING);
-                    facing = f == null ? "" : f.getName().toLowerCase(Locale.ROOT);
+                    IBlockState st = world.getBlockState(new BlockPos(pos.x, pos.y, pos.z));
+                    EnumFacing f = st == null ? null : st.getValue(BlockPistonBase.FACING);
+                    return f == null ? "" : f.getName().toLowerCase(Locale.ROOT);
                 }
-                catch (Exception ignore) { }
-                sb.append(",");
-                sb.append(blockJson(sidePos, sideState, null, facing, null));
+                catch (Exception ignore)
+                {
+                    return "";
+                }
             }
-        }
+        };
 
-        sb.append("]}");
+        return ExportCodeCore.buildRowJson(
+            ctx,
+            new ExportCodeCore.Pos(glassPos.getX(), glassPos.getY(), glassPos.getZ()),
+            Math.max(32, maxSteps),
+            rowIndex,
+            preferChestCache,
+            msg -> exportCodeDbg(mc, msg)
+        );
+    }
+
+    private String summarizeRows(List<BlockPos> rows, int max)
+    {
+        if (rows == null || rows.isEmpty())
+        {
+            return "[]";
+        }
+        StringBuilder sb = new StringBuilder("[");
+        int n = Math.min(max, rows.size());
+        for (int i = 0; i < n; i++)
+        {
+            if (i > 0)
+            {
+                sb.append(", ");
+            }
+            sb.append(rows.get(i));
+        }
+        if (rows.size() > max)
+        {
+            sb.append(", ... +").append(rows.size() - max);
+        }
+        sb.append("]");
         return sb.toString();
+    }
+
+    private String blockNameSafe(Block b)
+    {
+        if (b == null)
+        {
+            return "null";
+        }
+        ResourceLocation id = b.getRegistryName();
+        return id == null ? b.toString() : id.toString();
+    }
+
+    private void exportCodeDbg(Minecraft mc, String msg)
+    {
+        if (!exportCodeDebug)
+        {
+            return;
+        }
+        String line = "[BetterCode] exportcode-debug: " + msg;
+        if (logger != null)
+        {
+            logger.info(line);
+        }
+        if (mc != null && mc.player != null)
+        {
+            mc.player.sendMessage(new TextComponentString(TextFormatting.GRAY + line));
+        }
     }
 
     private static boolean allEmpty(String[] lines)
@@ -4077,43 +4432,76 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         return sb.toString();
     }
 
-    private String buildNearbyExportChestJson(World world, BlockPos entryPos, BlockPos signPos)
+    private String buildNearbyExportChestJson(World world, BlockPos entryPos, BlockPos signPos, boolean preferChestCache)
     {
         BlockPos chestPos = findNearbyExportChestPos(world, entryPos, signPos);
         if (chestPos == null)
         {
             return null;
         }
+        List<ItemStack> liveItems = new ArrayList<>();
+        String title = "";
+        int size = 27;
         TileEntity te = world.getTileEntity(chestPos);
-        if (!(te instanceof IInventory))
+        if (te instanceof IInventory)
         {
-            return null;
+            IInventory inv = (IInventory) te;
+            try
+            {
+                size = Math.max(1, inv.getSizeInventory());
+            }
+            catch (Exception ignore) { }
+            try
+            {
+                title = inv.getDisplayName() == null ? "" : inv.getDisplayName().getUnformattedText();
+            }
+            catch (Exception ignore) { }
+            for (int i = 0; i < size; i++)
+            {
+                try
+                {
+                    ItemStack st = inv.getStackInSlot(i);
+                    liveItems.add(st == null ? ItemStack.EMPTY : st);
+                }
+                catch (Exception e)
+                {
+                    liveItems.add(ItemStack.EMPTY);
+                }
+            }
         }
-        IInventory inv = (IInventory) te;
+
+        List<ItemStack> bestItems = liveItems;
+        int dim = world.provider.getDimension();
+        if (preferChestCache)
+        {
+            ensureChestCaches(dim);
+            String key = chestKey(dim, chestPos);
+            ChestCache cached = chestCaches.get(key);
+            boolean liveHasAny = containsAnyNonEmpty(liveItems);
+            if (!liveHasAny && cached != null && cached.items != null && containsAnyNonEmpty(cached.items))
+            {
+                bestItems = cached.items;
+                if ((title == null || title.trim().isEmpty()) && cached.label != null)
+                {
+                    title = cached.label;
+                }
+                if (size <= 0)
+                {
+                    size = Math.max(1, cached.items.size());
+                }
+            }
+        }
+
         StringBuilder sb = new StringBuilder();
         sb.append("{");
         sb.append("\"pos\":").append(posJson(chestPos)).append(",");
-        String title = "";
-        try
-        {
-            title = inv.getDisplayName() == null ? "" : inv.getDisplayName().getUnformattedText();
-        }
-        catch (Exception ignore) { }
         sb.append("\"title\":\"").append(escapeJson(title == null ? "" : title)).append("\",");
-        sb.append("\"size\":").append(inv.getSizeInventory()).append(",");
+        sb.append("\"size\":").append(Math.max(1, size)).append(",");
         sb.append("\"slots\":[");
         boolean first = true;
-        for (int i = 0; i < inv.getSizeInventory(); i++)
+        for (int i = 0; i < bestItems.size(); i++)
         {
-            ItemStack st;
-            try
-            {
-                st = inv.getStackInSlot(i);
-            }
-            catch (Exception e)
-            {
-                continue;
-            }
+            ItemStack st = bestItems.get(i);
             if (st == null || st.isEmpty())
             {
                 continue;
@@ -4129,37 +4517,38 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         return sb.toString();
     }
 
+    private static boolean containsAnyNonEmpty(List<ItemStack> items)
+    {
+        if (items == null || items.isEmpty())
+        {
+            return false;
+        }
+        for (ItemStack st : items)
+        {
+            if (st != null && !st.isEmpty())
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private BlockPos findNearbyExportChestPos(World world, BlockPos entryPos, BlockPos signPos)
     {
         if (world == null || entryPos == null)
         {
             return null;
         }
-        List<BlockPos> probes = new ArrayList<>();
-        probes.add(entryPos.add(0, 1, 1));
-        probes.add(entryPos.add(0, 1, 0));
-        probes.add(entryPos.add(0, 0, 1));
-        probes.add(entryPos.add(0, 1, -1));
-        probes.add(entryPos.add(0, 0, -1));
-        if (signPos != null)
+        // Root-fix: bind chest strictly to current action block geometry.
+        // Server layout for code actions is chest at +Y from the action block.
+        // Broad probing can pick neighboring action chests and corrupt export.
+        BlockPos chestPos = entryPos.up();
+        if (!world.isBlockLoaded(chestPos, false))
         {
-            probes.add(signPos.add(0, 1, 1));
-            probes.add(signPos.add(0, 1, 2));
-            probes.add(signPos.add(0, 0, 1));
+            return null;
         }
-        for (BlockPos p : probes)
-        {
-            if (p == null || !world.isBlockLoaded(p, false))
-            {
-                continue;
-            }
-            Block b = world.getBlockState(p).getBlock();
-            if (isExportChestBlock(b))
-            {
-                return p;
-            }
-        }
-        return null;
+        Block b = world.getBlockState(chestPos).getBlock();
+        return isExportChestBlock(b) ? chestPos : null;
     }
 
     private static boolean isExportChestBlock(Block b)
@@ -5678,7 +6067,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         Set<BlockPos> selected = codeSelectedGlassesByDim.get(dim);
         if (selected != null && selected.remove(glassPos))
         {
-            setActionBar(true, "&eCode Selector: row removed (" + selected.size() + ")", 1500L);
+            setActionBar(true, "&eCode Selector: строка убрана (" + selected.size() + ")", 1500L);
         }
     }
 
@@ -5777,6 +6166,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             set.clear();
         }
+    }
+
+    private void clearAllCodeSelections()
+    {
+        codeSelectedGlassesByDim.clear();
     }
 
     private int getSelectedRowCount(World world)
@@ -5893,7 +6287,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             mc.player.connection.sendPacket(new CPacketHeldItemChange(slot));
         }
         catch (Exception ignore) { }
-        setActionBar(true, "&aCode Selector выдан локально (dev utils)", 1800L);
+        setActionBar(true,
+            "&aCode Selector \u0432\u044b\u0434\u0430\u043d \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e (dev utils)",
+            1800L);
         return true;
     }
 
@@ -6645,11 +7041,116 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             lastObservedContainerItems.add(st.isEmpty() ? ItemStack.EMPTY : st.copy());
         }
-        lastObservedContainerMs = System.currentTimeMillis();
+        long now = System.currentTimeMillis();
+        lastObservedContainerMs = now;
         String title = getGuiTitle(chest);
         String hash = buildMenuHash(items);
         CachedMenu menu = new CachedMenu(title, size, items, hash);
         Minecraft mc = Minecraft.getMinecraft();
+
+        // Resolve current chest position/dim for paging-aware snapshots.
+        BlockPos chestPos = null;
+        int chestDim = 0;
+        String chestLabel = lastClickedLabel;
+        if (inv instanceof TileEntityChest)
+        {
+            TileEntityChest te = (TileEntityChest) inv;
+            chestPos = te.getPos();
+            chestDim = te.getWorld().provider.getDimension();
+            chestLabel = getChestLabel(te.getWorld(), chestPos);
+            lastClickedPos = chestPos;
+            lastClickedDim = chestDim;
+            lastClickedMs = now;
+        }
+        else if (lastClickedPos != null && lastClickedChest && !lastClickedIsSign && now - lastClickedMs < 5000L)
+        {
+            chestPos = lastClickedPos;
+            chestDim = lastClickedDim;
+        }
+
+        // Multi-page chest capture:
+        // save pages into one absolute-slots cache (slot = local + page*size).
+        boolean pageTurnRequested = false;
+        if (lastClickedChest && allowChestSnapshot && chestPos != null && size > 0)
+        {
+            String key = chestKey(chestDim, chestPos);
+            if (chestPageScanKey == null || !chestPageScanKey.equals(key) || chestPageScanSize != size)
+            {
+                resetChestPageScanState();
+                chestPageScanKey = key;
+                chestPageScanSize = size;
+            }
+
+            if (chestPageAwaitCursorClear)
+            {
+                boolean cursorEmpty = true;
+                try
+                {
+                    ItemStack carried = mc == null || mc.player == null ? ItemStack.EMPTY : mc.player.inventory.getItemStack();
+                    cursorEmpty = carried == null || carried.isEmpty();
+                }
+                catch (Exception ignore) { }
+
+                boolean changed = chestPageLastHash != null && !chestPageLastHash.equals(hash);
+                if (cursorEmpty && changed)
+                {
+                    chestPageScanIndex++;
+                    chestPageAwaitCursorClear = false;
+                    chestPageAwaitStartMs = 0L;
+                    chestPageNextActionMs = now + 150L;
+                    exportCodeDbg(mc, "chest-page: switched to page " + (chestPageScanIndex + 1) + " key=" + chestPageScanKey);
+                }
+                else if (now - chestPageAwaitStartMs > CHEST_PAGE_WAIT_TIMEOUT_MS)
+                {
+                    chestPageAwaitCursorClear = false;
+                    chestPageAwaitStartMs = 0L;
+                    exportCodeDbg(mc, "chest-page: wait timeout key=" + chestPageScanKey + " retry=" + chestPageRetryCount);
+                }
+            }
+
+            if (!chestPageAwaitCursorClear)
+            {
+                mergeChestPageToCache(chestDim, chestPos, size, chestPageScanIndex, items, chestLabel);
+
+                ItemStack lastSlot = items.isEmpty() ? ItemStack.EMPTY : items.get(size - 1);
+                boolean hasNextPage = isNextPageArrow(lastSlot);
+                if (hasNextPage && now >= chestPageNextActionMs)
+                {
+                    if (chestPageRetryCount < CHEST_PAGE_MAX_RETRIES && mc != null && mc.player != null && mc.playerController != null)
+                    {
+                        int slotNumber = findNonPlayerSlotNumber(chest, size - 1);
+                        if (slotNumber >= 0)
+                        {
+                            try
+                            {
+                                mc.playerController.windowClick(chest.inventorySlots.windowId, slotNumber, 0, ClickType.PICKUP, mc.player);
+                                chestPageLastHash = hash;
+                                chestPageAwaitCursorClear = true;
+                                chestPageAwaitStartMs = now;
+                                chestPageRetryCount++;
+                                chestPageNextActionMs = now + 250L;
+                                pageTurnRequested = true;
+                                exportCodeDbg(mc, "chest-page: click next page key=" + chestPageScanKey
+                                    + " page=" + (chestPageScanIndex + 1) + " try=" + chestPageRetryCount);
+                            }
+                            catch (Exception e)
+                            {
+                                exportCodeDbg(mc, "chest-page: click failed key=" + chestPageScanKey + " err=" + e.getClass().getSimpleName());
+                            }
+                        }
+                    }
+                    else if (chestPageRetryCount >= CHEST_PAGE_MAX_RETRIES)
+                    {
+                        exportCodeDbg(mc, "chest-page: retries exhausted key=" + chestPageScanKey + " pages=" + (chestPageScanIndex + 1));
+                    }
+                }
+            }
+        }
+        else
+        {
+            resetChestPageScanState();
+        }
+
         if (pendingCacheKey != null)
         {
             menuCache.put(pendingCacheKey, menu);
@@ -6669,18 +7170,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             setActionBar(true, "&aCode menu cached.", 2000L);
             menuCacheDirty = true;
         }
-        if (inv instanceof TileEntityChest)
+        if (chestPos != null)
         {
-            TileEntityChest te = (TileEntityChest) inv;
-            cacheChestInventory(te, items);
-            lastClickedPos = te.getPos();
-            lastClickedDim = te.getWorld().provider.getDimension();
-            lastClickedMs = System.currentTimeMillis();
-        }
-        else if (lastClickedPos != null && lastClickedChest && !lastClickedIsSign
-            && System.currentTimeMillis() - lastClickedMs < 5000L)
-        {
-            cacheChestInventoryAt(lastClickedDim, lastClickedPos, items, lastClickedLabel);
+            if (!lastClickedChest || !allowChestSnapshot)
+            {
+                cacheChestInventoryAt(chestDim, chestPos, items, chestLabel);
+            }
         }
 
         // If user clicked a slot that opened this menu, record mapping from clicked item -> available items
@@ -6730,7 +7225,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
 
         // --- Auto-cache: close chest immediately after snapshot so player doesn't notice ---
-        if (autoCacheInProgress)
+        if (autoCacheInProgress && !pageTurnRequested && !chestPageAwaitCursorClear)
         {
             if (mc != null && mc.player != null)
             {
@@ -6922,6 +7417,108 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
     }
 
+    private void resetChestPageScanState()
+    {
+        chestPageScanKey = null;
+        chestPageScanSize = 0;
+        chestPageScanIndex = 0;
+        chestPageLastHash = "";
+        chestPageAwaitCursorClear = false;
+        chestPageAwaitStartMs = 0L;
+        chestPageNextActionMs = 0L;
+        chestPageRetryCount = 0;
+    }
+
+    private static boolean isNextPageArrow(ItemStack st)
+    {
+        if (st == null || st.isEmpty() || st.getItem() != Items.ARROW)
+        {
+            return false;
+        }
+        List<String> lore = ItemStackUtils.getLore(st);
+        if (lore == null || lore.isEmpty())
+        {
+            return false;
+        }
+        boolean hasOpen = false;
+        boolean hasNext = false;
+        for (String ln : lore)
+        {
+            String n = ln == null ? "" : TextFormatting.getTextWithoutFormattingCodes(ln);
+            n = n == null ? "" : n.replace('\u00A0', ' ').toLowerCase(Locale.ROOT);
+            if (n.contains("нажми, чтобы открыть"))
+            {
+                hasOpen = true;
+            }
+            if (n.contains("следующую страницу"))
+            {
+                hasNext = true;
+            }
+        }
+        return hasOpen && hasNext;
+    }
+
+    private void mergeChestPageToCache(int dim, BlockPos pos, int pageSize, int pageIndex, List<ItemStack> pageItems, String label)
+    {
+        if (pos == null || pageSize <= 0 || pageIndex < 0 || pageItems == null)
+        {
+            return;
+        }
+        String key = chestKey(dim, pos);
+        if (key == null)
+        {
+            return;
+        }
+        ChestCache prev = chestCaches.get(key);
+        List<ItemStack> merged = new ArrayList<>();
+        if (prev != null && prev.items != null)
+        {
+            for (ItemStack st : prev.items)
+            {
+                merged.add(st == null || st.isEmpty() ? ItemStack.EMPTY : st.copy());
+            }
+        }
+        int offset = pageIndex * pageSize;
+        while (merged.size() < offset + pageSize)
+        {
+            merged.add(ItemStack.EMPTY);
+        }
+        for (int i = 0; i < pageSize && i < pageItems.size(); i++)
+        {
+            ItemStack st = pageItems.get(i);
+            merged.set(offset + i, st == null || st.isEmpty() ? ItemStack.EMPTY : st.copy());
+        }
+        chestCaches.put(key, new ChestCache(dim, pos, merged, System.currentTimeMillis(), label));
+        updateChestIdCache(dim, pos, merged, label);
+    }
+
+    private int findNonPlayerSlotNumber(GuiContainer gui, int nonPlayerIndex)
+    {
+        if (gui == null || gui.inventorySlots == null || nonPlayerIndex < 0)
+        {
+            return -1;
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null)
+        {
+            return -1;
+        }
+        int idx = 0;
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || slot.inventory == mc.player.inventory)
+            {
+                continue;
+            }
+            if (idx == nonPlayerIndex)
+            {
+                return slot.slotNumber;
+            }
+            idx++;
+        }
+        return -1;
+    }
+
     private void queueFakeMenuClick(GuiContainer gui)
     {
         if (gui == null)
@@ -7088,6 +7685,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         lastClickedPos = null;
         lastClickedLabel = null;
         lastClickedIsSign = false;
+        resetChestPageScanState();
     }
 
     private String getChestLabel(World world, BlockPos chestPos)
@@ -12590,7 +13188,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         for (int p = 0; p < maxSteps; p++)
         {
             BlockPos entryPos = start.add(-2 * p, 0, 0);
-            BlockPos sidePos = entryPos.add(1, 0, 0);
+            BlockPos sidePos = entryPos.add(-1, 0, 0);
 
             if (!world.isBlockLoaded(entryPos, false) || !world.isBlockLoaded(sidePos, false))
             {
@@ -12710,6 +13308,107 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 cacheAllCurrentTarget.getX() + 0.5,
                 cacheAllCurrentTarget.getY() + 0.5,
                 cacheAllCurrentTarget.getZ() + 0.5
+            );
+        }
+    }
+
+    private void handleModulePublishWarmupTick(Minecraft mc, long now)
+    {
+        if (!modulePublishWarmupActive)
+        {
+            return;
+        }
+        if (mc == null || mc.world == null || mc.player == null)
+        {
+            modulePublishWarmupActive = false;
+            modulePublishWarmupQueue.clear();
+            modulePublishWarmupCurrent = null;
+            modulePublishWarmupDir = null;
+            modulePublishWarmupName = null;
+            return;
+        }
+        if (mc.world.provider.getDimension() != modulePublishWarmupDim)
+        {
+            return;
+        }
+        if (!editorModeActive || !isDevCreativeScoreboard(mc))
+        {
+            return;
+        }
+        if (isHoldingIronOrGoldIngot(mc) || autoCacheInProgress || mc.currentScreen != null)
+        {
+            return;
+        }
+        if (!tpPathQueue.isEmpty())
+        {
+            return;
+        }
+        // Hard timeout safety.
+        if (now - modulePublishWarmupStartMs > 120000L)
+        {
+            modulePublishWarmupActive = false;
+            modulePublishWarmupQueue.clear();
+            modulePublishWarmupCurrent = null;
+            setActionBar(false, "&c/module publish: nocache warmup timeout", 3500L);
+            return;
+        }
+
+        if (modulePublishWarmupCurrent == null)
+        {
+            while (!modulePublishWarmupQueue.isEmpty())
+            {
+                BlockPos p = modulePublishWarmupQueue.poll();
+                if (p == null || !isTargetChestBlock(mc.world, p))
+                {
+                    continue;
+                }
+                modulePublishWarmupCurrent = p;
+                break;
+            }
+            if (modulePublishWarmupCurrent == null)
+            {
+                // Warmup completed: export+convert using freshly built caches.
+                File dir = modulePublishWarmupDir;
+                String name = modulePublishWarmupName;
+                modulePublishWarmupActive = false;
+                modulePublishWarmupDir = null;
+                modulePublishWarmupName = null;
+                runModulePublishCommandWithDir(name, false, dir);
+                return;
+            }
+            // Nocache warmup movement rule:
+            // TP/path goes to -2Z from the action entry block (entry = chest.down()).
+            BlockPos entryPos = modulePublishWarmupCurrent.down();
+            double targetX = entryPos.getX() + 0.5;
+            double targetY = entryPos.getY() + 0.5;
+            double targetZ = entryPos.getZ() - 2 + 0.5;
+            buildTpPathQueue(
+                mc.world,
+                mc.player.posX, mc.player.posY, mc.player.posZ,
+                targetX,
+                targetY,
+                targetZ
+            );
+            return;
+        }
+
+        if (mc.player.getDistanceSqToCenter(modulePublishWarmupCurrent) <= 9.0)
+        {
+            beginAutoCacheChest(mc, modulePublishWarmupCurrent, now);
+            modulePublishWarmupCurrent = null;
+        }
+        else
+        {
+            BlockPos entryPos = modulePublishWarmupCurrent.down();
+            double targetX = entryPos.getX() + 0.5;
+            double targetY = entryPos.getY() + 0.5;
+            double targetZ = entryPos.getZ() - 2 + 0.5;
+            buildTpPathQueue(
+                mc.world,
+                mc.player.posX, mc.player.posY, mc.player.posZ,
+                targetX,
+                targetY,
+                targetZ
             );
         }
     }
@@ -14854,3 +15553,6 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         setActionBar(true, "&aPlaced queue created: " + placeBlocksQueue.size() + " entries", 2000L);
     }
 }    
+
+
+

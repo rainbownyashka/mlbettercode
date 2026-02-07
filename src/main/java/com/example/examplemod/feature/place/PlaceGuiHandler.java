@@ -4,12 +4,14 @@ import com.example.examplemod.model.ClickAction;
 import com.example.examplemod.model.MenuStep;
 import com.example.examplemod.model.PlaceArg;
 import com.example.examplemod.model.PlaceEntry;
+import com.example.examplemod.util.ItemStackUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.inventory.GuiContainer;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.inventory.ClickType;
 import net.minecraft.inventory.Slot;
 import net.minecraft.item.ItemStack;
+import net.minecraft.init.Items;
 import net.minecraft.network.play.client.CPacketCreativeInventoryAction;
 import net.minecraft.util.text.TextFormatting;
 
@@ -20,6 +22,9 @@ import java.util.Set;
 
 final class PlaceGuiHandler
 {
+    private static final int PAGE_TURN_MAX_RETRIES = 5;
+    private static final long PAGE_TURN_TIMEOUT_MS = 1500L;
+
     private PlaceGuiHandler() {}
 
     static void onGuiTick(PlaceModuleHost host, PlaceState state, GuiContainer gui, long nowMs)
@@ -50,6 +55,12 @@ final class PlaceGuiHandler
                 entry.lastArgsActionMs = 0L;
                 entry.argsMisses = 0;
                 entry.usedArgSlots.clear();
+                entry.argsGuiPage = 0;
+                entry.argsPageTurnPending = false;
+                entry.argsPageTurnStartMs = 0L;
+                entry.argsPageTurnNextMs = 0L;
+                entry.argsPageRetryCount = 0;
+                entry.argsPageLastHash = "";
                 handleArgs(host, state, gui, nowMs);
             }
             else
@@ -269,6 +280,12 @@ final class PlaceGuiHandler
                 entry.lastArgsActionMs = 0L;
                 entry.argsMisses = 0;
                 entry.usedArgSlots.clear();
+                entry.argsGuiPage = 0;
+                entry.argsPageTurnPending = false;
+                entry.argsPageTurnStartMs = 0L;
+                entry.argsPageTurnNextMs = 0L;
+                entry.argsPageRetryCount = 0;
+                entry.argsPageLastHash = "";
                 entry.paramsStartMs = nowMs;
                 entry.nextParamsActionMs = 0L;
                 entry.paramsOpenAttempts = 0;
@@ -623,9 +640,26 @@ final class PlaceGuiHandler
         }
 
         PlaceArg arg = entry.advancedArgs.get(entry.advancedArgIndex);
+        Integer resolvedGuiIndex = arg.slotIndex;
+        if (arg.slotIndex != null && arg.slotGuiIndex)
+        {
+            SlotRouteResult route = ensureArgGuiPage(host, state, gui, entry, arg, nowMs);
+            if (route.waiting)
+            {
+                return;
+            }
+            if (route.skipArg)
+            {
+                entry.advancedArgIndex++;
+                entry.lastArgsActionMs = nowMs;
+                return;
+            }
+            resolvedGuiIndex = route.resolvedSlotIndex;
+        }
+
         if (arg.clickOnly)
         {
-            if (arg.slotIndex == null)
+            if (resolvedGuiIndex == null)
             {
                 entry.argsMisses++;
                 return;
@@ -638,13 +672,13 @@ final class PlaceGuiHandler
             {
                 return;
             }
-            int clickSlot = resolveClickSlotIndex(gui, arg);
+            int clickSlot = resolveClickSlotIndex(gui, arg, resolvedGuiIndex);
             if (clickSlot < 0)
             {
                 if (host.isDebugUi() && entry.argsMisses % 10 == 0)
                 {
                     host.debugChat(String.format("placeadvanced clickOnly: resolve failed slot=%s guiIndex=%s nonPlayer=%d window=%d",
-                        String.valueOf(arg.slotIndex),
+                        String.valueOf(resolvedGuiIndex),
                         String.valueOf(arg.slotGuiIndex),
                         countNonPlayerSlots(gui),
                         gui.inventorySlots.windowId));
@@ -668,7 +702,22 @@ final class PlaceGuiHandler
             entry.advancedArgIndex++;
             return;
         }
-        Slot target = findArgTargetSlot(host, gui, arg, entry.usedArgSlots);
+
+        Slot target;
+        if (resolvedGuiIndex != null)
+        {
+            target = resolveArgSlot(gui, arg, resolvedGuiIndex);
+            if (target == null || target.inventory == mc.player.inventory
+                || (entry.usedArgSlots != null && entry.usedArgSlots.contains(target.slotNumber)))
+            {
+                target = null;
+            }
+        }
+        else
+        {
+            target = findArgTargetSlot(host, gui, arg, entry.usedArgSlots);
+        }
+
         if (target == null)
         {
             entry.argsMisses++;
@@ -966,7 +1015,16 @@ final class PlaceGuiHandler
 
     private static Slot resolveArgSlot(GuiContainer gui, PlaceArg arg)
     {
-        if (gui == null || gui.inventorySlots == null || arg == null || arg.slotIndex == null)
+        return resolveArgSlot(gui, arg, arg == null ? null : arg.slotIndex);
+    }
+
+    private static Slot resolveArgSlot(GuiContainer gui, PlaceArg arg, Integer slotIndex)
+    {
+        if (gui == null || gui.inventorySlots == null || arg == null || slotIndex == null)
+        {
+            return null;
+        }
+        if (slotIndex == null)
         {
             return null;
         }
@@ -974,7 +1032,7 @@ final class PlaceGuiHandler
         {
             try
             {
-                return gui.inventorySlots.getSlot(arg.slotIndex);
+                return gui.inventorySlots.getSlot(slotIndex);
             }
             catch (Exception ignore)
             {
@@ -993,31 +1051,24 @@ final class PlaceGuiHandler
             {
                 continue;
             }
-            if (idx == arg.slotIndex)
+            if (idx == slotIndex)
             {
                 return slot;
             }
             idx++;
         }
-        try
-        {
-            return gui.inventorySlots.getSlot(arg.slotIndex);
-        }
-        catch (Exception ignore)
-        {
-            return null;
-        }
+        return null;
     }
 
-    private static int resolveClickSlotIndex(GuiContainer gui, PlaceArg arg)
+    private static int resolveClickSlotIndex(GuiContainer gui, PlaceArg arg, Integer slotIndex)
     {
-        if (gui == null || gui.inventorySlots == null || arg == null || arg.slotIndex == null)
+        if (gui == null || gui.inventorySlots == null || arg == null || slotIndex == null)
         {
             return -1;
         }
         if (!arg.slotGuiIndex)
         {
-            return arg.slotIndex;
+            return slotIndex;
         }
         Minecraft mc = Minecraft.getMinecraft();
         if (mc == null || mc.player == null)
@@ -1031,13 +1082,13 @@ final class PlaceGuiHandler
             {
                 continue;
             }
-            if (idx == arg.slotIndex)
+            if (idx == slotIndex)
             {
                 return slot.slotNumber;
             }
             idx++;
         }
-        return arg.slotIndex;
+        return -1;
     }
 
     private static int countNonPlayerSlots(GuiContainer gui)
@@ -1057,5 +1108,247 @@ final class PlaceGuiHandler
             count++;
         }
         return count;
+    }
+
+    private static final class SlotRouteResult
+    {
+        final boolean waiting;
+        final boolean skipArg;
+        final Integer resolvedSlotIndex;
+
+        SlotRouteResult(boolean waiting, boolean skipArg, Integer resolvedSlotIndex)
+        {
+            this.waiting = waiting;
+            this.skipArg = skipArg;
+            this.resolvedSlotIndex = resolvedSlotIndex;
+        }
+    }
+
+    private static SlotRouteResult ensureArgGuiPage(
+        PlaceModuleHost host,
+        PlaceState state,
+        GuiContainer gui,
+        PlaceEntry entry,
+        PlaceArg arg,
+        long nowMs)
+    {
+        int nonPlayerSlots = countNonPlayerSlots(gui);
+        if (nonPlayerSlots <= 0 || arg.slotIndex == null)
+        {
+            return new SlotRouteResult(false, false, arg.slotIndex);
+        }
+
+        int abs = arg.slotIndex;
+        int targetPage = abs / nonPlayerSlots;
+        int targetLocal = abs % nonPlayerSlots;
+
+        if (targetPage <= 0)
+        {
+            entry.argsGuiPage = 0;
+            entry.argsPageTurnPending = false;
+            entry.argsPageRetryCount = 0;
+            return new SlotRouteResult(false, false, targetLocal);
+        }
+
+        if (entry.argsGuiPage > targetPage)
+        {
+            host.setActionBar(false, "&cplaceadvanced: нельзя листать назад к странице аргумента", 2500L);
+            if (host.isDebugUi())
+            {
+                host.debugChat("placeadvanced page route: currentPage=" + entry.argsGuiPage + " targetPage=" + targetPage
+                    + " slot=" + abs + " -> skip");
+            }
+            return new SlotRouteResult(false, true, null);
+        }
+
+        if (entry.argsGuiPage == targetPage)
+        {
+            entry.argsPageTurnPending = false;
+            entry.argsPageRetryCount = 0;
+            return new SlotRouteResult(false, false, targetLocal);
+        }
+
+        if (entry.argsPageTurnPending)
+        {
+            Minecraft mc = Minecraft.getMinecraft();
+            boolean cursorEmpty = true;
+            try
+            {
+                ItemStack carried = mc == null || mc.player == null ? ItemStack.EMPTY : mc.player.inventory.getItemStack();
+                cursorEmpty = carried == null || carried.isEmpty();
+            }
+            catch (Exception ignore) { }
+
+            String currentHash = buildNonPlayerHash(gui);
+            boolean changed = entry.argsPageLastHash != null && !entry.argsPageLastHash.equals(currentHash);
+            if (cursorEmpty && changed)
+            {
+                entry.argsGuiPage++;
+                entry.argsPageTurnPending = false;
+                entry.argsPageTurnStartMs = 0L;
+                entry.argsPageTurnNextMs = nowMs + host.placeDelayMs(150L);
+                entry.argsPageRetryCount = 0;
+                if (host.isDebugUi())
+                {
+                    host.debugChat("placeadvanced page switched to " + (entry.argsGuiPage + 1));
+                }
+                if (entry.argsGuiPage >= targetPage)
+                {
+                    return new SlotRouteResult(false, false, targetLocal);
+                }
+                return new SlotRouteResult(true, false, null);
+            }
+            if (nowMs - entry.argsPageTurnStartMs > PAGE_TURN_TIMEOUT_MS)
+            {
+                entry.argsPageTurnPending = false;
+                entry.argsPageTurnStartMs = 0L;
+                entry.argsPageTurnNextMs = nowMs + host.placeDelayMs(180L);
+                entry.argsPageRetryCount++;
+                if (host.isDebugUi())
+                {
+                    host.debugChat("placeadvanced page wait timeout: retry=" + entry.argsPageRetryCount
+                        + "/" + PAGE_TURN_MAX_RETRIES + " targetPage=" + (targetPage + 1));
+                }
+            }
+            else
+            {
+                return new SlotRouteResult(true, false, null);
+            }
+        }
+
+        if (entry.argsPageRetryCount >= PAGE_TURN_MAX_RETRIES)
+        {
+            host.setActionBar(false, "&cplaceadvanced: таймаут листания страницы аргумента", 2500L);
+            if (host.isDebugUi())
+            {
+                host.debugChat("placeadvanced page route failed: retries exhausted targetPage=" + (targetPage + 1));
+            }
+            return new SlotRouteResult(false, true, null);
+        }
+
+        if (nowMs < entry.argsPageTurnNextMs)
+        {
+            return new SlotRouteResult(true, false, null);
+        }
+
+        Slot nextArrow = findNextPageArrowSlot(gui);
+        if (nextArrow == null)
+        {
+            host.setActionBar(false, "&cplaceadvanced: стрелка следующей страницы не найдена", 2500L);
+            if (host.isDebugUi())
+            {
+                host.debugChat("placeadvanced page route failed: no next arrow targetPage=" + (targetPage + 1));
+            }
+            return new SlotRouteResult(false, true, null);
+        }
+
+        host.queueClick(new ClickAction(nextArrow.slotNumber, 0, ClickType.PICKUP));
+        entry.lastArgsActionMs = nowMs;
+        entry.argsPageLastHash = buildNonPlayerHash(gui);
+        entry.argsPageTurnPending = true;
+        entry.argsPageTurnStartMs = nowMs;
+        entry.argsPageTurnNextMs = nowMs + host.placeDelayMs(250L);
+        if (host.isDebugUi())
+        {
+            host.debugChat("placeadvanced page click: current=" + (entry.argsGuiPage + 1)
+                + " target=" + (targetPage + 1)
+                + " slot=" + abs
+                + " arrowSlot=" + nextArrow.slotNumber);
+        }
+        return new SlotRouteResult(true, false, null);
+    }
+
+    private static String buildNonPlayerHash(GuiContainer gui)
+    {
+        if (gui == null || gui.inventorySlots == null)
+        {
+            return "";
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null)
+        {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || slot.inventory == mc.player.inventory)
+            {
+                continue;
+            }
+            ItemStack st = slot.getStack();
+            if (st == null || st.isEmpty())
+            {
+                sb.append("[];");
+            }
+            else
+            {
+                sb.append(st.getItem().getRegistryName()).append(':')
+                    .append(st.getMetadata()).append(':')
+                    .append(st.getCount()).append(':')
+                    .append(st.hasDisplayName() ? TextFormatting.getTextWithoutFormattingCodes(st.getDisplayName()) : "")
+                    .append(';');
+            }
+        }
+        return Integer.toHexString(sb.toString().hashCode());
+    }
+
+    private static Slot findNextPageArrowSlot(GuiContainer gui)
+    {
+        if (gui == null || gui.inventorySlots == null)
+        {
+            return null;
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null)
+        {
+            return null;
+        }
+
+        List<Slot> nonPlayer = new ArrayList<>();
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || slot.inventory == mc.player.inventory)
+            {
+                continue;
+            }
+            nonPlayer.add(slot);
+        }
+        if (nonPlayer.isEmpty())
+        {
+            return null;
+        }
+        Slot last = nonPlayer.get(nonPlayer.size() - 1);
+        ItemStack st = last.getStack();
+        return isNextPageArrowItem(st) ? last : null;
+    }
+
+    private static boolean isNextPageArrowItem(ItemStack st)
+    {
+        if (st == null || st.isEmpty() || st.getItem() != Items.ARROW)
+        {
+            return false;
+        }
+        List<String> lore = ItemStackUtils.getLore(st);
+        if (lore == null || lore.isEmpty())
+        {
+            return false;
+        }
+        boolean hasOpen = false;
+        boolean hasNext = false;
+        for (String ln : lore)
+        {
+            String n = ln == null ? "" : TextFormatting.getTextWithoutFormattingCodes(ln);
+            n = n == null ? "" : n.replace('\u00A0', ' ').toLowerCase();
+            if (n.contains("нажми, чтобы открыть"))
+            {
+                hasOpen = true;
+            }
+            if (n.contains("следующую страницу"))
+            {
+                hasNext = true;
+            }
+        }
+        return hasOpen && hasNext;
     }
 }

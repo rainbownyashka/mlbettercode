@@ -48,6 +48,12 @@ public class PlaceEntry
     public int pendingArgClickSlot;
     public int pendingArgClicks;
     public long pendingArgNextMs;
+    public int argsGuiPage;
+    public boolean argsPageTurnPending;
+    public long argsPageTurnStartMs;
+    public long argsPageTurnNextMs;
+    public int argsPageRetryCount;
+    public String argsPageLastHash;
 
     // /placeadvanced: after selecting the menu item, some servers open a parameter GUI via a spawned chest.
     public boolean awaitingParamsChest;
@@ -113,6 +119,12 @@ public class PlaceEntry
         this.pendingArgClickSlot = -1;
         this.pendingArgClicks = 0;
         this.pendingArgNextMs = 0L;
+        this.argsGuiPage = 0;
+        this.argsPageTurnPending = false;
+        this.argsPageTurnStartMs = 0L;
+        this.argsPageTurnNextMs = 0L;
+        this.argsPageRetryCount = 0;
+        this.argsPageLastHash = "";
         this.awaitingParamsChest = false;
         this.needOpenParamsChest = false;
         this.paramsOpenAttempts = 0;
@@ -168,6 +180,12 @@ public class PlaceEntry
         this.pendingArgClickSlot = -1;
         this.pendingArgClicks = 0;
         this.pendingArgNextMs = 0L;
+        this.argsGuiPage = 0;
+        this.argsPageTurnPending = false;
+        this.argsPageTurnStartMs = 0L;
+        this.argsPageTurnNextMs = 0L;
+        this.argsPageRetryCount = 0;
+        this.argsPageLastHash = "";
         this.awaitingParamsChest = false;
         this.needOpenParamsChest = false;
         this.paramsOpenAttempts = 0;
