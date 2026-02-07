@@ -485,6 +485,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     // preload selected row chests via tp path + open chest before export.
     private boolean modulePublishWarmupActive = false;
     private final Deque<BlockPos> modulePublishWarmupQueue = new ArrayDeque<>();
+    private final LinkedHashSet<BlockPos> modulePublishWarmupAllChests = new LinkedHashSet<>();
+    private int modulePublishWarmupPass = 0;
     private BlockPos modulePublishWarmupCurrent = null;
     private int modulePublishWarmupDim = 0;
     private long modulePublishWarmupStartMs = 0L;
@@ -2971,6 +2973,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             modulePublishWarmupActive = true;
             modulePublishWarmupQueue.clear();
             modulePublishWarmupQueue.addAll(chests);
+            modulePublishWarmupAllChests.clear();
+            modulePublishWarmupAllChests.addAll(chests);
+            modulePublishWarmupPass = 0;
             modulePublishWarmupCurrent = null;
             modulePublishWarmupDim = dim;
             modulePublishWarmupStartMs = System.currentTimeMillis();
@@ -3017,6 +3022,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     modulePublishWarmupActive = true;
                     modulePublishWarmupQueue.clear();
                     modulePublishWarmupQueue.addAll(missing);
+                    modulePublishWarmupAllChests.clear();
+                    modulePublishWarmupAllChests.addAll(missing);
+                    modulePublishWarmupPass = 0;
                     modulePublishWarmupCurrent = null;
                     modulePublishWarmupDim = dim;
                     modulePublishWarmupStartMs = System.currentTimeMillis();
@@ -7134,6 +7142,23 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
                 ItemStack lastSlot = items.isEmpty() ? ItemStack.EMPTY : items.get(size - 1);
                 boolean hasNextPage = isNextPageArrow(lastSlot);
+                if (modulePublishWarmupActive && logger != null)
+                {
+                    String reg = "null";
+                    String disp = "";
+                    try
+                    {
+                        if (lastSlot != null && !lastSlot.isEmpty())
+                        {
+                            ResourceLocation rid = lastSlot.getItem() == null ? null : lastSlot.getItem().getRegistryName();
+                            reg = rid == null ? "null" : rid.toString();
+                            disp = lastSlot.getDisplayName();
+                        }
+                    }
+                    catch (Exception ignore) { }
+                    logger.info("CHEST_PAGE_DETECT key={} page={} hasNext={} lastSlotReg={} lastSlotName={}",
+                        key, chestPageScanIndex + 1, hasNextPage, reg, disp);
+                }
                 if (hasNextPage && !pageTurnAllowed)
                 {
                     if (logger != null) logger.info("CHEST_PAGE_CLICK skip key={} reason=not_allowed mode=normal_snapshot", key);
@@ -13431,6 +13456,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             modulePublishWarmupActive = false;
             modulePublishWarmupQueue.clear();
+            modulePublishWarmupAllChests.clear();
+            modulePublishWarmupPass = 0;
             modulePublishWarmupCurrent = null;
             modulePublishWarmupDir = null;
             modulePublishWarmupName = null;
@@ -13457,6 +13484,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             modulePublishWarmupActive = false;
             modulePublishWarmupQueue.clear();
+            modulePublishWarmupAllChests.clear();
+            modulePublishWarmupPass = 0;
             modulePublishWarmupCurrent = null;
             setActionBar(false, "&c/module publish: nocache warmup timeout", 3500L);
             return;
@@ -13476,10 +13505,39 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
             if (modulePublishWarmupCurrent == null)
             {
+                if (modulePublishWarmupPass == 0 && !modulePublishWarmupAllChests.isEmpty())
+                {
+                    LinkedHashSet<BlockPos> retry = new LinkedHashSet<>();
+                    for (BlockPos p : modulePublishWarmupAllChests)
+                    {
+                        if (p == null || !isTargetChestBlock(mc.world, p))
+                        {
+                            continue;
+                        }
+                        if (shouldWarmupPagedChestForPublish(mc.world, modulePublishWarmupDim, p))
+                        {
+                            retry.add(p);
+                        }
+                    }
+                    if (!retry.isEmpty())
+                    {
+                        modulePublishWarmupQueue.addAll(retry);
+                        modulePublishWarmupPass = 1;
+                        if (mc.player != null)
+                        {
+                            mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
+                                + "/module publish: дополнительный прогрев страниц: " + retry.size()));
+                        }
+                        setActionBar(true, "&e/module publish: доп.прогрев страниц " + retry.size(), 3000L);
+                        return;
+                    }
+                }
                 // Warmup completed: export+convert using freshly built caches.
                 File dir = modulePublishWarmupDir;
                 String name = modulePublishWarmupName;
                 modulePublishWarmupActive = false;
+                modulePublishWarmupAllChests.clear();
+                modulePublishWarmupPass = 0;
                 modulePublishWarmupDir = null;
                 modulePublishWarmupName = null;
                 runModulePublishCommandWithDir(name, false, dir);
