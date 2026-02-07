@@ -7115,10 +7115,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
         // Multi-page chest capture:
         // save pages into one absolute-slots cache (slot = local + page*size).
-        // IMPORTANT: page auto-clicking is allowed only for explicit flows
-        // (regallactions/module publish warmup), never for generic chest snapshots.
+        // IMPORTANT: page auto-clicking is allowed only for module publish warmup flow.
+        // RegAllActions owns its own pagination logic and must not be mixed here.
         boolean pageTurnRequested = false;
-        boolean pageTurnAllowed = modulePublishWarmupActive || regAllActionsModule.isActive() || autoCachePageTurnAllowed;
+        boolean regAllOwnsPaging = regAllActionsModule != null && regAllActionsModule.isActive();
+        boolean pageTurnAllowed = modulePublishWarmupActive || autoCachePageTurnAllowed;
         if (lastClickedChest && allowChestSnapshot && chestPos != null && size > 0)
         {
             String key = chestKey(chestDim, chestPos);
@@ -7199,7 +7200,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     if (now - chestPageLastSkipLogMs > 1000L)
                     {
                         chestPageLastSkipLogMs = now;
-                        if (logger != null) logger.info("CHEST_PAGE_CLICK skip key={} reason=not_allowed mode=normal_snapshot", key);
+                        if (logger != null)
+                        {
+                            String reason = regAllOwnsPaging
+                                ? "owned_by_regallactions"
+                                : "not_allowed";
+                            logger.info("CHEST_PAGE_CLICK skip key={} reason={} mode=normal_snapshot warmup={} autoAllow={} regAllActive={}",
+                                key, reason, modulePublishWarmupActive, autoCachePageTurnAllowed, regAllOwnsPaging);
+                        }
                     }
                 }
                 if (hasNextPage && effectivePageTurnAllowed && now >= chestPageNextActionMs)
@@ -7345,7 +7353,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 hasNextPageNow = isNextPageArrow(lastSlotNow);
             }
             catch (Exception ignore) { }
-            boolean pageTurnAllowedNow = modulePublishWarmupActive || regAllActionsModule.isActive() || autoCachePageTurnAllowed;
+            boolean pageTurnAllowedNow = modulePublishWarmupActive || autoCachePageTurnAllowed;
             if (hasNextPageNow && pageTurnAllowedNow)
             {
                 publishTrace(mc, "autocache.keep_open", "reason=has_next_page ageMs=" + ageMs
@@ -7359,7 +7367,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 publishTrace(mc, "autocache.keep_open", "reason=has_next_page_but_not_allowed ageMs=" + ageMs
                     + " page=" + (chestPageScanIndex + 1) + " retries=" + chestPageRetryCount + "/" + CHEST_PAGE_MAX_RETRIES
                     + " allowed=" + pageTurnAllowedNow + " moduleWarmup=" + modulePublishWarmupActive
-                    + " regAllActive=" + regAllActionsModule.isActive() + " autoCacheAllow=" + autoCachePageTurnAllowed);
+                    + " regAllActive=" + regAllOwnsPaging + " autoCacheAllow=" + autoCachePageTurnAllowed);
                 return;
             }
             publishTrace(mc, "autocache.close", "reason=stable_snapshot ageMs=" + ageMs + " size=" + size + " nonEmpty=" + nonEmptyCount
@@ -13276,7 +13284,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
         int dim = mc.world.provider.getDimension();
         autoCacheInProgress = true;
-        autoCachePageTurnAllowed = modulePublishWarmupActive || regAllActionsModule.isActive();
+        // Global snapshot page-turn is owned only by module publish warmup.
+        autoCachePageTurnAllowed = modulePublishWarmupActive;
+        if (logger != null)
+        {
+            logger.info("CHEST_PAGE_OWNER mode={} target={} dim={} autoAllow={}",
+                modulePublishWarmupActive ? "publish_warmup" : "normal_snapshot",
+                pos, dim, autoCachePageTurnAllowed);
+        }
         autoCacheStartMs = now;
         autoCacheTargetPos = pos;
         autoCacheTargetDim = dim;
