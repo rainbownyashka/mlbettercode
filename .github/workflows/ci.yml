@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+jobs:
+  legacy112:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "8"
+          cache: gradle
+
+      - name: Build + tests
+        run: |
+          chmod +x ./gradlew
+          ./gradlew test build
+
+      - name: Export sim smoke
+        run: |
+          chmod +x ./gradlew
+          ./gradlew runExportSim -PsimArgs="tools/_sim_case.json --show-order"
+
+      - name: Docs gate
+        run: |
+          test -f docs/ARCHITECTURE.md
+          test -f docs/CONTRIBUTING.md
+          test -f docs/ERRORS.md
