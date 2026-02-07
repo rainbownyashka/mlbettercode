@@ -628,7 +628,7 @@ public final class RegAllActionsModule
                 state.menuPageRetryCount++;
                 state.menuPageTurnStartMs = nowMs;
                 state.menuPageLastHash = currentHash;
-                host.queueClick(new ClickAction(arrow.slotNumber, 0, ClickType.PICKUP));
+                queueClickFromRegAllActions(arrow.slotNumber, "page-turn-retry");
                 state.waitingForCursorClear = true;
                 state.cursorClearSinceMs = 0L;
                 state.nextActionMs = nowMs + actionDelayMs();
@@ -766,7 +766,7 @@ public final class RegAllActionsModule
             state.pendingClickStack = st.copy();
             state.pendingClickMs = nowMs;
             state.pendingGuiTitle = getGuiTitleSafe(gui);
-            host.queueClick(new ClickAction(slot.slotNumber, 0, ClickType.PICKUP));
+            queueClickFromRegAllActions(slot.slotNumber, "replay");
             state.waitingForCursorClear = true;
             state.cursorClearSinceMs = 0L;
             state.nextActionMs = nowMs + actionDelayMs();
@@ -815,7 +815,7 @@ public final class RegAllActionsModule
         state.pendingClickStack = stack.copy();
         state.pendingClickMs = nowMs;
         state.pendingGuiTitle = getGuiTitleSafe(gui);
-        host.queueClick(new ClickAction(next.slotNumber, 0, ClickType.PICKUP));
+        queueClickFromRegAllActions(next.slotNumber, "menu-click");
         state.waitingForCursorClear = true;
         state.cursorClearSinceMs = 0L;
         state.nextActionMs = nowMs + actionDelayMs();
@@ -883,7 +883,7 @@ public final class RegAllActionsModule
         state.menuPageRetryCount = 0;
         state.menuPageTurnStartMs = nowMs;
         state.menuPageLastHash = buildTopInventoryHash(gui);
-        host.queueClick(new ClickAction(arrow.slotNumber, 0, ClickType.PICKUP));
+        queueClickFromRegAllActions(arrow.slotNumber, "page-turn-start");
         state.waitingForCursorClear = true;
         state.cursorClearSinceMs = 0L;
         state.nextActionMs = nowMs + actionDelayMs();
@@ -962,6 +962,14 @@ public final class RegAllActionsModule
             return null;
         }
         return (lore.contains(NEXT_PAGE_PHRASE_1) && lore.contains(NEXT_PAGE_PHRASE_2)) ? last : null;
+    }
+
+    private void queueClickFromRegAllActions(int slotNumber, String reason)
+    {
+        debugLog("RGA_CLICK reason=" + reason + " slot=" + slotNumber
+            + " active=" + state.active
+            + " path=" + RegAllActionsState.pathKey(state.menuPathKeys));
+        host.queueClick(new ClickAction(slotNumber, 0, ClickType.PICKUP));
     }
 
     private Set<String> doneSetForPath(String pathKey)
