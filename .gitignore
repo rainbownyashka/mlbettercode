@@ -27,3 +27,4 @@ diffgui.py
 dev_scoreboard.patch
 nm.py
 src/main/java/com/example/examplemod/ExampleMod.javaai
+tools/*.exportcode.json
