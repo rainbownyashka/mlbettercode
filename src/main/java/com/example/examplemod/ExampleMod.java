@@ -7252,9 +7252,26 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
         }
 
-        // --- Auto-cache: close chest immediately after snapshot so player doesn't notice ---
+        // --- Auto-cache: close chest after snapshot ---
+        // Guard against premature close on first tick when server has not sent full chest contents yet.
         if (autoCacheInProgress && !pageTurnRequested && !chestPageAwaitCursorClear)
         {
+            long ageMs = System.currentTimeMillis() - autoCacheStartMs;
+            int nonEmptyCount = 0;
+            for (ItemStack st : items)
+            {
+                if (st != null && !st.isEmpty())
+                {
+                    nonEmptyCount++;
+                }
+            }
+            // Wait a bit before force-close:
+            // - first 350ms always wait;
+            // - for large menus (54) with very sparse initial snapshot wait up to 1.2s.
+            if (ageMs < 350L || (size >= 54 && nonEmptyCount <= 2 && ageMs < 1200L))
+            {
+                return;
+            }
             if (mc != null && mc.player != null)
             {
                 mc.player.closeScreen();
