@@ -248,6 +248,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private static final String HUB_BASE_URL_MIRROR = "https://mldsl-hub.duckdns.org";
     private static boolean hubSwitchToMirror = false;
     // --- Auto chest cache settings (config) ---
+    private static boolean chestCacheEnabled = true;
     private static boolean autoCacheEnabled = false;
     private static int autoCacheRadius = 6;
     private static boolean autoCacheTrappedOnly = true;
@@ -2989,10 +2990,17 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
             catch (Exception ignore) { }
         }
-        publishTrace(mc, "publish.start", "name=" + name + " noCache=" + noCache + " dir=" + dir.getAbsolutePath()
+        boolean effectiveNoCache = noCache || !chestCacheEnabled;
+        if (!noCache && !chestCacheEnabled && mc.player != null)
+        {
+            mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
+                + "/module publish: cache disabled in config -> forcing nocache."));
+        }
+
+        publishTrace(mc, "publish.start", "name=" + name + " noCache=" + noCache + " effectiveNoCache=" + effectiveNoCache + " dir=" + dir.getAbsolutePath()
             + " predefined=" + (predefinedDir != null));
 
-        if (noCache)
+        if (effectiveNoCache)
         {
             List<BlockPos> glasses = collectPublishGlasses(mc.world);
             if (glasses == null || glasses.isEmpty())
@@ -3027,7 +3035,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             modulePublishWarmupStartMs = System.currentTimeMillis();
             modulePublishWarmupDir = dir;
             modulePublishWarmupName = name;
-            publishTrace(mc, "publish.nocache.warmup.start", "chests=" + chests.size() + " dim=" + dim);
+            publishTrace(mc, "publish.nocache.warmup.start", "chests=" + chests.size() + " dim=" + dim
+                + " forcedByCacheDisabled=" + (!chestCacheEnabled));
 
             mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
                 + "/module publish nocache: прогрев сундуков (tp/open) перед экспортом: " + chests.size()));
@@ -3037,7 +3046,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
         // Cache mode: if some row chests are missing in cache, warm only missing ones first.
         // Do this only on first call (predefinedDir == null) to avoid warmup loops.
-        if (!noCache && predefinedDir == null)
+        if (!effectiveNoCache && predefinedDir == null)
         {
             List<BlockPos> glasses = collectPublishGlasses(mc.world);
             if (glasses != null && !glasses.isEmpty())
@@ -3091,7 +3100,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         int copied = 0;
 
         // 1) Always generate a fresh exportcode from current selection/floor context.
-        GeneratedExport generated = generateExportCodeNow(name, !noCache);
+        GeneratedExport generated = generateExportCodeNow(name, !effectiveNoCache);
         if (generated == null || generated.file == null || !generated.file.isFile())
         {
             publishTrace(mc, "publish.abort", "reason=generate_export_failed");
@@ -3172,7 +3181,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "Папка публикации: " + dir.getAbsolutePath()));
         mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
             + "Экспортировано строк: " + generated.rows + " | MLDSL + plan сгенерированы."));
-        if (noCache)
+        if (effectiveNoCache)
         {
             mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
                 + "Режим публикации: nocache (fallback кэша сундуков отключен)."));
@@ -4541,7 +4550,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
         List<ItemStack> bestItems = liveItems;
         int dim = world.provider.getDimension();
-        if (preferChestCache)
+        if (preferChestCache && chestCacheEnabled)
         {
             ensureChestCaches(dim);
             String key = chestKey(dim, chestPos);
@@ -7679,6 +7688,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
     private void mergeChestPageToCache(int dim, BlockPos pos, int pageSize, int pageIndex, List<ItemStack> pageItems, String label)
     {
+        if (!chestCacheEnabled)
+        {
+            return;
+        }
         if (pos == null || pageSize <= 0 || pageIndex < 0 || pageItems == null)
         {
             return;
@@ -7821,6 +7834,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
     private void cacheChestInventory(TileEntityChest te, List<ItemStack> items)
     {
+        if (!chestCacheEnabled)
+        {
+            return;
+        }
         if (te == null || te.getPos() == null || te.getWorld() == null)
         {
             return;
@@ -7844,6 +7861,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
     private void cacheChestInventoryAt(int dim, BlockPos pos, List<ItemStack> items, String labelOverride)
     {
+        if (!chestCacheEnabled)
+        {
+            return;
+        }
         if (pos == null)
         {
             return;
@@ -13119,6 +13140,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 "AUTO-CACHE CHESTS: Automatically open and cache nearby trapped chests in DEV mode.\n"
                     + "Only works in creative mode with special scoreboard. Check with /autocache command.\n"
                     + "Blocked while holding IRON_INGOT or GOLD_INGOT.");
+            chestCacheEnabled = config.getBoolean("chestCacheEnabled", "chest", true,
+                "MASTER SWITCH: enable/disable chest cache usage.\n"
+                    + "If false: no chest cache reads/writes. /module publish will run in nocache mode.");
             autoCacheRadius = config.getInt("autoCacheRadius", "chest", 6, 2, 16,
                 "Radius (blocks) around player to scan for chests to auto-cache.");
             autoCacheTrappedOnly = config.getBoolean("autoCacheTrappedOnly", "chest", true,
@@ -13199,6 +13223,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
     private boolean isChestCached(int dim, BlockPos pos)
     {
+        if (!chestCacheEnabled)
+        {
+            return false;
+        }
         if (pos == null)
         {
             return true;
@@ -13314,6 +13342,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
     private void beginAutoCacheChest(Minecraft mc, BlockPos pos, long now)
     {
+        if (!chestCacheEnabled)
+        {
+            return;
+        }
         if (mc == null || mc.world == null || mc.player == null
             || mc.playerController == null || pos == null)
         {
@@ -13355,7 +13387,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
     private void handleAutoChestCacheTick(Minecraft mc, long now)
     {
-        if (!autoCacheEnabled || !editorModeActive || !isDevCreativeScoreboard(mc))
+        if (!chestCacheEnabled || !autoCacheEnabled || !editorModeActive || !isDevCreativeScoreboard(mc))
         {
             return;
         }
@@ -15122,6 +15154,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
 
         // Show status from config
+        if (!chestCacheEnabled)
+        {
+            setActionBar(true, "&cChestCache: OFF &8(disabled in mod config)", 3000L);
+            return;
+        }
         if (autoCacheEnabled)
         {
             setActionBar(true, "&aAutoCache: &eON &8(radius=" + autoCacheRadius + " trapped=" + autoCacheTrappedOnly + ")", 3000L);
@@ -15150,6 +15187,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         if (!editorModeActive || !isDevCreativeScoreboard(mc))
         {
             setActionBar(false, "&cDEV mode only (creative + scoreboard)", 2500L);
+            return;
+        }
+        if (!chestCacheEnabled)
+        {
+            setActionBar(false, "&cChest cache disabled in mod config", 3000L);
             return;
         }
 
