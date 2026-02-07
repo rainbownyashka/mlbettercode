@@ -1,0 +1,33 @@
+{
+  "scopeKey": "ID:793426:0",
+  "glasses": [{"x":219,"y":0,"z":207}],
+  "nodes": {
+    "219,1,207": {"block":"minecraft:diamond_block"},
+    "219,1,206": {"sign":["Событие игрока","Вход","",""]},
+
+    "217,1,207": {"block":"minecraft:cobblestone"},
+    "218,1,207": {"block":"minecraft:diamond_ore"},
+    "217,1,206": {"sign":["Действие игрока","Поставить слот","",""]},
+    "217,2,207": {"block":"minecraft:chest","chest":{"title":"Сундук","size":27,"slots":[{"slot":13,"id":"minecraft:slime_ball","count":1,"displayName":"§c3"}]}}
+
+    ,"215,1,207": {"block":"minecraft:planks"},
+    "216,1,207": {"block":"minecraft:stone"},
+    "215,1,206": {"sign":["Если игрок","Имеет право","",""]},
+    "215,2,207": {"block":"minecraft:chest","chest":{"title":"Сундук","size":27,"slots":[]}}
+
+    ,"213,1,207": {"block":"minecraft:cobblestone"},
+    "214,1,207": {"block":"minecraft:piston","facing":"west"},
+    "213,1,206": {"sign":["Действие игрока","Режим игры","",""]},
+    "213,2,207": {"block":"minecraft:chest","chest":{"title":"Сундук","size":27,"slots":[]}}
+
+    ,"209,1,207": {"block":"minecraft:planks"},
+    "210,1,207": {"block":"minecraft:piston","facing":"east"},
+    "209,1,206": {"sign":["Если игрок","Держит","",""]},
+    "209,2,207": {"block":"minecraft:chest","chest":{"title":"Сундук","size":27,"slots":[]}}
+
+    ,"207,1,207": {"block":"minecraft:cobblestone"},
+    "208,1,207": {"block":"minecraft:piston","facing":"west"},
+    "207,1,206": {"sign":["Действие игрока","Сообщение","",""]},
+    "207,2,207": {"block":"minecraft:chest","chest":{"title":"Сундук","size":27,"slots":[{"slot":9,"id":"minecraft:book","count":1,"displayName":"привет"}]}}
+  }
+}
