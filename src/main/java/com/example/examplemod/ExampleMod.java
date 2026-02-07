@@ -2994,15 +2994,22 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 int dim = mc.world.provider.getDimension();
                 ensureChestCaches(dim);
                 LinkedHashSet<BlockPos> missing = new LinkedHashSet<>();
+                int pagedRefreshCount = 0;
                 for (BlockPos p : chests)
                 {
                     if (p == null || !isTargetChestBlock(mc.world, p))
                     {
                         continue;
                     }
-                    if (!isChestCached(dim, p))
+                    boolean notCached = !isChestCached(dim, p);
+                    boolean pagedNeedsRefresh = !notCached && shouldWarmupPagedChestForPublish(mc.world, dim, p);
+                    if (notCached || pagedNeedsRefresh)
                     {
                         missing.add(p);
+                        if (pagedNeedsRefresh)
+                        {
+                            pagedRefreshCount++;
+                        }
                     }
                 }
                 if (!missing.isEmpty())
@@ -3017,8 +3024,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     modulePublishWarmupName = name;
 
                     mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
-                        + "/module publish: прогрев недостающих сундуков (tp/open): " + missing.size()));
-                    setActionBar(true, "&e/module publish: прогрев недостающих " + missing.size() + " сундуков...", 3500L);
+                        + "/module publish: прогрев сундуков (tp/open): " + missing.size()
+                        + (pagedRefreshCount > 0 ? (" (paged refresh: " + pagedRefreshCount + ")") : "")));
+                    setActionBar(true, "&e/module publish: прогрев " + missing.size() + " сундуков...", 3500L);
                     return;
                 }
             }
@@ -12992,6 +13000,57 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         String key = chestKey(dim, pos);
         return key != null && chestCaches.containsKey(key);
+    }
+
+    private int resolveChestPageSize(World world, BlockPos pos)
+    {
+        if (world != null && pos != null)
+        {
+            try
+            {
+                TileEntity te = world.getTileEntity(pos);
+                if (te instanceof IInventory)
+                {
+                    int sz = ((IInventory) te).getSizeInventory();
+                    if (sz > 0)
+                    {
+                        return sz;
+                    }
+                }
+            }
+            catch (Exception ignore) { }
+        }
+        return 27;
+    }
+
+    // True means this chest should be re-warmed for publish in cache mode:
+    // if any cached page-end slot still has "next page" arrow, cache is likely paged/incomplete.
+    private boolean shouldWarmupPagedChestForPublish(World world, int dim, BlockPos chestPos)
+    {
+        if (world == null || chestPos == null)
+        {
+            return false;
+        }
+        String key = chestKey(dim, chestPos);
+        if (key == null)
+        {
+            return false;
+        }
+        ChestCache cached = chestCaches.get(key);
+        if (cached == null || cached.items == null || cached.items.isEmpty())
+        {
+            return false;
+        }
+        int pageSize = Math.max(1, resolveChestPageSize(world, chestPos));
+        for (int idx = pageSize - 1; idx < cached.items.size(); idx += pageSize)
+        {
+            ItemStack st = cached.items.get(idx);
+            if (isNextPageArrow(st))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isTargetChestBlock(World world, BlockPos pos)
