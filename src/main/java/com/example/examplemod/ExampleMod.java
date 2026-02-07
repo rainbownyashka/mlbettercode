@@ -7496,9 +7496,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         boolean hasNext = false;
         for (String ln : lore)
         {
-            String n = ln == null ? "" : TextFormatting.getTextWithoutFormattingCodes(ln);
-            n = n == null ? "" : n.replace('\u00A0', ' ').toLowerCase(Locale.ROOT);
-            if (n.contains("нажми, чтобы открыть"))
+            String n = normalizePageLoreLine(ln);
+            if (n.contains("нажми чтобы открыть"))
             {
                 hasOpen = true;
             }
@@ -7508,6 +7507,20 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
         }
         return hasOpen && hasNext;
+    }
+
+    private static String normalizePageLoreLine(String line)
+    {
+        String n = line == null ? "" : TextFormatting.getTextWithoutFormattingCodes(line);
+        if (n == null)
+        {
+            n = "";
+        }
+        n = n.replace('\u00A0', ' ').toLowerCase(Locale.ROOT);
+        // ignore punctuation and style symbols, keep letters/digits/spaces
+        n = n.replaceAll("[^\\p{L}\\p{N}\\s]+", " ");
+        n = n.replaceAll("\\s+", " ").trim();
+        return n;
     }
 
     private void mergeChestPageToCache(int dim, BlockPos pos, int pageSize, int pageIndex, List<ItemStack> pageItems, String label)
