@@ -2815,20 +2815,20 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             runModulePublishCommand(name, noCache);
             return;
         }
-        setActionBar(false, "&cUnknown subcommand: " + sub, 3500L);
+        setActionBar(false, "&cНеизвестная подкоманда: " + sub, 3500L);
     }
 
     private void runModBcCommand(MinecraftServer server, ICommandSender sender, String[] args)
     {
         if (args == null || args.length == 0)
         {
-            setActionBar(false, "&cUsage: /modbc update", 3500L);
+            setActionBar(false, "&cИспользование: /modbc update", 3500L);
             return;
         }
         String sub = args[0] == null ? "" : args[0].trim().toLowerCase(Locale.ROOT);
         if (!"update".equals(sub))
         {
-            setActionBar(false, "&cUsage: /modbc update", 3500L);
+            setActionBar(false, "&cИспользование: /modbc update", 3500L);
             return;
         }
         runModBcUpdate();

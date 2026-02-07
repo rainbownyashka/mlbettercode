@@ -26,8 +26,7 @@ archivesBaseName = 'bettercode'
 
 sourceCompatibility = targetCompatibility = compileJava.sourceCompatibility = compileJava.targetCompatibility = '1.8' // Need this here so eclipse task generates correctly.
 
-// Force stable source encoding to avoid mojibake in RU literals on Windows.
-tasks.withType(JavaCompile) {
+tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
 
@@ -72,7 +71,6 @@ dependencies {
     // that the dep is a ForgeGradle 'patcher' dependency. And it's patches will be applied.
     // The userdev artifact is a special name and will get all sorts of transformations applied to it.
     minecraft 'net.minecraftforge:forge:1.12.2-14.23.5.2859'
-    testImplementation 'junit:junit:4.13.2'
 
     // You may put jars on which you depend on in ./libs or you may define them like so..
     // compile "some.group:artifact:version:classifier"
@@ -109,12 +107,6 @@ jar {
     }
 }
 
-test {
-    testLogging {
-        events 'passed', 'skipped', 'failed'
-    }
-}
-
 // Example configuration to allow publishing using the maven-publish task
 // This is the preferred method to reobfuscate your jar file
 jar.finalizedBy('reobfJar') 
@@ -145,15 +137,6 @@ tasks.register('copyToMinecraftMods', Copy) {
 }
 
 build.finalizedBy('copyToMinecraftMods')
-
-tasks.register('runExportSim', JavaExec) {
-    dependsOn 'classes'
-    classpath = sourceSets.main.runtimeClasspath
-    main = 'com.example.examplemod.tools.ExportCodeJavaSim'
-    if (project.hasProperty('simArgs')) {
-        args project.property('simArgs').toString().split('\\s+')
-    }
-}
 
 publishing {
     publications {
