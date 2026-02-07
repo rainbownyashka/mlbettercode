@@ -13,7 +13,7 @@ public class ModConfigGui extends GuiConfig
 {
     public ModConfigGui(GuiScreen parent)
     {
-        super(parent, getElements(), ExampleMod.MODID, false, false, "MC Python Api");
+        super(parent, getElements(), ExampleMod.MODID, false, false, "MLDSL / BetterCode");
     }
 
     private static List<IConfigElement> getElements()
@@ -25,7 +25,8 @@ public class ModConfigGui extends GuiConfig
         }
         return java.util.Arrays.asList(
             new ConfigElement(cfg.getCategory("hotbar")),
-            new ConfigElement(cfg.getCategory("hologram"))
+            new ConfigElement(cfg.getCategory("hologram")),
+            new ConfigElement(cfg.getCategory("chest"))
         );
     }
 }
