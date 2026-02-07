@@ -471,6 +471,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private long chestPageAwaitStartMs = 0L;
     private long chestPageNextActionMs = 0L;
     private int chestPageRetryCount = 0;
+    // RegAllActions can briefly drop isActive() between GUI ticks on high ping.
+    // Keep a short grace window so chest paging is not lost on that transient.
+    private long regAllPagingGraceUntilMs = 0L;
+    private static final long REGALL_PAGING_GRACE_MS = 2000L;
     private static final int CHEST_PAGE_MAX_RETRIES = 5;
     private static final long CHEST_PAGE_WAIT_TIMEOUT_MS = 2500L;
 
@@ -2120,6 +2124,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         copyCodeModule.onClientTick(mc, now);
         placeModule.onClientTick(mc, now);
         regAllActionsModule.onClientTick(mc, now);
+        if (regAllActionsModule.isActive())
+        {
+            regAllPagingGraceUntilMs = now + REGALL_PAGING_GRACE_MS;
+        }
         handleAutoChestCacheTick(mc, now);
         checkConfigFileChanges();
         saveEntriesIfNeeded();
@@ -7130,14 +7138,16 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         // - active RegAllActions capture flow
         boolean pageTurnRequested = false;
         boolean regAllOwnsPaging = regAllActionsModule != null && regAllActionsModule.isActive();
-        boolean pageTurnAllowed = modulePublishWarmupActive || autoCachePageTurnAllowed || regAllOwnsPaging;
+        boolean regAllGraceActive = now <= regAllPagingGraceUntilMs;
+        boolean pageTurnAllowed = modulePublishWarmupActive || autoCachePageTurnAllowed || regAllOwnsPaging || regAllGraceActive;
         if (lastClickedChest && allowChestSnapshot && chestPos != null && size > 0)
         {
             String key = chestKey(chestDim, chestPos);
             if (logger != null)
             {
-                logger.info("CHEST_PAGE_STATE enter key={} dim={} pos={} size={} hash={} warmup={} autoAllow={} regAllActive={} sessionAllowed={} await={} retry={} idx={}",
+                logger.info("CHEST_PAGE_STATE enter key={} dim={} pos={} size={} hash={} warmup={} autoAllow={} regAllActive={} regAllGrace={} graceMsLeft={} sessionAllowed={} await={} retry={} idx={}",
                     key, chestDim, chestPos, size, hash, modulePublishWarmupActive, autoCachePageTurnAllowed, regAllOwnsPaging,
+                    regAllGraceActive, Math.max(0L, regAllPagingGraceUntilMs - now),
                     chestPageSessionAllowed, chestPageAwaitCursorClear, chestPageRetryCount, chestPageScanIndex);
             }
             if (chestPageScanKey == null || !chestPageScanKey.equals(key) || chestPageScanSize != size)
@@ -7269,8 +7279,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                             String reason = regAllOwnsPaging
                                 ? "owned_by_regallactions"
                                 : "not_allowed";
-                            logger.info("CHEST_PAGE_CLICK skip key={} reason={} mode=normal_snapshot warmup={} autoAllow={} regAllActive={}",
-                                key, reason, modulePublishWarmupActive, autoCachePageTurnAllowed, regAllOwnsPaging);
+                            logger.info("CHEST_PAGE_CLICK skip key={} reason={} mode=normal_snapshot warmup={} autoAllow={} regAllActive={} regAllGrace={} graceMsLeft={}",
+                                key, reason, modulePublishWarmupActive, autoCachePageTurnAllowed, regAllOwnsPaging,
+                                regAllGraceActive, Math.max(0L, regAllPagingGraceUntilMs - now));
                         }
                     }
                 }
@@ -7441,13 +7452,17 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 hasNextPageNow = isNextPageArrow(lastSlotNow);
             }
             catch (Exception ignore) { }
-            boolean pageTurnAllowedNow = modulePublishWarmupActive || autoCachePageTurnAllowed;
+            boolean regAllGraceActiveNow = System.currentTimeMillis() <= regAllPagingGraceUntilMs;
+            boolean pageTurnAllowedNow = modulePublishWarmupActive || autoCachePageTurnAllowed || regAllOwnsPaging || regAllGraceActiveNow;
             if (hasNextPageNow && pageTurnAllowedNow)
             {
                 publishTrace(mc, "autocache.keep_open", "reason=has_next_page ageMs=" + ageMs
                     + " page=" + (chestPageScanIndex + 1) + " nextActionInMs=" + Math.max(0L, chestPageNextActionMs - System.currentTimeMillis())
                     + " retries=" + chestPageRetryCount + "/" + CHEST_PAGE_MAX_RETRIES
-                    + " allowed=" + pageTurnAllowedNow);
+                    + " allowed=" + pageTurnAllowedNow
+                    + " regAllActive=" + regAllOwnsPaging
+                    + " regAllGrace=" + regAllGraceActiveNow
+                    + " graceMsLeft=" + Math.max(0L, regAllPagingGraceUntilMs - System.currentTimeMillis()));
                 return;
             }
             if (hasNextPageNow && !pageTurnAllowedNow)
