@@ -466,13 +466,15 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private String chestPageScanKey = null;
     private int chestPageScanSize = 0;
     private int chestPageScanIndex = 0;
+    private boolean chestPageSessionAllowed = false;
+    private long chestPageLastSkipLogMs = 0L;
     private String chestPageLastHash = "";
     private boolean chestPageAwaitCursorClear = false;
     private long chestPageAwaitStartMs = 0L;
     private long chestPageNextActionMs = 0L;
     private int chestPageRetryCount = 0;
     private static final int CHEST_PAGE_MAX_RETRIES = 5;
-    private static final long CHEST_PAGE_WAIT_TIMEOUT_MS = 1500L;
+    private static final long CHEST_PAGE_WAIT_TIMEOUT_MS = 2500L;
 
     // --- Auto chest cache runtime state ---
     private long nextAutoCacheScanMs = 0L;
@@ -7149,8 +7151,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 resetChestPageScanState();
                 chestPageScanKey = key;
                 chestPageScanSize = size;
+                chestPageSessionAllowed = pageTurnAllowed;
             }
-            if (!pageTurnAllowed)
+            if (pageTurnAllowed)
+            {
+                chestPageSessionAllowed = true;
+            }
+            boolean effectivePageTurnAllowed = pageTurnAllowed || chestPageSessionAllowed;
+            if (!effectivePageTurnAllowed)
             {
                 chestPageAwaitCursorClear = false;
                 chestPageAwaitStartMs = 0L;
@@ -7210,11 +7218,15 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     logger.info("CHEST_PAGE_DETECT key={} page={} hasNext={} lastSlotReg={} lastSlotName={}",
                         key, chestPageScanIndex + 1, hasNextPage, reg, disp);
                 }
-                if (hasNextPage && !pageTurnAllowed)
+                if (hasNextPage && !effectivePageTurnAllowed)
                 {
-                    if (logger != null) logger.info("CHEST_PAGE_CLICK skip key={} reason=not_allowed mode=normal_snapshot", key);
+                    if (now - chestPageLastSkipLogMs > 1000L)
+                    {
+                        chestPageLastSkipLogMs = now;
+                        if (logger != null) logger.info("CHEST_PAGE_CLICK skip key={} reason=not_allowed mode=normal_snapshot", key);
+                    }
                 }
-                if (hasNextPage && pageTurnAllowed && now >= chestPageNextActionMs)
+                if (hasNextPage && effectivePageTurnAllowed && now >= chestPageNextActionMs)
                 {
                     if (chestPageRetryCount < CHEST_PAGE_MAX_RETRIES && mc != null && mc.player != null && mc.playerController != null)
                     {
@@ -7606,6 +7618,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         chestPageScanKey = null;
         chestPageScanSize = 0;
         chestPageScanIndex = 0;
+        chestPageSessionAllowed = false;
+        chestPageLastSkipLogMs = 0L;
         chestPageLastHash = "";
         chestPageAwaitCursorClear = false;
         chestPageAwaitStartMs = 0L;
