@@ -26,6 +26,11 @@ archivesBaseName = 'bettercode'
 
 sourceCompatibility = targetCompatibility = compileJava.sourceCompatibility = compileJava.targetCompatibility = '1.8' // Need this here so eclipse task generates correctly.
 
+// Force stable source encoding to avoid mojibake in RU literals on Windows.
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
+
 minecraft {
     // The mappings can be changed at any time, and must be in the following format.
     // snapshot_YYYYMMDD   Snapshot are built nightly.
@@ -133,6 +138,15 @@ tasks.register('copyToMinecraftMods', Copy) {
 }
 
 build.finalizedBy('copyToMinecraftMods')
+
+tasks.register('runExportSim', JavaExec) {
+    dependsOn 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    main = 'com.example.examplemod.tools.ExportCodeJavaSim'
+    if (project.hasProperty('simArgs')) {
+        args project.property('simArgs').toString().split('\\s+')
+    }
+}
 
 publishing {
     publications {

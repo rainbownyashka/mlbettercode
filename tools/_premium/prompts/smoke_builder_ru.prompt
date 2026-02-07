@@ -1,0 +1,12 @@
+Сделай файл `main.mldsl`.
+
+Требование: используй ТОЛЬКО tool calls (builder mode). Не пиши сырой код напрямую.
+
+Задача:
+- Событие: "Вход игрока"
+- Внутри: отправить одно сообщение игроку: "Привет!"
+
+Правила:
+- Сначала `new_program(path="main.mldsl")`
+- Потом `list_modules`, `list_funcs(module)`, `get_sig` для нужного действия.
+- Затем `begin_event` -> `add_action` -> `end_event` (можно без id) -> `finalize_program`.
