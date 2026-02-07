@@ -474,6 +474,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     // --- Auto chest cache runtime state ---
     private long nextAutoCacheScanMs = 0L;
     private boolean autoCacheInProgress = false;
+    private boolean autoCachePageTurnAllowed = false;
     private long autoCacheStartMs = 0L;
     private BlockPos autoCacheTargetPos = null;
     private int autoCacheTargetDim = 0;
@@ -492,6 +493,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private long modulePublishWarmupStartMs = 0L;
     private File modulePublishWarmupDir = null;
     private String modulePublishWarmupName = null;
+    private File modulePublishTraceFile = null;
+    private long modulePublishTraceSeq = 0L;
     private boolean lastEditorModeActive = false;
     private boolean chestIdDirty = false;
     private long lastChestIdSaveMs = 0L;
@@ -2947,11 +2950,28 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
         }
 
+        if (modulePublishTraceFile == null || predefinedDir == null)
+        {
+            modulePublishTraceFile = new File(dir, "publish_trace.log");
+            modulePublishTraceSeq = 0L;
+            try
+            {
+                if (modulePublishTraceFile.exists())
+                {
+                    modulePublishTraceFile.delete();
+                }
+            }
+            catch (Exception ignore) { }
+        }
+        publishTrace(mc, "publish.start", "name=" + name + " noCache=" + noCache + " dir=" + dir.getAbsolutePath()
+            + " predefined=" + (predefinedDir != null));
+
         if (noCache)
         {
             List<BlockPos> glasses = collectPublishGlasses(mc.world);
             if (glasses == null || glasses.isEmpty())
             {
+                publishTrace(mc, "publish.nocache.abort", "reason=no_selected_rows");
                 setActionBar(false, "&c/module publish: нет выбранных/видимых строк", 3500L);
                 mc.player.sendMessage(new TextComponentString(TextFormatting.RED
                     + "/module publish nocache: нет выбранных/видимых строк."));
@@ -2981,6 +3001,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             modulePublishWarmupStartMs = System.currentTimeMillis();
             modulePublishWarmupDir = dir;
             modulePublishWarmupName = name;
+            publishTrace(mc, "publish.nocache.warmup.start", "chests=" + chests.size() + " dim=" + dim);
 
             mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
                 + "/module publish nocache: прогрев сундуков (tp/open) перед экспортом: " + chests.size()));
@@ -3030,6 +3051,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     modulePublishWarmupStartMs = System.currentTimeMillis();
                     modulePublishWarmupDir = dir;
                     modulePublishWarmupName = name;
+                    publishTrace(mc, "publish.cache.warmup.start", "missing=" + missing.size() + " pagedRefresh=" + pagedRefreshCount + " dim=" + dim);
 
                     mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
                         + "/module publish: прогрев сундуков (tp/open): " + missing.size()
@@ -3046,6 +3068,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         GeneratedExport generated = generateExportCodeNow(name, !noCache);
         if (generated == null || generated.file == null || !generated.file.isFile())
         {
+            publishTrace(mc, "publish.abort", "reason=generate_export_failed");
             setActionBar(false, "&c/module publish: ошибка экспорта", 4500L);
             mc.player.sendMessage(new TextComponentString(TextFormatting.RED
                 + "/module publish: не удалось сгенерировать exportcode из текущего выделения/этажа."));
@@ -3066,6 +3089,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         String compiler = resolveMlDslCompilerPath();
         if (compiler == null || compiler.trim().isEmpty())
         {
+            publishTrace(mc, "publish.abort", "reason=compiler_not_found");
             setActionBar(false, "&c/module publish: компилятор mldsl не найден", 4500L);
             mc.player.sendMessage(new TextComponentString(TextFormatting.RED
                 + "Компилятор mldsl не найден. Ожидается: PATH (mldsl) или %LOCALAPPDATA%\\MLDSL\\mldsl.exe"));
@@ -3075,6 +3099,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         ExecResult conv = runMlDslExportToMldsl(compiler, exportFile, moduleFile);
         if (!conv.ok || !moduleFile.isFile())
         {
+            publishTrace(mc, "publish.abort", "reason=converter_failed exit=" + conv.exitCode);
             setActionBar(false, "&c/module publish: ошибка конвертации export->mldsl", 4500L);
             mc.player.sendMessage(new TextComponentString(TextFormatting.RED
                 + "Конвертер завершился с ошибкой (code=" + conv.exitCode + "): " + trimForChat(conv.stderr)));
@@ -3088,6 +3113,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         ExecResult comp = runMlDslCompileToPlan(compiler, moduleFile, planFile);
         if (!comp.ok || !planFile.isFile())
         {
+            publishTrace(mc, "publish.abort", "reason=compile_failed exit=" + comp.exitCode);
             setActionBar(false, "&c/module publish: ошибка компиляции mldsl", 4500L);
             mc.player.sendMessage(new TextComponentString(TextFormatting.RED
                 + "Компиляция завершилась с ошибкой (code=" + comp.exitCode + "): " + trimForChat(comp.stderr)));
@@ -3116,6 +3142,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
         String url = "https://mldsl-hub.pages.dev/publish";
         setActionBar(true, "&aПакет готов (" + copied + " файлов). Открываю папку и Hub...", 4500L);
+        publishTrace(mc, "publish.done", "files=" + copied + " dir=" + dir.getAbsolutePath());
         mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "Папка публикации: " + dir.getAbsolutePath()));
         mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
             + "Экспортировано строк: " + generated.rows + " | MLDSL + plan сгенерированы."));
@@ -7089,7 +7116,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         // IMPORTANT: page auto-clicking is allowed only for explicit flows
         // (regallactions/module publish warmup), never for generic chest snapshots.
         boolean pageTurnRequested = false;
-        boolean pageTurnAllowed = modulePublishWarmupActive || regAllActionsModule.isActive();
+        boolean pageTurnAllowed = modulePublishWarmupActive || regAllActionsModule.isActive() || autoCachePageTurnAllowed;
         if (lastClickedChest && allowChestSnapshot && chestPos != null && size > 0)
         {
             String key = chestKey(chestDim, chestPos);
@@ -7295,13 +7322,43 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             // - for large menus (54) with very sparse initial snapshot wait up to 1.2s.
             if (ageMs < 350L || (size >= 54 && nonEmptyCount <= 2 && ageMs < 1200L))
             {
+                publishTrace(mc, "autocache.keep_open", "reason=stabilizing ageMs=" + ageMs + " size=" + size + " nonEmpty=" + nonEmptyCount
+                    + " page=" + (chestPageScanIndex + 1));
                 return;
             }
+            boolean hasNextPageNow = false;
+            try
+            {
+                ItemStack lastSlotNow = items.isEmpty() ? ItemStack.EMPTY : items.get(size - 1);
+                hasNextPageNow = isNextPageArrow(lastSlotNow);
+            }
+            catch (Exception ignore) { }
+            boolean pageTurnAllowedNow = modulePublishWarmupActive || regAllActionsModule.isActive() || autoCachePageTurnAllowed;
+            if (hasNextPageNow && pageTurnAllowedNow)
+            {
+                publishTrace(mc, "autocache.keep_open", "reason=has_next_page ageMs=" + ageMs
+                    + " page=" + (chestPageScanIndex + 1) + " nextActionInMs=" + Math.max(0L, chestPageNextActionMs - System.currentTimeMillis())
+                    + " retries=" + chestPageRetryCount + "/" + CHEST_PAGE_MAX_RETRIES
+                    + " allowed=" + pageTurnAllowedNow);
+                return;
+            }
+            if (hasNextPageNow && !pageTurnAllowedNow)
+            {
+                publishTrace(mc, "autocache.keep_open", "reason=has_next_page_but_not_allowed ageMs=" + ageMs
+                    + " page=" + (chestPageScanIndex + 1) + " retries=" + chestPageRetryCount + "/" + CHEST_PAGE_MAX_RETRIES
+                    + " allowed=" + pageTurnAllowedNow + " moduleWarmup=" + modulePublishWarmupActive
+                    + " regAllActive=" + regAllActionsModule.isActive() + " autoCacheAllow=" + autoCachePageTurnAllowed);
+                return;
+            }
+            publishTrace(mc, "autocache.close", "reason=stable_snapshot ageMs=" + ageMs + " size=" + size + " nonEmpty=" + nonEmptyCount
+                + " page=" + (chestPageScanIndex + 1) + " hasNextPage=" + hasNextPageNow + " pageTurnRequested=" + pageTurnRequested
+                + " awaitCursor=" + chestPageAwaitCursorClear);
             if (mc != null && mc.player != null)
             {
                 mc.player.closeScreen();
             }
             autoCacheInProgress = false;
+            autoCachePageTurnAllowed = false;
             autoCacheTargetPos = null;
             autoCacheStartMs = 0L;
             nextAutoCacheScanMs = System.currentTimeMillis() + 250L;
@@ -7484,6 +7541,39 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         if (lastClickedPos != null && lastClickedChest && System.currentTimeMillis() - lastClickedMs < 5000L)
         {
             cacheChestInventoryAt(lastClickedDim, lastClickedPos, items, lastClickedLabel);
+        }
+    }
+
+    private void publishTrace(Minecraft mc, String stage, String details)
+    {
+        String ts = String.valueOf(System.currentTimeMillis());
+        long seq = ++modulePublishTraceSeq;
+        String line = "PUBLISH_TRACE seq=" + seq + " ts=" + ts + " stage=" + stage + " " + (details == null ? "" : details);
+        if (logger != null)
+        {
+            logger.info(line);
+        }
+        File f = modulePublishTraceFile;
+        if (f != null)
+        {
+            try
+            {
+                File parent = f.getParentFile();
+                if (parent != null && !parent.exists())
+                {
+                    parent.mkdirs();
+                }
+                try (BufferedWriter w = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(f, true), StandardCharsets.UTF_8)))
+                {
+                    w.write(line);
+                    w.newLine();
+                }
+            }
+            catch (Exception ignore) { }
+        }
+        if (exportCodeDebug && mc != null && mc.player != null)
+        {
+            mc.player.sendMessage(new TextComponentString(TextFormatting.DARK_AQUA + line));
         }
     }
 
@@ -13172,6 +13262,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
         int dim = mc.world.provider.getDimension();
         autoCacheInProgress = true;
+        autoCachePageTurnAllowed = modulePublishWarmupActive || regAllActionsModule.isActive();
         autoCacheStartMs = now;
         autoCacheTargetPos = pos;
         autoCacheTargetDim = dim;
@@ -13229,6 +13320,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             if (now - autoCacheStartMs > 2500L)
             {
                 autoCacheInProgress = false;
+                autoCachePageTurnAllowed = false;
                 autoCacheTargetPos = null;
                 autoCacheStartMs = 0L;
                 nextAutoCacheScanMs = now + 500L;
@@ -13454,6 +13546,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         if (mc == null || mc.world == null || mc.player == null)
         {
+            publishTrace(null, "warmup.stop", "reason=null_context");
             modulePublishWarmupActive = false;
             modulePublishWarmupQueue.clear();
             modulePublishWarmupAllChests.clear();
@@ -13465,23 +13558,28 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         if (mc.world.provider.getDimension() != modulePublishWarmupDim)
         {
+            publishTrace(mc, "warmup.wait", "reason=dimension_mismatch current=" + mc.world.provider.getDimension() + " expected=" + modulePublishWarmupDim);
             return;
         }
         if (!editorModeActive || !isDevCreativeScoreboard(mc))
         {
+            publishTrace(mc, "warmup.wait", "reason=not_dev_creative");
             return;
         }
         if (isHoldingIronOrGoldIngot(mc) || autoCacheInProgress || mc.currentScreen != null)
         {
+            publishTrace(mc, "warmup.wait", "reason=blocked heldIngot=" + isHoldingIronOrGoldIngot(mc) + " autoCache=" + autoCacheInProgress + " screen=" + (mc.currentScreen != null));
             return;
         }
         if (!tpPathQueue.isEmpty())
         {
+            publishTrace(mc, "warmup.wait", "reason=tp_path_busy steps=" + tpPathQueue.size());
             return;
         }
         // Hard timeout safety.
         if (now - modulePublishWarmupStartMs > 120000L)
         {
+            publishTrace(mc, "warmup.stop", "reason=timeout");
             modulePublishWarmupActive = false;
             modulePublishWarmupQueue.clear();
             modulePublishWarmupAllChests.clear();
@@ -13498,9 +13596,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 BlockPos p = modulePublishWarmupQueue.poll();
                 if (p == null || !isTargetChestBlock(mc.world, p))
                 {
+                    publishTrace(mc, "warmup.skip", "reason=invalid_or_missing_chest pos=" + p);
                     continue;
                 }
                 modulePublishWarmupCurrent = p;
+                publishTrace(mc, "warmup.pick", "pos=" + p.getX() + "," + p.getY() + "," + p.getZ() + " pass=" + modulePublishWarmupPass + " queueLeft=" + modulePublishWarmupQueue.size());
                 break;
             }
             if (modulePublishWarmupCurrent == null)
@@ -13523,6 +13623,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     {
                         modulePublishWarmupQueue.addAll(retry);
                         modulePublishWarmupPass = 1;
+                        publishTrace(mc, "warmup.retry_pass", "count=" + retry.size());
                         if (mc.player != null)
                         {
                             mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
@@ -13535,6 +13636,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 // Warmup completed: export+convert using freshly built caches.
                 File dir = modulePublishWarmupDir;
                 String name = modulePublishWarmupName;
+                publishTrace(mc, "warmup.done", "dir=" + (dir == null ? "null" : dir.getAbsolutePath()) + " name=" + name);
                 modulePublishWarmupActive = false;
                 modulePublishWarmupAllChests.clear();
                 modulePublishWarmupPass = 0;
@@ -13556,11 +13658,13 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 targetY,
                 targetZ
             );
+            publishTrace(mc, "warmup.tp", "target=" + targetX + "," + targetY + "," + targetZ);
             return;
         }
 
         if (mc.player.getDistanceSqToCenter(modulePublishWarmupCurrent) <= 9.0)
         {
+            publishTrace(mc, "warmup.open", "pos=" + modulePublishWarmupCurrent.getX() + "," + modulePublishWarmupCurrent.getY() + "," + modulePublishWarmupCurrent.getZ());
             beginAutoCacheChest(mc, modulePublishWarmupCurrent, now);
             modulePublishWarmupCurrent = null;
         }
@@ -13577,6 +13681,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 targetY,
                 targetZ
             );
+            publishTrace(mc, "warmup.tp", "target=" + targetX + "," + targetY + "," + targetZ);
         }
     }
 
