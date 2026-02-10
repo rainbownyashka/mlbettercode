@@ -4578,6 +4578,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             ensureChestCaches(dim);
             String key = chestKey(dim, chestPos);
             ChestCache cached = chestCaches.get(key);
+            if ((cached == null || cached.items == null || !containsAnyNonEmpty(cached.items)))
+            {
+                // Fallback: sometimes runtime chestCaches can be cleared/replaced between warmup and export.
+                // In that case, recover the latest non-empty snapshot by position from id-scoped caches.
+                cached = findBestChestIdCacheByPos(dim, chestPos);
+            }
             boolean liveHasAny = containsAnyNonEmpty(liveItems);
             if (!liveHasAny && cached != null && cached.items != null && containsAnyNonEmpty(cached.items))
             {
@@ -4616,6 +4622,35 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         sb.append("]}");
         return sb.toString();
+    }
+
+    private ChestCache findBestChestIdCacheByPos(int dim, BlockPos pos)
+    {
+        if (pos == null || chestIdCaches.isEmpty())
+        {
+            return null;
+        }
+        ChestCache best = null;
+        for (ChestCache c : chestIdCaches.values())
+        {
+            if (c == null || c.pos == null || c.items == null)
+            {
+                continue;
+            }
+            if (c.dim != dim || c.pos.getX() != pos.getX() || c.pos.getY() != pos.getY() || c.pos.getZ() != pos.getZ())
+            {
+                continue;
+            }
+            if (!containsAnyNonEmpty(c.items))
+            {
+                continue;
+            }
+            if (best == null || c.updatedMs > best.updatedMs)
+            {
+                best = c;
+            }
+        }
+        return best;
     }
 
     private static boolean containsAnyNonEmpty(List<ItemStack> items)
