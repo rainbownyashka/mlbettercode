@@ -7316,8 +7316,13 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 mergeChestPageToCache(chestDim, chestPos, size, chestPageScanIndex, items, chestLabel);
                 if (logger != null)
                 {
-                    logger.info("CHEST_PAGE_MERGE key={} page={} size={} items={} label={}",
-                        key, chestPageScanIndex + 1, size, items.size(), chestLabel);
+                    ChestCache mergedCache = chestCaches.get(key);
+                    int pageNonEmpty = countNonEmptyItems(items);
+                    int mergedNonEmpty = countNonEmptyItems(mergedCache == null ? null : mergedCache.items);
+                    int mergedSlots = mergedCache == null || mergedCache.items == null ? 0 : mergedCache.items.size();
+                    int mergedPages = size > 0 ? ((mergedSlots + size - 1) / size) : 0;
+                    logger.info("CHEST_PAGE_MERGE key={} page={} size={} items={} pageNonEmpty={} mergedPages={} mergedSlots={} mergedNonEmpty={} label={}",
+                        key, chestPageScanIndex + 1, size, items.size(), pageNonEmpty, mergedPages, mergedSlots, mergedNonEmpty, chestLabel);
                 }
 
                 ItemStack lastSlot = items.isEmpty() ? ItemStack.EMPTY : items.get(size - 1);
@@ -7595,9 +7600,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     + " cursor=" + carriedReg + " page=" + (chestPageScanIndex + 1));
                 return;
             }
+            String mergedTotals = buildMergedChestTotalsLog(chestDim, chestPos, size);
             publishTrace(mc, "autocache.close", "reason=stable_snapshot ageMs=" + ageMs + " size=" + size + " nonEmpty=" + nonEmptyCount
                 + " page=" + (chestPageScanIndex + 1) + " hasNextPage=" + hasNextPageNow + " pageTurnRequested=" + pageTurnRequested
-                + " awaitCursor=" + chestPageAwaitCursorClear);
+                + " awaitCursor=" + chestPageAwaitCursorClear + " " + mergedTotals);
             if (mc != null && mc.player != null)
             {
                 mc.player.closeScreen();
@@ -7947,6 +7953,41 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             idx++;
         }
         return -1;
+    }
+
+    private int countNonEmptyItems(List<ItemStack> items)
+    {
+        if (items == null || items.isEmpty())
+        {
+            return 0;
+        }
+        int count = 0;
+        for (ItemStack st : items)
+        {
+            if (st != null && !st.isEmpty())
+            {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private String buildMergedChestTotalsLog(int dim, BlockPos pos, int pageSize)
+    {
+        String key = chestKey(dim, pos);
+        if (key == null)
+        {
+            return "mergedPages=0 mergedSlots=0 mergedNonEmpty=0";
+        }
+        ChestCache cache = chestCaches.get(key);
+        if (cache == null || cache.items == null)
+        {
+            return "mergedPages=0 mergedSlots=0 mergedNonEmpty=0";
+        }
+        int slots = cache.items.size();
+        int pages = pageSize > 0 ? ((slots + pageSize - 1) / pageSize) : 0;
+        int nonEmpty = countNonEmptyItems(cache.items);
+        return "mergedPages=" + pages + " mergedSlots=" + slots + " mergedNonEmpty=" + nonEmpty;
     }
 
     private void queueFakeMenuClick(GuiContainer gui)
