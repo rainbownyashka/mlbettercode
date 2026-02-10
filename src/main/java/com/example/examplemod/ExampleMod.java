@@ -4547,7 +4547,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
         List<ItemStack> bestItems = liveItems;
         int dim = world.provider.getDimension();
-        if (preferChestCache && chestCacheEnabled)
+        if (preferChestCache)
         {
             ensureChestCaches(dim);
             String key = chestKey(dim, chestPos);
@@ -7809,7 +7809,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
     private void mergeChestPageToCache(int dim, BlockPos pos, int pageSize, int pageIndex, List<ItemStack> pageItems, String label)
     {
-        if (!chestCacheEnabled)
+        // Even with chest cache disabled in config, publish warmup/regall paging
+        // still needs a temporary merged snapshot for correct export.
+        boolean allowTransientCache = modulePublishWarmupActive;
+        if (!chestCacheEnabled && !allowTransientCache)
         {
             return;
         }
