@@ -4548,22 +4548,26 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
 
         List<ItemStack> bestItems = liveItems;
+        String chestExportSource = "live";
         int dim = world.provider.getDimension();
         if (preferChestCache)
         {
             ensureChestCaches(dim);
             String key = chestKey(dim, chestPos);
             ChestCache cached = chestCaches.get(key);
+            boolean usedIdFallbackLookup = false;
             if ((cached == null || cached.items == null || !containsAnyNonEmpty(cached.items)))
             {
                 // Fallback: sometimes runtime chestCaches can be cleared/replaced between warmup and export.
                 // In that case, recover the latest non-empty snapshot by position from id-scoped caches.
                 cached = findBestChestIdCacheByPos(dim, chestPos);
+                usedIdFallbackLookup = true;
             }
             boolean liveHasAny = containsAnyNonEmpty(liveItems);
             if (!liveHasAny && cached != null && cached.items != null && containsAnyNonEmpty(cached.items))
             {
                 bestItems = cached.items;
+                chestExportSource = usedIdFallbackLookup ? "id_cache_fallback" : "runtime_cache";
                 if ((title == null || title.trim().isEmpty()) && cached.label != null)
                 {
                     title = cached.label;
@@ -4572,6 +4576,15 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 {
                     size = Math.max(1, cached.items.size());
                 }
+            }
+            else if (!liveHasAny)
+            {
+                chestExportSource = usedIdFallbackLookup ? "id_cache_fallback_miss" : "runtime_cache_miss";
+            }
+            if (logger != null)
+            {
+                logger.info("EXPORT_CHEST_SOURCE key={} pos={} preferCache={} source={} liveNonEmpty={} outNonEmpty={} size={}",
+                    key, chestPos, true, chestExportSource, containsAnyNonEmpty(liveItems), containsAnyNonEmpty(bestItems), Math.max(1, size));
             }
         }
 
