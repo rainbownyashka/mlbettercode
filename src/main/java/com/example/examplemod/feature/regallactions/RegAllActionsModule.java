@@ -393,7 +393,14 @@ public final class RegAllActionsModule
 
         if (state.openingChest && nowMs > state.chestOpenDeadlineMs)
         {
-            RegAllRecord record = buildRecord(false, null);
+            GuiChest timedOutGui = (mc.currentScreen instanceof GuiChest) ? (GuiChest) mc.currentScreen : null;
+            boolean hasChestAtTimeout = timedOutGui != null;
+            if (hasChestAtTimeout)
+            {
+                LOGGER.warn("RGA_CHEST timeout but chest still open; forcing snapshot. state={}",
+                    host.describeChestSnapshotState(timedOutGui));
+            }
+            RegAllRecord record = buildRecord(hasChestAtTimeout, timedOutGui);
             state.records.add(record);
             if (onRecordAdded(mc, record))
             {
@@ -464,9 +471,10 @@ public final class RegAllActionsModule
             state.waitingForChest = false;
             state.openingChest = true;
             state.chestWaitStartMs = nowMs;
-            state.chestOpenDeadlineMs = nowMs + 2000L;
+            state.chestOpenDeadlineMs = nowMs + 7000L;
             state.chestReadySinceMs = 0L;
             state.chestReadyWindowId = -1;
+            state.chestWaitLogMs = 0L;
             state.chestSpawnStartMs = 0L;
             state.chestSpawnDeadlineMs = 0L;
             state.nextActionMs = nowMs + actionDelayMs();
@@ -674,6 +682,25 @@ public final class RegAllActionsModule
                 return;
             }
             GuiChest chestGui = (GuiChest) gui;
+            boolean snapshotStable = host.isChestSnapshotStable(chestGui);
+            if (!snapshotStable)
+            {
+                if (nowMs - state.chestWaitLogMs >= 250L)
+                {
+                    state.chestWaitLogMs = nowMs;
+                    LOGGER.info("RGA_CHEST wait_stable elapsedMs={} timeoutInMs={} state={}",
+                        Math.max(0L, nowMs - state.chestWaitStartMs),
+                        Math.max(0L, state.chestOpenDeadlineMs - nowMs),
+                        host.describeChestSnapshotState(chestGui));
+                }
+                if (nowMs < state.chestOpenDeadlineMs)
+                {
+                    state.nextActionMs = nowMs + 80L;
+                    return;
+                }
+                LOGGER.warn("RGA_CHEST stable_wait_timeout; proceeding with fallback snapshot. state={}",
+                    host.describeChestSnapshotState(chestGui));
+            }
             boolean params = isParamsChestGui(chestGui);
             if (!params)
             {
@@ -1398,7 +1425,20 @@ public final class RegAllActionsModule
         record.signLines = readSignLines();
         if (hasChest && gui != null)
         {
-            record.chestItems.addAll(snapshotTopInventorySlots(gui));
+            List<String> merged = host.snapshotMergedTopInventorySlots(gui);
+            if (merged != null && !merged.isEmpty())
+            {
+                record.chestItems.addAll(merged);
+                LOGGER.info("RGA_CHEST snapshot mode=merged items={} state={}",
+                    merged.size(), host.describeChestSnapshotState(gui));
+            }
+            else
+            {
+                List<String> fallback = snapshotTopInventorySlots(gui);
+                record.chestItems.addAll(fallback);
+                LOGGER.warn("RGA_CHEST snapshot mode=fallback_visible items={} reason=merged_empty state={}",
+                    fallback.size(), host.describeChestSnapshotState(gui));
+            }
         }
         else
         {
