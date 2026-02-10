@@ -3121,7 +3121,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         int copied = 0;
 
         // 1) Always generate a fresh exportcode from current selection/floor context.
-        GeneratedExport generated = generateExportCodeNow(name, !effectiveNoCache);
+        // Publish always relies on freshly warmed chest snapshots (including paged GUI data),
+        // even when global chest cache is disabled and publish runs in forced nocache mode.
+        GeneratedExport generated = generateExportCodeNow(name, true);
         if (generated == null || generated.file == null || !generated.file.isFile())
         {
             publishTrace(mc, "publish.abort", "reason=generate_export_failed");
