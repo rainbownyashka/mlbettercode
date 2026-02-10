@@ -2989,7 +2989,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         publishTrace(mc, "publish.start", "name=" + name + " noCache=" + noCache + " effectiveNoCache=" + effectiveNoCache + " dir=" + dir.getAbsolutePath()
             + " predefined=" + (predefinedDir != null));
 
-        if (effectiveNoCache)
+        if (effectiveNoCache && predefinedDir == null)
         {
             List<BlockPos> glasses = collectPublishGlasses(mc.world);
             if (glasses == null || glasses.isEmpty())
@@ -3032,6 +3032,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 + "/module publish nocache: прогрев сундуков (tp/open) перед экспортом: " + chests.size()));
             setActionBar(true, "&e/module publish nocache: прогрев " + chests.size() + " сундуков...", 3500L);
             return;
+        }
+        else if (effectiveNoCache)
+        {
+            // Warmup was already done in this publish run (predefinedDir path).
+            // Continue directly to export/convert/compile, otherwise cache-disabled mode loops forever.
+            publishTrace(mc, "publish.nocache.warmup.skip", "reason=prewarmed predefined=true dir=" + dir.getAbsolutePath());
         }
 
         // Cache mode: if some row chests are missing in cache, warm only missing ones first.
@@ -13446,7 +13452,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
     private void beginAutoCacheChest(Minecraft mc, BlockPos pos, long now)
     {
-        if (!chestCacheEnabled)
+        if (!chestCacheEnabled && !modulePublishWarmupActive)
         {
             return;
         }
