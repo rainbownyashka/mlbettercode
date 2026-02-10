@@ -35,7 +35,7 @@ public final class HubModule
     public HubModule(PlaceModuleHost host)
     {
         this.host = host;
-        this.baseUrl = "https://mldsl-hub.pages.dev";
+        this.baseUrl = "https://mldsl-hub.vercel.app";
     }
 
     public void setConfirmKeyHint(String hint)

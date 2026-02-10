@@ -3159,7 +3159,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         catch (Exception ignore) { }
 
-        String url = "https://mldsl-hub.pages.dev/publish";
+        String url = "https://mldsl-hub.vercel.app/publish";
         setActionBar(true, "&aПакет готов (" + copied + " файлов). Открываю папку и Hub...", 4500L);
         publishTrace(mc, "publish.done", "files=" + copied + " dir=" + dir.getAbsolutePath());
         mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "Папка публикации: " + dir.getAbsolutePath()));
