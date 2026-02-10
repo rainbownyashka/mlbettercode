@@ -250,6 +250,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     // --- Auto chest cache settings (config) ---
     private static boolean chestCacheEnabled = true;
     private static boolean autoCacheEnabled = false;
+    private static boolean autoCacheGuiOpenEnabled = true;
     private static int autoCacheRadius = 6;
     private static boolean autoCacheTrappedOnly = true;
     // --- Place/MLDSL timings (config) ---
@@ -488,6 +489,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private long autoCacheStartMs = 0L;
     private BlockPos autoCacheTargetPos = null;
     private int autoCacheTargetDim = 0;
+    private String autoCacheLastMenuHash = "";
+    private long autoCacheLastMenuHashChangeMs = 0L;
+    private int autoCacheStableNoNextTicks = 0;
     private boolean cacheAllActive = false;
     private final Deque<BlockPos> cacheAllQueue = new ArrayDeque<>();
     private BlockPos cacheAllCurrentTarget = null;
@@ -501,6 +505,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private BlockPos modulePublishWarmupCurrent = null;
     private int modulePublishWarmupDim = 0;
     private long modulePublishWarmupStartMs = 0L;
+    private long modulePublishWarmupSettleUntilMs = 0L;
     private File modulePublishWarmupDir = null;
     private String modulePublishWarmupName = null;
     private File modulePublishTraceFile = null;
@@ -3041,6 +3046,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             modulePublishWarmupCurrent = null;
             modulePublishWarmupDim = dim;
             modulePublishWarmupStartMs = System.currentTimeMillis();
+            modulePublishWarmupSettleUntilMs = 0L;
             modulePublishWarmupDir = dir;
             modulePublishWarmupName = name;
             publishTrace(mc, "publish.nocache.warmup.start", "chests=" + chests.size() + " dim=" + dim
@@ -3092,6 +3098,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     modulePublishWarmupCurrent = null;
                     modulePublishWarmupDim = dim;
                     modulePublishWarmupStartMs = System.currentTimeMillis();
+                    modulePublishWarmupSettleUntilMs = 0L;
                     modulePublishWarmupDir = dir;
                     modulePublishWarmupName = name;
                     publishTrace(mc, "publish.cache.warmup.start", "missing=" + missing.size() + " pagedRefresh=" + pagedRefreshCount + " dim=" + dim);
@@ -7451,7 +7458,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         // Guard against premature close on first tick when server has not sent full chest contents yet.
         if (autoCacheInProgress && !pageTurnRequested && !chestPageAwaitCursorClear)
         {
-            long ageMs = System.currentTimeMillis() - autoCacheStartMs;
+            long nowMs = System.currentTimeMillis();
+            long ageMs = nowMs - autoCacheStartMs;
             int nonEmptyCount = 0;
             for (ItemStack st : items)
             {
@@ -7460,14 +7468,32 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     nonEmptyCount++;
                 }
             }
+            boolean cursorEmptyNow = true;
+            String carriedReg = "none";
+            try
+            {
+                ItemStack carried = mc == null || mc.player == null ? ItemStack.EMPTY : mc.player.inventory.getItemStack();
+                cursorEmptyNow = carried == null || carried.isEmpty();
+                if (carried != null && !carried.isEmpty() && carried.getItem() != null && carried.getItem().getRegistryName() != null)
+                {
+                    carriedReg = carried.getItem().getRegistryName().toString();
+                }
+            }
+            catch (Exception ignore) { }
             // Wait a bit before force-close:
             // - first 350ms always wait;
             // - for large menus (54) with very sparse initial snapshot wait up to 1.2s.
             if (ageMs < 350L || (size >= 54 && nonEmptyCount <= 2 && ageMs < 1200L))
             {
                 publishTrace(mc, "autocache.keep_open", "reason=stabilizing ageMs=" + ageMs + " size=" + size + " nonEmpty=" + nonEmptyCount
-                    + " page=" + (chestPageScanIndex + 1));
+                    + " page=" + (chestPageScanIndex + 1) + " cursor=" + carriedReg);
                 return;
+            }
+            if (!hash.equals(autoCacheLastMenuHash))
+            {
+                autoCacheLastMenuHash = hash;
+                autoCacheLastMenuHashChangeMs = nowMs;
+                autoCacheStableNoNextTicks = 0;
             }
             boolean hasNextPageNow = false;
             try
@@ -7476,6 +7502,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 hasNextPageNow = isNextPageArrow(lastSlotNow);
             }
             catch (Exception ignore) { }
+            if (!hasNextPageNow)
+            {
+                autoCacheStableNoNextTicks++;
+            }
+            else
+            {
+                autoCacheStableNoNextTicks = 0;
+            }
             boolean regAllGraceActiveNow = System.currentTimeMillis() <= regAllPagingGraceUntilMs;
             boolean pageTurnAllowedNow = modulePublishWarmupActive || autoCachePageTurnAllowed || regAllOwnsPaging || regAllGraceActiveNow;
             if (hasNextPageNow && pageTurnAllowedNow)
@@ -7497,6 +7531,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     + " regAllActive=" + regAllOwnsPaging + " autoCacheAllow=" + autoCachePageTurnAllowed);
                 return;
             }
+            long stableMs = autoCacheLastMenuHashChangeMs <= 0L ? 0L : (nowMs - autoCacheLastMenuHashChangeMs);
+            if (autoCacheStableNoNextTicks < 3 || stableMs < 500L || !cursorEmptyNow || ageMs < 650L)
+            {
+                publishTrace(mc, "autocache.keep_open", "reason=await_final_stable_no_next ageMs=" + ageMs
+                    + " stableMs=" + stableMs + " noNextTicks=" + autoCacheStableNoNextTicks
+                    + " cursor=" + carriedReg + " page=" + (chestPageScanIndex + 1));
+                return;
+            }
             publishTrace(mc, "autocache.close", "reason=stable_snapshot ageMs=" + ageMs + " size=" + size + " nonEmpty=" + nonEmptyCount
                 + " page=" + (chestPageScanIndex + 1) + " hasNextPage=" + hasNextPageNow + " pageTurnRequested=" + pageTurnRequested
                 + " awaitCursor=" + chestPageAwaitCursorClear);
@@ -7508,6 +7550,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             autoCachePageTurnAllowed = false;
             autoCacheTargetPos = null;
             autoCacheStartMs = 0L;
+            autoCacheLastMenuHash = "";
+            autoCacheLastMenuHashChangeMs = 0L;
+            autoCacheStableNoNextTicks = 0;
             nextAutoCacheScanMs = System.currentTimeMillis() + 250L;
         }
 
@@ -13234,6 +13279,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 "AUTO-CACHE CHESTS: Automatically open and cache nearby trapped chests in DEV mode.\n"
                     + "Only works in creative mode with special scoreboard. Check with /autocache command.\n"
                     + "Blocked while holding IRON_INGOT or GOLD_INGOT.");
+            autoCacheGuiOpenEnabled = config.getBoolean("autoCacheGuiOpenEnabled", "chest", true,
+                "AUTO-CACHE GUI OPEN: if false, background auto-cache will not auto-open chest/signer GUIs while coding.\n"
+                    + "Does NOT disable /module publish warmup chest opens.");
             chestCacheEnabled = config.getBoolean("chestCacheEnabled", "chest", true,
                 "MASTER SWITCH: enable/disable chest cache usage.\n"
                     + "If false: no chest cache reads/writes. /module publish will run in nocache mode.");
@@ -13450,6 +13498,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         autoCacheInProgress = true;
         // Global snapshot page-turn is owned only by module publish warmup.
         autoCachePageTurnAllowed = modulePublishWarmupActive;
+        autoCacheLastMenuHash = "";
+        autoCacheLastMenuHashChangeMs = now;
+        autoCacheStableNoNextTicks = 0;
         if (logger != null)
         {
             logger.info("CHEST_PAGE_OWNER mode={} target={} dim={} autoAllow={}",
@@ -13485,6 +13536,20 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             return;
         }
+        if (!autoCacheGuiOpenEnabled)
+        {
+            if (autoCacheInProgress)
+            {
+                autoCacheInProgress = false;
+                autoCachePageTurnAllowed = false;
+                autoCacheTargetPos = null;
+                autoCacheStartMs = 0L;
+                autoCacheLastMenuHash = "";
+                autoCacheLastMenuHashChangeMs = 0L;
+                autoCacheStableNoNextTicks = 0;
+            }
+            return;
+        }
         if (mc == null || mc.world == null || mc.player == null)
         {
             return;
@@ -13516,6 +13581,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 autoCachePageTurnAllowed = false;
                 autoCacheTargetPos = null;
                 autoCacheStartMs = 0L;
+                autoCacheLastMenuHash = "";
+                autoCacheLastMenuHashChangeMs = 0L;
+                autoCacheStableNoNextTicks = 0;
                 nextAutoCacheScanMs = now + 500L;
             }
             return;
@@ -13747,6 +13815,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             modulePublishWarmupCurrent = null;
             modulePublishWarmupDir = null;
             modulePublishWarmupName = null;
+            modulePublishWarmupSettleUntilMs = 0L;
             return;
         }
         if (mc.world.provider.getDimension() != modulePublishWarmupDim)
@@ -13779,6 +13848,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             modulePublishWarmupPass = 0;
             modulePublishWarmupCurrent = null;
             setActionBar(false, "&c/module publish: nocache warmup timeout", 3500L);
+            modulePublishWarmupSettleUntilMs = 0L;
             return;
         }
 
@@ -13827,6 +13897,13 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     }
                 }
                 // Warmup completed: export+convert using freshly built caches.
+                // Give a short settle window for delayed page GUI packets on high ping.
+                if (now < modulePublishWarmupSettleUntilMs || autoCacheInProgress || chestPageAwaitCursorClear || mc.currentScreen != null)
+                {
+                    publishTrace(mc, "warmup.wait", "reason=settling now=" + now + " settleUntil=" + modulePublishWarmupSettleUntilMs
+                        + " autoCache=" + autoCacheInProgress + " awaitCursor=" + chestPageAwaitCursorClear + " screen=" + (mc.currentScreen != null));
+                    return;
+                }
                 File dir = modulePublishWarmupDir;
                 String name = modulePublishWarmupName;
                 publishTrace(mc, "warmup.done", "dir=" + (dir == null ? "null" : dir.getAbsolutePath()) + " name=" + name);
@@ -13835,6 +13912,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 modulePublishWarmupPass = 0;
                 modulePublishWarmupDir = null;
                 modulePublishWarmupName = null;
+                modulePublishWarmupSettleUntilMs = 0L;
                 runModulePublishCommandWithDir(name, false, dir);
                 return;
             }
@@ -13859,6 +13937,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             publishTrace(mc, "warmup.open", "pos=" + modulePublishWarmupCurrent.getX() + "," + modulePublishWarmupCurrent.getY() + "," + modulePublishWarmupCurrent.getZ());
             beginAutoCacheChest(mc, modulePublishWarmupCurrent, now);
+            modulePublishWarmupSettleUntilMs = now + 1400L;
             modulePublishWarmupCurrent = null;
         }
         else
@@ -15255,7 +15334,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         if (autoCacheEnabled)
         {
-            setActionBar(true, "&aAutoCache: &eON &8(radius=" + autoCacheRadius + " trapped=" + autoCacheTrappedOnly + ")", 3000L);
+            setActionBar(true, "&aAutoCache: &eON &8(radius=" + autoCacheRadius + " trapped=" + autoCacheTrappedOnly
+                + " guiOpen=" + autoCacheGuiOpenEnabled + ")", 3000L);
         }
         else
         {
