@@ -478,6 +478,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private static final long REGALL_PAGING_GRACE_MS = 2000L;
     private static final int CHEST_PAGE_MAX_RETRIES = 5;
     private static final long CHEST_PAGE_WAIT_TIMEOUT_MS = 2500L;
+    private static final long REGALL_CHEST_STABLE_EXTRA_MS = 80L;
 
     // --- Auto chest cache runtime state ---
     private long nextAutoCacheScanMs = 0L;
@@ -8341,6 +8342,203 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             return "";
         }
         return inv.getDisplayName().getUnformattedText();
+    }
+
+    @Override
+    public List<String> snapshotMergedTopInventorySlots(GuiChest gui)
+    {
+        List<String> out = new ArrayList<>();
+        if (gui == null)
+        {
+            return out;
+        }
+        ChestSnapshotInfo info = buildChestSnapshotInfo(gui);
+        if (info == null)
+        {
+            return out;
+        }
+
+        List<ItemStack> source = null;
+        if (info.cache != null && info.cache.items != null && !info.cache.items.isEmpty())
+        {
+            source = info.cache.items;
+        }
+        else if (info.topItems != null)
+        {
+            source = info.topItems;
+        }
+
+        if (source == null)
+        {
+            return out;
+        }
+
+        for (int i = 0; i < source.size(); i++)
+        {
+            ItemStack stack = source.get(i);
+            if (stack == null || stack.isEmpty())
+            {
+                continue;
+            }
+            out.add("slot " + i + ": " + formatItemStackForRegAll(stack));
+        }
+        return out;
+    }
+
+    @Override
+    public boolean isChestSnapshotStable(GuiChest gui)
+    {
+        ChestSnapshotInfo info = buildChestSnapshotInfo(gui);
+        if (info == null)
+        {
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        if (chestPageAwaitCursorClear)
+        {
+            return false;
+        }
+        if (now < chestPageNextActionMs + REGALL_CHEST_STABLE_EXTRA_MS)
+        {
+            return false;
+        }
+        if (info.hasNextVisible)
+        {
+            return false;
+        }
+        if (info.topNonEmpty <= 0)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    @Override
+    public String describeChestSnapshotState(GuiChest gui)
+    {
+        ChestSnapshotInfo info = buildChestSnapshotInfo(gui);
+        if (info == null)
+        {
+            return "state=missing";
+        }
+        long now = System.currentTimeMillis();
+        return "key=" + info.key
+            + " size=" + info.size
+            + " topNonEmpty=" + info.topNonEmpty
+            + " hasNextVisible=" + info.hasNextVisible
+            + " awaitCursor=" + chestPageAwaitCursorClear
+            + " nextActionInMs=" + Math.max(0L, chestPageNextActionMs - now)
+            + " pageIdx=" + (chestPageScanIndex + 1)
+            + " sessionAllowed=" + chestPageSessionAllowed
+            + " mergedSlots=" + info.mergedSlots
+            + " mergedNonEmpty=" + info.mergedNonEmpty
+            + " mergedPages=" + info.mergedPages;
+    }
+
+    private ChestSnapshotInfo buildChestSnapshotInfo(GuiChest gui)
+    {
+        if (gui == null)
+        {
+            return null;
+        }
+        IInventory inv = getChestInventory(gui);
+        if (inv == null)
+        {
+            return null;
+        }
+        int size = inv.getSizeInventory();
+        if (size <= 0)
+        {
+            return null;
+        }
+
+        List<ItemStack> topItems = new ArrayList<>();
+        for (int i = 0; i < size; i++)
+        {
+            ItemStack stack = inv.getStackInSlot(i);
+            topItems.add(stack == null || stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
+        }
+
+        BlockPos pos = null;
+        int dim = 0;
+        if (inv instanceof TileEntityChest)
+        {
+            TileEntityChest te = (TileEntityChest) inv;
+            pos = te.getPos();
+            dim = te.getWorld().provider.getDimension();
+        }
+        else if (lastClickedPos != null && lastClickedChest && !lastClickedIsSign
+            && System.currentTimeMillis() - lastClickedMs < 5000L)
+        {
+            pos = lastClickedPos;
+            dim = lastClickedDim;
+        }
+        if (pos == null)
+        {
+            return null;
+        }
+
+        String key = chestKey(dim, pos);
+        ChestCache cache = key == null ? null : chestCaches.get(key);
+        int topNonEmpty = countNonEmptyItems(topItems);
+        int mergedSlots = cache == null || cache.items == null ? 0 : cache.items.size();
+        int mergedNonEmpty = countNonEmptyItems(cache == null ? null : cache.items);
+        int mergedPages = size > 0 ? ((mergedSlots + size - 1) / size) : 0;
+        ItemStack lastSlot = topItems.get(size - 1);
+        boolean hasNextVisible = isNextPageArrow(lastSlot);
+        return new ChestSnapshotInfo(key, size, topItems, cache, topNonEmpty, mergedSlots, mergedNonEmpty, mergedPages,
+            hasNextVisible);
+    }
+
+    private String formatItemStackForRegAll(ItemStack stack)
+    {
+        if (stack == null || stack.isEmpty())
+        {
+            return "empty";
+        }
+        String reg = stack.getItem() == null || stack.getItem().getRegistryName() == null
+            ? "unknown"
+            : stack.getItem().getRegistryName().toString();
+        String name = stack.getDisplayName();
+        List<String> lore = getStackLore(stack, true);
+        StringBuilder loreText = new StringBuilder();
+        for (int i = 0; i < lore.size(); i++)
+        {
+            if (i > 0)
+            {
+                loreText.append(" \\n ");
+            }
+            loreText.append(lore.get(i) == null ? "" : lore.get(i));
+        }
+        return "[" + reg + " meta=" + stack.getMetadata() + "] " + name
+            + (loreText.length() == 0 ? "" : " | " + loreText.toString());
+    }
+
+    private static final class ChestSnapshotInfo
+    {
+        final String key;
+        final int size;
+        final List<ItemStack> topItems;
+        final ChestCache cache;
+        final int topNonEmpty;
+        final int mergedSlots;
+        final int mergedNonEmpty;
+        final int mergedPages;
+        final boolean hasNextVisible;
+
+        ChestSnapshotInfo(String key, int size, List<ItemStack> topItems, ChestCache cache, int topNonEmpty,
+                          int mergedSlots, int mergedNonEmpty, int mergedPages, boolean hasNextVisible)
+        {
+            this.key = key;
+            this.size = size;
+            this.topItems = topItems;
+            this.cache = cache;
+            this.topNonEmpty = topNonEmpty;
+            this.mergedSlots = mergedSlots;
+            this.mergedNonEmpty = mergedNonEmpty;
+            this.mergedPages = mergedPages;
+            this.hasNextVisible = hasNextVisible;
+        }
     }
 
     private String buildMenuHash(List<ItemStack> items)

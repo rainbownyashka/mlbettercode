@@ -30,9 +30,11 @@ public interface RegAllActionsHost
 
     String getItemNameKey(ItemStack stack);
     String getGuiTitle(GuiChest gui);
+    List<String> snapshotMergedTopInventorySlots(GuiChest gui);
+    boolean isChestSnapshotStable(GuiChest gui);
+    String describeChestSnapshotState(GuiChest gui);
 
     void cacheClickMenuSnapshot(String key, List<ItemStack> items, String location);
 
     boolean isPlayerInventorySlot(GuiContainer gui, Slot slot);
 }
-

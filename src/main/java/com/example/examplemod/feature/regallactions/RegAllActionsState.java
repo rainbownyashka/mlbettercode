@@ -63,6 +63,7 @@ final class RegAllActionsState
     long chestOpenDeadlineMs = 0L;
     long chestReadySinceMs = 0L;
     int chestReadyWindowId = -1;
+    long chestWaitLogMs = 0L;
     boolean awaitingSubClickClose = false;
     long subClickMs = 0L;
     boolean openingSign = false;
@@ -147,6 +148,7 @@ final class RegAllActionsState
         chestOpenDeadlineMs = 0L;
         chestReadySinceMs = 0L;
         chestReadyWindowId = -1;
+        chestWaitLogMs = 0L;
         awaitingSubClickClose = false;
         subClickMs = 0L;
         openingSign = false;
