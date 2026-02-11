@@ -411,14 +411,12 @@ final class PlaceTickHandler
             }
             try
             {
-                // Try to hold the correct block if it already exists in hotbar.
+                // AGENT_TAG: place_autorestore_block
+                // Server GUIs or packet drops may wipe/replace the held action block while printing.
+                // Before each place click, strictly ensure the required block is in hand; if not, re-give it.
                 if (entry.block != null)
                 {
-                    int slot = findHotbarSlot(mc, entry.block);
-                    if (slot < 0)
-                    {
-                        slot = giveBlockToHotbar(mc, entry.block);
-                    }
+                    int slot = ensureBlockInHand(mc, entry.block, host, nowMs);
                     if (slot < 0)
                     {
                         host.setActionBar(false, "&c/place: missing block in hotbar", 2000L);
@@ -544,6 +542,61 @@ final class PlaceTickHandler
         if (mc.player.connection != null)
         {
             mc.player.connection.sendPacket(new CPacketCreativeInventoryAction(36 + slot, stack));
+        }
+        return slot;
+    }
+
+    private static int ensureBlockInHand(Minecraft mc, net.minecraft.block.Block block, PlaceModuleHost host, long nowMs)
+    {
+        if (mc == null || mc.player == null || block == null)
+        {
+            return -1;
+        }
+        net.minecraft.item.Item target = net.minecraft.item.Item.getItemFromBlock(block);
+        if (target == null)
+        {
+            return -1;
+        }
+
+        int slot = findHotbarSlot(mc, block);
+        if (slot < 0)
+        {
+            slot = giveBlockToHotbar(mc, block);
+            if (slot >= 0 && host != null)
+            {
+                host.setActionBar(true, "&e/place: restored required block to hotbar", 900L);
+            }
+        }
+        if (slot < 0)
+        {
+            return -1;
+        }
+
+        ItemStack inSlot = mc.player.inventory.getStackInSlot(slot);
+        boolean ok = !inSlot.isEmpty() && inSlot.getItem() == target;
+        if (!ok)
+        {
+            // Force overwrite the target slot in creative mode when server/UI replaced it unexpectedly.
+            if (!mc.player.capabilities.isCreativeMode)
+            {
+                return -1;
+            }
+            ItemStack stack = new ItemStack(block);
+            mc.player.inventory.setInventorySlotContents(slot, stack);
+            if (mc.player.connection != null)
+            {
+                mc.player.connection.sendPacket(new CPacketCreativeInventoryAction(36 + slot, stack));
+            }
+            if (host != null)
+            {
+                host.setActionBar(true, "&e/place: re-issued action block after inventory mismatch", 900L);
+            }
+        }
+
+        // Short settle window helps avoid instant mis-click right after a forced re-give.
+        if (host != null && nowMs > 0L)
+        {
+            // no-op marker; caller controls retry timing via nextPlaceAttemptMs
         }
         return slot;
     }
