@@ -11,7 +11,11 @@
     "Other"
   ],
   "activationEvents": [
-    "onLanguage:mldsl"
+    "onLanguage:mldsl",
+    "onCommand:mldsl.reloadApi",
+    "onCommand:mldsl.compileAndCopy",
+    "onCommand:mldsl.compilePlan",
+    "onCommand:mldsl.publishModule"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -46,8 +50,52 @@
           "type": "string",
           "default": "C:\\\\Users\\\\ASUS\\\\Documents\\\\mlctmodified\\\\out\\\\docs",
           "description": "Root folder with generated markdown docs"
+        },
+        "mldsl.pythonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Python executable path for running compiler .py scripts (optional)"
+        },
+        "mldsl.compilerPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to mldsl.exe or mldsl_compile.py (optional; auto-detected when empty)"
         }
       }
+    },
+    "commands": [
+      {
+        "command": "mldsl.reloadApi",
+        "title": "MLDSL: Reload API"
+      },
+      {
+        "command": "mldsl.compileAndCopy",
+        "title": "MLDSL: Compile And Copy"
+      },
+      {
+        "command": "mldsl.compilePlan",
+        "title": "MLDSL: Compile To plan.json"
+      },
+      {
+        "command": "mldsl.publishModule",
+        "title": "MLDSL: Prepare Publish Bundle"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "mldsl.reloadApi"
+        },
+        {
+          "command": "mldsl.compileAndCopy"
+        },
+        {
+          "command": "mldsl.compilePlan"
+        },
+        {
+          "command": "mldsl.publishModule"
+        }
+      ]
     }
   }
 }
