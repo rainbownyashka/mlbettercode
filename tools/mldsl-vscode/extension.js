@@ -25,7 +25,23 @@ function firstWorkspaceRoot() {
 
 function autoDetectApiAliasesPath(rawCfg) {
   const configured = String(rawCfg.apiAliasesPath || "").trim();
-  if (configured) return configured;
+  const localAppData = process.env.LOCALAPPDATA || "";
+  const localCanonical = localAppData
+    ? path.join(localAppData, "MLDSL", "out", "api_aliases.json")
+    : "";
+
+  if (configured) {
+    // AGENT_TAG: prefer_local_api_aliases
+    // Older extension builds defaulted to Documents\\mlctmodified\\out\\api_aliases.json.
+    // Current compiler writes artifacts into LOCALAPPDATA\\MLDSL\\out. Prefer the newer
+    // canonical file when both exist to avoid stale completions/aliases.
+    const cfgNorm = configured.replace(/\//g, "\\").toLowerCase();
+    const oldDefaultTail = "\\documents\\mlctmodified\\out\\api_aliases.json";
+    if (cfgNorm.endsWith(oldDefaultTail) && localCanonical && fs.existsSync(localCanonical)) {
+      return localCanonical;
+    }
+    if (fs.existsSync(configured)) return configured;
+  }
 
   const candidates = [];
 
@@ -35,9 +51,8 @@ function autoDetectApiAliasesPath(rawCfg) {
     candidates.push(path.join(ws, "tools", "out", "api_aliases.json"));
   }
 
-  const localAppData = process.env.LOCALAPPDATA || "";
   if (localAppData) {
-    candidates.push(path.join(localAppData, "MLDSL", "out", "api_aliases.json"));
+    candidates.push(localCanonical);
   }
 
   const userProfile = process.env.USERPROFILE || "";
@@ -301,12 +316,28 @@ function loadGameValuesCatalog() {
 }
 
 function buildLookup(api) {
+  function expandRuntimeAliases(aliases) {
+    const out = new Set(Array.isArray(aliases) ? aliases.filter(Boolean) : []);
+    // AGENT_TAG: runtime_alias_expand
+    // Keep backward/forward compatibility for historical export variants:
+    // if we have "спавн_*", also expose "заспавнить_*" in completion.
+    for (const a of Array.from(out)) {
+      const s = String(a || "");
+      if (!s) continue;
+      if (s.startsWith("спавн_")) out.add(`заспавнить_${s.slice("спавн_".length)}`);
+      if (s.startsWith("spavn_")) out.add(`zaspavnit_${s.slice("spavn_".length)}`);
+      if (s.startsWith("заспавнить_")) out.add(`спавн_${s.slice("заспавнить_".length)}`);
+      if (s.startsWith("zaspavnit_")) out.add(`spavn_${s.slice("zaspavnit_".length)}`);
+    }
+    return Array.from(out);
+  }
+
   const lookup = {};
   for (const [moduleName, funcs] of Object.entries(api)) {
     lookup[moduleName] = { byName: {}, canonical: funcs };
     for (const [funcName, spec] of Object.entries(funcs)) {
       lookup[moduleName].byName[funcName] = { funcName, spec };
-      const aliases = Array.isArray(spec.aliases) ? spec.aliases : [];
+      const aliases = expandRuntimeAliases(spec.aliases);
       for (const a of aliases) {
         if (!a) continue;
         lookup[moduleName].byName[a] = { funcName, spec };
@@ -572,7 +603,9 @@ function specToMarkdown(spec) {
     for (const p of spec.params) {
       const ru = translitToRuIdent(p.name);
       const extra = ru && ru !== p.name ? ` (RU: \`${ru}\`)` : "";
-      lines.push(`- \`${p.name}\`${extra} (${p.mode}) slot ${p.slot}`);
+      const label = String(p.label || "").trim();
+      const labelPart = label ? ` - ${label}` : "";
+      lines.push(`- \`${p.name}\`${extra} (${p.mode}) slot ${p.slot}${labelPart}`);
     }
   }
   if (spec.enums && spec.enums.length) {
@@ -601,6 +634,19 @@ function specToMarkdown(spec) {
   md.supportHtml = true;
   md.isTrusted = true;
   return md;
+}
+
+function buildKeywordCallSnippet(funcAlias, spec) {
+  const params = Array.isArray(spec && spec.params) ? spec.params : [];
+  if (!params.length) return new vscode.SnippetString(`${funcAlias}()`);
+  const args = params
+    .map((p, i) => {
+      const name = String((p && p.name) || `arg${i + 1}`);
+      const placeholder = "${" + String(i + 1) + "}";
+      return `${name}=${placeholder}`;
+    })
+    .join(", ");
+  return new vscode.SnippetString(`${funcAlias}(${args})`);
 }
 
 function activate(context) {
@@ -1052,7 +1098,7 @@ function activate(context) {
           }
 
           for (const [alias, entry] of Object.entries(mod.byName)) {
-            if (prefix && !alias.startsWith(prefix)) continue;
+            if (prefix && !normKey(alias).startsWith(normKey(prefix))) continue;
             const spec = entry.spec;
             if (!isSelectSpec(spec)) continue;
             const funcName = entry.funcName;
@@ -1060,6 +1106,11 @@ function activate(context) {
             const params = (spec.params || []).map((p) => p.name).join(", ");
             const menuName = spec.menu ? ` · ${spec.menu}` : "";
             item.detail = `select.${funcName}(${params})${menuName}`;
+            // AGENT_TAG: completion_keyword_call
+            // Default function completion inserts keyword args, so optional/positional ambiguity
+            // on server side is avoided in generated user calls.
+            item.insertText = buildKeywordCallSnippet(alias, spec);
+            item.insertTextRules = vscode.CompletionItemInsertTextRule.InsertAsSnippet;
             item.documentation = specToMarkdown(spec);
             items.push(item);
           }
@@ -1194,7 +1245,9 @@ function activate(context) {
             const addItem = (label, insertName, detailExtra) => {
               if (keyPrefixNorm && !normKey(label).startsWith(keyPrefixNorm)) return;
               const item = new vscode.CompletionItem(label, vscode.CompletionItemKind.Property);
-              item.detail = `param ${p.mode} slot ${p.slot}${detailExtra ? ` (${detailExtra})` : ""}`;
+              const paramLabel = String(p.label || "").trim();
+              const labelPart = paramLabel ? ` — ${paramLabel}` : "";
+              item.detail = `param ${p.mode} slot ${p.slot}${labelPart}${detailExtra ? ` (${detailExtra})` : ""}`;
               item.insertText = new vscode.SnippetString(`${insertName}=\${1}`);
               argItems.push(item);
             };
@@ -1262,6 +1315,35 @@ function activate(context) {
                 return items;
               }
             }
+
+            // AGENT_TAG: global_action_fallback
+            // Fallback for bare action typing (without module prefix): suggest all known actions
+            // matching current token, insert as keyword-arg call.
+            const barePrefix = String(word || "").toLowerCase();
+            if (barePrefix && lookup && Object.keys(lookup).length) {
+              const globalItems = [];
+              for (const [moduleName, modInfo] of Object.entries(lookup)) {
+                const byName = (modInfo && modInfo.byName) || {};
+                for (const [alias, entry] of Object.entries(byName)) {
+                  if (!alias || !entry) continue;
+                  if (!normKey(alias).startsWith(normKey(barePrefix))) continue;
+                  const spec = entry.spec || {};
+                  const funcName = entry.funcName || alias;
+                  const item = new vscode.CompletionItem(alias, vscode.CompletionItemKind.Function);
+                  const params = (spec.params || []).map((p) => p.name).join(", ");
+                  const menuName = spec.menu ? ` — ${spec.menu}` : "";
+                  item.detail = `${moduleName}.${funcName}(${params})${menuName}`;
+                  item.insertText = buildKeywordCallSnippet(alias, spec);
+                  item.insertTextRules = vscode.CompletionItemInsertTextRule.InsertAsSnippet;
+                  item.documentation = specToMarkdown(spec);
+                  globalItems.push(item);
+                }
+              }
+              if (globalItems.length > 0) {
+                output.appendLine(`[completion#${id}] global fallback '${barePrefix}' items=${globalItems.length}`);
+                return globalItems.slice(0, 160);
+              }
+            }
           }
           output.appendLine(`[completion#${id}] no module prefix match`);
           return;
@@ -1292,7 +1374,7 @@ function activate(context) {
             { label: "еслисущество", insertText: "еслисущество." },
           ];
           for (const h of hints) {
-            if (info.prefix && !h.label.startsWith(info.prefix)) continue;
+            if (info.prefix && !normKey(h.label).startsWith(normKey(info.prefix))) continue;
             const item = new vscode.CompletionItem(h.label, vscode.CompletionItemKind.Keyword);
             item.detail = "Подсказка для select (не действие)";
             item.insertText = h.insertText;
@@ -1300,7 +1382,7 @@ function activate(context) {
           }
         }
         for (const [alias, entry] of Object.entries(mod.byName)) {
-          if (info.prefix && !alias.startsWith(info.prefix)) continue;
+          if (info.prefix && !normKey(alias).startsWith(normKey(info.prefix))) continue;
           const funcName = entry.funcName;
           const spec = entry.spec;
           if (info.module === "select") {
@@ -1317,6 +1399,10 @@ function activate(context) {
           if (alias !== funcName) {
             item.detail += `  (alias of ${funcName})`;
           }
+          // AGENT_TAG: completion_keyword_call
+          // Insert full keyword signature on Tab for fast/explicit calls.
+          item.insertText = buildKeywordCallSnippet(alias, spec);
+          item.insertTextRules = vscode.CompletionItemInsertTextRule.InsertAsSnippet;
           item.documentation = specToMarkdown(spec);
           items.push(item);
         }

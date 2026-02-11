@@ -43,12 +43,12 @@
       "properties": {
         "mldsl.apiAliasesPath": {
           "type": "string",
-          "default": "C:\\\\Users\\\\ASUS\\\\Documents\\\\mlctmodified\\\\out\\\\api_aliases.json",
+          "default": "C:\\\\Users\\\\ASUS\\\\AppData\\\\Local\\\\MLDSL\\\\out\\\\api_aliases.json",
           "description": "Path to generated api_aliases.json"
         },
         "mldsl.docsRoot": {
           "type": "string",
-          "default": "C:\\\\Users\\\\ASUS\\\\Documents\\\\mlctmodified\\\\out\\\\docs",
+          "default": "C:\\\\Users\\\\ASUS\\\\AppData\\\\Local\\\\MLDSL\\\\out\\\\docs",
           "description": "Root folder with generated markdown docs"
         },
         "mldsl.pythonPath": {
