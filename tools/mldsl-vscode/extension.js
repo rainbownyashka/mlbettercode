@@ -654,15 +654,37 @@ function specToMarkdown(spec) {
 
 function buildKeywordCallSnippet(funcAlias, spec) {
   const params = Array.isArray(spec && spec.params) ? spec.params : [];
-  if (!params.length) return new vscode.SnippetString(`${funcAlias}()`);
-  const args = params
-    .map((p, i) => {
-      const name = String((p && p.name) || `arg${i + 1}`);
-      const placeholder = "${" + String(i + 1) + "}";
-      return `${name}=${placeholder}`;
-    })
-    .join(", ");
-  return new vscode.SnippetString(`${funcAlias}(${args})`);
+  const enums = Array.isArray(spec && spec.enums) ? spec.enums : [];
+  const orderedNames = [];
+  const seen = new Set();
+
+  // AGENT_TAG: snippet_keyword_order
+  // Keep params first, then enums not already present, so TAB gives stable keyword flow.
+  for (let i = 0; i < params.length; i++) {
+    const name = String((params[i] && params[i].name) || `arg${i + 1}`);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    orderedNames.push(name);
+  }
+  for (let i = 0; i < enums.length; i++) {
+    const name = String((enums[i] && enums[i].name) || "");
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    orderedNames.push(name);
+  }
+
+  if (!orderedNames.length) return new vscode.SnippetString(`${funcAlias}()`);
+
+  const pairs = orderedNames.map((name, i) => `${name}=\${${i + 1}}`);
+  const oneLine = `${funcAlias}(${pairs.join(", ")})`;
+
+  // AGENT_TAG: snippet_multiline_wrap
+  // Avoid unreadable long one-line calls: switch to multiline call shape.
+  const shouldWrap = oneLine.length > 96 || pairs.length > 4;
+  if (!shouldWrap) return new vscode.SnippetString(oneLine);
+
+  const body = pairs.map((x) => `\t${x}`).join(",\n");
+  return new vscode.SnippetString(`${funcAlias}(\n${body}\n)`);
 }
 
 function trySetSnippetInsertRule(item) {
