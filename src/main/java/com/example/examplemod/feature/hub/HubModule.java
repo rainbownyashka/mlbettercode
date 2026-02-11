@@ -15,18 +15,23 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.ConnectException;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import javax.net.ssl.SSLException;
 
 public final class HubModule
 {
     private static final long MAX_DOWNLOAD_BYTES = 800L * 1024L;
     private static final long MAX_TOTAL_DOWNLOAD_BYTES = 2_500L * 1024L;
+    private static final String DEFAULT_BASE_URL = "https://mldsl-hub.vercel.app";
 
     private final PlaceModuleHost host;
     private final MlDslModule mlDslModule;
@@ -38,7 +43,7 @@ public final class HubModule
     {
         this.host = host;
         this.mlDslModule = mlDslModule;
-        this.baseUrl = "https://mldsl-hub.vercel.app";
+        setBaseUrl(DEFAULT_BASE_URL);
     }
 
     public void setConfirmKeyHint(String hint)
@@ -48,16 +53,8 @@ public final class HubModule
 
     public void setBaseUrl(String baseUrl)
     {
-        if (baseUrl == null)
-        {
-            return;
-        }
-        String v = baseUrl.trim();
-        if (v.isEmpty())
-        {
-            return;
-        }
-        this.baseUrl = v;
+        // [TAG:hub-base-url-normalize] Keep hub endpoint stable even if user enters raw host without scheme.
+        this.baseUrl = normalizeBaseUrl(baseUrl);
     }
 
     public void runCommand(MinecraftServer server, ICommandSender sender, String[] args)
@@ -106,14 +103,11 @@ public final class HubModule
                 PendingLoad pl = fileNameF == null
                     ? downloadAll(postIdF, outDirF)
                     : downloadOne(postIdF, fileNameF, outDirF);
-                if (pl == null)
-                {
-                    scheduleChat("&c/loadmodule: download failed");
-                    return;
-                }
                 pending = pl;
                 scheduleChat("&a/loadmodule: saved &f" + pl.savedFiles.size() + " &afile(s) into &f" + outDirF.getName());
                 scheduleChat("&bСтатистика: &fсобытий=" + pl.events + " &fфункций=" + pl.funcs + " &fциклов=" + pl.loops + " &fдействий≈" + pl.actions);
+                DonorTierResolver.Result donor = DonorTierResolver.resolveFromFiles(pl.savedFiles);
+                scheduleChat("&dТребуемый донат: &f" + donor.tier + " &7(ids: " + donor.idsPreview(8) + ")");
                 if (pl.planFile != null)
                 {
                     String hint = confirmKeyHint == null || confirmKeyHint.trim().isEmpty()
@@ -124,7 +118,9 @@ public final class HubModule
             }
             catch (Exception e)
             {
-                scheduleChat("&c/loadmodule: " + e.getClass().getSimpleName());
+                String reason = describeDownloadError(e);
+                scheduleChat("&c/loadmodule: " + reason);
+                host.setActionBar(false, "&c/loadmodule failed: " + reason, 3500L);
             }
             finally
             {
@@ -195,10 +191,6 @@ public final class HubModule
                 continue;
             }
             byte[] data = httpGet(buildDownloadUrl(postId, name));
-            if (data == null)
-            {
-                continue;
-            }
             total += data.length;
             if (total > MAX_TOTAL_DOWNLOAD_BYTES)
             {
@@ -220,17 +212,17 @@ public final class HubModule
                 pl.addStats(text);
             }
         }
-        return pl.savedFiles.isEmpty() ? null : pl;
+        if (pl.savedFiles.isEmpty())
+        {
+            throw new IllegalStateException("empty_files_list");
+        }
+        return pl;
     }
 
     private PendingLoad downloadOne(String postId, String fileName, File outDir) throws Exception
     {
         String url = buildDownloadUrl(postId, fileName);
         byte[] data = httpGet(url);
-        if (data == null)
-        {
-            return null;
-        }
         String outName = fileName == null || fileName.trim().isEmpty() ? "module.mldsl" : safePath(fileName);
         File outFile = new File(outDir, outName);
         try (FileOutputStream fos = new FileOutputStream(outFile))
@@ -327,7 +319,7 @@ public final class HubModule
             int code = conn.getResponseCode();
             if (code != 200)
             {
-                return null;
+                throw new IllegalStateException("http_" + code);
             }
             try (InputStream in = conn.getInputStream(); ByteArrayOutputStream out = new ByteArrayOutputStream())
             {
@@ -357,6 +349,65 @@ public final class HubModule
                 conn.disconnect();
             }
         }
+    }
+
+    private static String normalizeBaseUrl(String raw)
+    {
+        String value = raw == null ? "" : raw.trim();
+        if (value.isEmpty())
+        {
+            return DEFAULT_BASE_URL;
+        }
+        if (!value.startsWith("http://") && !value.startsWith("https://"))
+        {
+            value = "https://" + value;
+        }
+        while (value.endsWith("/"))
+        {
+            value = value.substring(0, value.length() - 1);
+        }
+        return value.isEmpty() ? DEFAULT_BASE_URL : value;
+    }
+
+    // [TAG:hub-loadmodule-error-map] Normalize network/runtime failures into user-readable reason.
+    private static String describeDownloadError(Throwable err)
+    {
+        Throwable e = err;
+        if (e == null)
+        {
+            return "unknown_error";
+        }
+        while (e.getCause() != null)
+        {
+            e = e.getCause();
+        }
+
+        if (e instanceof SocketTimeoutException)
+        {
+            return "timeout";
+        }
+        if (e instanceof UnknownHostException)
+        {
+            return "unknown_host";
+        }
+        if (e instanceof ConnectException)
+        {
+            return "connect_failed";
+        }
+        if (e instanceof SSLException)
+        {
+            return "ssl_error";
+        }
+        String msg = e.getMessage() == null ? "" : e.getMessage().trim();
+        if (msg.isEmpty())
+        {
+            return e.getClass().getSimpleName();
+        }
+        if (msg.length() > 100)
+        {
+            msg = msg.substring(0, 100);
+        }
+        return msg.replace('\n', ' ').replace('\r', ' ');
     }
 
     private void scheduleChat(String msg)
