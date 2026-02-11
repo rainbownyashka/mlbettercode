@@ -421,6 +421,22 @@ function findModuleAndPrefix(lineText, positionChar) {
   return { module: normalizeModuleName(last.module), rawModule: last.module, prefix: last.prefix };
 }
 
+function findSimpleModuleDotContext(lineText, positionChar) {
+  const left = lineText.slice(0, positionChar);
+  // AGENT_TAG: simple_module_dot_fallback
+  // Robust fallback for cases when the generic dotted parser misses the context.
+  // Supports direct "game.<prefix>" / "player.<prefix>" at cursor end.
+  const m = left.match(
+    /(?:^|[^a-zA-Z0-9_\u0400-\u04FF])(player|game|var|array|misc|if_player|if_game|if_value)\.([a-zA-Z0-9_\u0400-\u04FF]*)$/i
+  );
+  if (!m) return null;
+  return {
+    module: normalizeModuleName(m[1]),
+    rawModule: m[1],
+    prefix: m[2] || "",
+  };
+}
+
 function findSelectDotContext(lineText, positionChar) {
   const left = lineText.slice(0, positionChar);
   // If we are inside quotes, don't trigger.
@@ -647,6 +663,19 @@ function buildKeywordCallSnippet(funcAlias, spec) {
     })
     .join(", ");
   return new vscode.SnippetString(`${funcAlias}(${args})`);
+}
+
+function trySetSnippetInsertRule(item) {
+  // AGENT_TAG: snippet_rule_compat
+  // Some VS Code builds/environments may not expose CompletionItemInsertTextRule.
+  // SnippetString works without this flag, so we set the rule only when available.
+  try {
+    const rule =
+      vscode &&
+      vscode.CompletionItemInsertTextRule &&
+      vscode.CompletionItemInsertTextRule.InsertAsSnippet;
+    if (rule != null) item.insertTextRules = rule;
+  } catch {}
 }
 
 function activate(context) {
@@ -1022,11 +1051,24 @@ function activate(context) {
   );
 
   const completionProvider = vscode.languages.registerCompletionItemProvider(
-    { language: "mldsl" },
+    [
+      { language: "mldsl" },
+      { scheme: "file", pattern: "**/*.mldsl" },
+      { pattern: "**/*.mldsl" },
+    ],
     {
       provideCompletionItems(document, position) {
         const id = ++seq;
         const line = document.lineAt(position.line).text;
+        // AGENT_TAG: completion_enter_log
+        // Mandatory entry log to debug cases when suggestions appear empty.
+        // If this line does not appear in Output, provider selector is not matching the editor document.
+        output.appendLine(
+          `[completion#${id}] enter lang=${document.languageId} file=${path.basename(
+            document.uri.fsPath || document.fileName || ""
+          )} line=${position.line + 1} col=${position.character + 1}`
+        );
+        try {
 
         // gamevalue.<...> completion
         const gvDot = findGameValueDotContext(line, position.character);
@@ -1110,7 +1152,7 @@ function activate(context) {
             // Default function completion inserts keyword args, so optional/positional ambiguity
             // on server side is avoided in generated user calls.
             item.insertText = buildKeywordCallSnippet(alias, spec);
-            item.insertTextRules = vscode.CompletionItemInsertTextRule.InsertAsSnippet;
+            trySetSnippetInsertRule(item);
             item.documentation = specToMarkdown(spec);
             items.push(item);
           }
@@ -1277,7 +1319,15 @@ function activate(context) {
           }
         }
 
-        const info = findModuleAndPrefix(line, position.character);
+        let info = findModuleAndPrefix(line, position.character);
+        if (!info) {
+          info = findSimpleModuleDotContext(line, position.character);
+          if (info) {
+            output.appendLine(
+              `[completion#${id}] simple-dot module=${info.module} prefix='${info.prefix}'`
+            );
+          }
+        }
         
         // Автодополнение для ключевых слов if_player и if_game
         if (!info) {
@@ -1334,7 +1384,7 @@ function activate(context) {
                   const menuName = spec.menu ? ` — ${spec.menu}` : "";
                   item.detail = `${moduleName}.${funcName}(${params})${menuName}`;
                   item.insertText = buildKeywordCallSnippet(alias, spec);
-                  item.insertTextRules = vscode.CompletionItemInsertTextRule.InsertAsSnippet;
+                  trySetSnippetInsertRule(item);
                   item.documentation = specToMarkdown(spec);
                   globalItems.push(item);
                 }
@@ -1381,10 +1431,15 @@ function activate(context) {
             items.push(item);
           }
         }
-        for (const [alias, entry] of Object.entries(mod.byName)) {
-          if (info.prefix && !normKey(alias).startsWith(normKey(info.prefix))) continue;
-          const funcName = entry.funcName;
-          const spec = entry.spec;
+        // AGENT_TAG: completion_from_canonical_aliases
+        // Build completion entries from canonical function map + spec.aliases.
+        // This avoids alias-key collisions inside byName and guarantees all aliases
+        // declared in api_aliases.json are available for prefix filtering.
+        const seenLabels = new Set();
+        const prefixNorm = normKey(info.prefix || "");
+        const canonical = (mod && mod.canonical) || {};
+        for (const [funcName, spec] of Object.entries(canonical)) {
+          if (!spec || typeof spec !== "object") continue;
           if (info.module === "select") {
             const { wantPlayer, wantEntity } = selectHintsFromRawModule(info.rawModule);
             if (!isSelectSpec(spec)) continue;
@@ -1392,24 +1447,44 @@ function activate(context) {
             if (wantEntity && dom !== "entity") continue;
             if (wantPlayer && dom !== "player") continue;
           }
-          const item = new vscode.CompletionItem(alias, vscode.CompletionItemKind.Function);
-          const params = (spec.params || []).map((p) => p.name).join(", ");
-          const menuName = spec.menu ? ` — ${spec.menu}` : "";
-          item.detail = `${info.module}.${funcName}(${params})${menuName}`;
-          if (alias !== funcName) {
-            item.detail += `  (alias of ${funcName})`;
+          const aliases = new Set([funcName, ...((Array.isArray(spec.aliases) ? spec.aliases : []).filter(Boolean))]);
+          for (const alias of aliases) {
+            if (prefixNorm && !normKey(alias).startsWith(prefixNorm)) continue;
+            const dedupeKey = `${funcName}::${alias}`;
+            if (seenLabels.has(dedupeKey)) continue;
+            seenLabels.add(dedupeKey);
+
+            const item = new vscode.CompletionItem(alias, vscode.CompletionItemKind.Function);
+            const params = (spec.params || []).map((p) => p.name).join(", ");
+            const menuName = spec.menu ? ` — ${spec.menu}` : "";
+            item.detail = `${info.module}.${funcName}(${params})${menuName}`;
+            if (alias !== funcName) item.detail += `  (alias of ${funcName})`;
+            item.insertText = buildKeywordCallSnippet(alias, spec);
+            trySetSnippetInsertRule(item);
+            item.documentation = specToMarkdown(spec);
+            items.push(item);
           }
-          // AGENT_TAG: completion_keyword_call
-          // Insert full keyword signature on Tab for fast/explicit calls.
-          item.insertText = buildKeywordCallSnippet(alias, spec);
-          item.insertTextRules = vscode.CompletionItemInsertTextRule.InsertAsSnippet;
-          item.documentation = specToMarkdown(spec);
-          items.push(item);
+        }
+        if (info.module === "game") {
+          const sample = items
+            .slice(0, 12)
+            .map((x) => x.label)
+            .join(", ");
+          output.appendLine(
+            `[completion#${id}] game-alias-source prefix='${info.prefix}' count=${items.length} sample=[${sample}]`
+          );
         }
         output.appendLine(
           `[completion#${id}] ${info.module}. prefix='${info.prefix}' items=${items.length}`
         );
         return items;
+        } catch (err) {
+          const msg = err && err.message ? err.message : String(err);
+          const stack = err && err.stack ? String(err.stack).split("\n").slice(0, 4).join(" | ") : "";
+          output.appendLine(`[completion#${id}] ERROR ${msg}`);
+          if (stack) output.appendLine(`[completion#${id}] STACK ${stack}`);
+          return [];
+        }
       },
     },
     ".",
