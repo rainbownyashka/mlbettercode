@@ -667,7 +667,8 @@ function buildKeywordCallSnippet(funcAlias, spec) {
     orderedNames.push(name);
   }
   for (let i = 0; i < enums.length; i++) {
-    const name = String((enums[i] && enums[i].name) || "");
+    const rawName = String((enums[i] && enums[i].name) || "");
+    const name = translitToRuIdent(rawName) || rawName;
     if (!name || seen.has(name)) continue;
     seen.add(name);
     orderedNames.push(name);
@@ -679,11 +680,16 @@ function buildKeywordCallSnippet(funcAlias, spec) {
   const oneLine = `${funcAlias}(${pairs.join(", ")})`;
 
   // AGENT_TAG: snippet_multiline_wrap
-  // Avoid unreadable long one-line calls: switch to multiline call shape.
-  const shouldWrap = oneLine.length > 96 || pairs.length > 4;
+  // Keep short calls one-line; for long calls wrap by chunks of 5 args per line.
+  const shouldWrap = oneLine.length > 96 || pairs.length > 5;
   if (!shouldWrap) return new vscode.SnippetString(oneLine);
 
-  const body = pairs.map((x) => `\t${x}`).join(",\n");
+  const groupSize = 5;
+  const lines = [];
+  for (let i = 0; i < pairs.length; i += groupSize) {
+    lines.push(`\t${pairs.slice(i, i + groupSize).join(", ")}`);
+  }
+  const body = lines.join(",\n");
   return new vscode.SnippetString(`${funcAlias}(\n${body}\n)`);
 }
 
