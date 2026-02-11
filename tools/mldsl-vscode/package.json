@@ -13,6 +13,7 @@
   "activationEvents": [
     "onLanguage:mldsl",
     "onCommand:mldsl.reloadApi",
+    "onCommand:mldsl.smartInsertMenu",
     "onCommand:mldsl.compileAndCopy",
     "onCommand:mldsl.compilePlan",
     "onCommand:mldsl.publishModule"
@@ -69,6 +70,10 @@
         "title": "MLDSL: Reload API"
       },
       {
+        "command": "mldsl.smartInsertMenu",
+        "title": "MLDSL: Guided Insert"
+      },
+      {
         "command": "mldsl.compileAndCopy",
         "title": "MLDSL: Compile And Copy"
       },
@@ -87,6 +92,9 @@
           "command": "mldsl.reloadApi"
         },
         {
+          "command": "mldsl.smartInsertMenu"
+        },
+        {
           "command": "mldsl.compileAndCopy"
         },
         {
@@ -96,7 +104,14 @@
           "command": "mldsl.publishModule"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "mldsl.smartInsertMenu",
+        "key": "alt+enter",
+        "when": "editorTextFocus && editorLangId == mldsl"
+      }
+    ]
   }
 }
 

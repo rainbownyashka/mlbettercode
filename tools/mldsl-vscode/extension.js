@@ -783,6 +783,143 @@ function activate(context) {
 
   context.subscriptions.push(vscode.commands.registerCommand("mldsl.reloadApi", () => reloadApi("command")));
 
+  function moduleDisplayName(moduleName) {
+    const m = String(moduleName || "");
+    const map = {
+      game: "Игровое действие",
+      player: "Действие игрока",
+      entity: "Действие сущности",
+      if_player: "Условие игрока",
+      if_game: "Условие игры",
+      if_value: "Условие значения",
+      var: "Переменные",
+      array: "Массивы",
+      misc: "Прочее",
+      select: "Выбор объекта",
+    };
+    return map[m] || m;
+  }
+
+  function isLineEffectivelyEmpty(document, lineNumber) {
+    try {
+      const text = String(document.lineAt(lineNumber).text || "");
+      return text.trim().length === 0;
+    } catch {
+      return false;
+    }
+  }
+
+  function buildGuidedModuleList() {
+    const out = [];
+    const push = (moduleName, label, desc) => {
+      out.push({ label, description: desc || "", moduleName, type: "module" });
+    };
+
+    // AGENT_TAG: guided_insert_menu_groups
+    // Keep fixed high-value groups first, then append any other loaded modules.
+    out.push({
+      label: "Событие",
+      description: "Вставить event(\"...\") { }",
+      moduleName: "event",
+      type: "event",
+    });
+
+    const fixed = ["game", "player", "entity", "if_player", "if_game", "if_value", "var", "array", "misc", "select"];
+    for (const m of fixed) {
+      if (lookup[m]) push(m, moduleDisplayName(m), m);
+    }
+    for (const m of Object.keys(lookup).sort()) {
+      if (fixed.includes(m)) continue;
+      push(m, moduleDisplayName(m), m);
+    }
+    return out;
+  }
+
+  function buildGuidedActionList(moduleName) {
+    const mod = lookup[moduleName];
+    if (!mod) return [];
+    const items = [];
+    const canonical = (mod && mod.canonical) || {};
+    for (const [funcName, spec] of Object.entries(canonical)) {
+      if (!spec || typeof spec !== "object") continue;
+      const aliases = new Set([funcName, ...((Array.isArray(spec.aliases) ? spec.aliases : []).filter(Boolean))]);
+      for (const alias of aliases) {
+        const sign2 = stripMcColors(spec.sign2 || "");
+        const menu = stripMcColors(spec.menu || "");
+        const detail = sign2 || menu || moduleName;
+        items.push({
+          label: alias,
+          description: detail,
+          detail: `${moduleName}.${funcName}`,
+          moduleName,
+          funcName,
+          spec,
+          alias,
+        });
+      }
+    }
+    items.sort((a, b) => a.label.localeCompare(b.label, "ru"));
+    return items;
+  }
+
+  async function runGuidedInsert() {
+    const id = ++seq;
+    const ed = vscode.window.activeTextEditor;
+    if (!ed || !ed.document) return;
+    if (ed.document.languageId !== "mldsl") return;
+
+    const pos = ed.selection.active;
+    const lineEmpty = isLineEffectivelyEmpty(ed.document, pos.line);
+    output.appendLine(`[guided#${id}] open line=${pos.line + 1} empty=${lineEmpty ? "yes" : "no"}`);
+
+    const topItems = buildGuidedModuleList();
+    const group = await vscode.window.showQuickPick(topItems, {
+      placeHolder: "Выбери категорию (событие/действие/условие/и т.д.)",
+      matchOnDescription: true,
+      matchOnDetail: true,
+      ignoreFocusOut: true,
+    });
+    if (!group) return;
+
+    let snippet = null;
+    if (group.type === "event") {
+      const eItems = (events.all || []).map((e) => ({
+        label: e.name,
+        description: e.sign2 ? stripMcColors(e.sign2) : (e.kind === "world" ? "Событие мира" : "Событие игрока"),
+        detail: e.kind || "",
+        value: e,
+      }));
+      const pick = await vscode.window.showQuickPick(eItems, {
+        placeHolder: "Выбери событие",
+        matchOnDescription: true,
+        matchOnDetail: true,
+        ignoreFocusOut: true,
+      });
+      if (!pick) return;
+      snippet = new vscode.SnippetString(`event("${pick.value.name}") {\n\t$0\n}`);
+    } else {
+      const aItems = buildGuidedActionList(group.moduleName);
+      if (!aItems.length) {
+        vscode.window.showWarningMessage(`MLDSL: нет действий для ${group.label}`);
+        return;
+      }
+      const pick = await vscode.window.showQuickPick(aItems, {
+        placeHolder: `Выбери действие: ${group.label}`,
+        matchOnDescription: true,
+        matchOnDetail: true,
+        ignoreFocusOut: true,
+      });
+      if (!pick) return;
+      snippet = buildKeywordCallSnippet(pick.alias, pick.spec || {});
+    }
+
+    if (!snippet) return;
+    await ed.insertSnippet(snippet, pos);
+    output.appendLine(`[guided#${id}] inserted ok`);
+  }
+
+  context.subscriptions.push(vscode.commands.registerCommand("mldsl.smartInsertMenu", runGuidedInsert));
+
   function findCompilerPathLegacyPy() {
     const { compilerPath } = getConfig();
     if (compilerPath && fs.existsSync(compilerPath) && String(compilerPath).toLowerCase().endsWith(".py"))
@@ -1631,6 +1768,25 @@ function activate(context) {
     }
   });
 
+  const codeActionProvider = vscode.languages.registerCodeActionsProvider(
+    { language: "mldsl" },
+    {
+      provideCodeActions(document, range) {
+        const line = range && range.start ? range.start.line : 0;
+        if (!isLineEffectivelyEmpty(document, line)) return [];
+        const action = new vscode.CodeAction("MLDSL: Guided Insert", vscode.CodeActionKind.QuickFix);
+        action.command = {
+          command: "mldsl.smartInsertMenu",
+          title: "MLDSL: Guided Insert",
+        };
+        return [action];
+      },
+    },
+    {
+      providedCodeActionKinds: [vscode.CodeActionKind.QuickFix],
+    }
+  );
+
   const diagnostics = vscode.languages.createDiagnosticCollection("mldsl");
 
   function updateDiagnostics(doc) {
@@ -1728,7 +1884,7 @@ function activate(context) {
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => updateStatusBar()));
   updateStatusBar();
 
-  context.subscriptions.push(completionProvider, hoverProvider, defProvider);
+  context.subscriptions.push(completionProvider, hoverProvider, defProvider, codeActionProvider);
 }
 
 function deactivate() {}
