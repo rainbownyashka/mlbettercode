@@ -27,3 +27,9 @@ diffgui.py
 dev_scoreboard.patch
 nm.py
 src/main/java/com/example/examplemod/ExampleMod.javaai
+
+# Agent / tooling generated artifacts
+tools/rag_export_search/index_*.json
+tools/mldsl-vscode/*.vsix
+tools/paged_actions_report.txt
+tools/_sim_case.exportcode.json
