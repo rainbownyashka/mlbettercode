@@ -88,6 +88,17 @@ public final class MlDslModule
             return;
         }
 
+        runPlan(file, start, "check".equals(sub), server, sender);
+    }
+
+    public boolean runPlan(File file, int start, boolean checkOnly, MinecraftServer server, ICommandSender sender)
+    {
+        if (file == null || !file.exists())
+        {
+            host.setActionBar(false, "&cPlan not found: " + (file == null ? "null" : file.getPath()), 3500L);
+            return false;
+        }
+
         List<String> placeArgs;
         try
         {
@@ -96,13 +107,13 @@ public final class MlDslModule
         catch (Exception e)
         {
             host.setActionBar(false, "&cPlan parse error: " + e.getClass().getSimpleName(), 4000L);
-            return;
+            return false;
         }
 
         if (placeArgs.isEmpty())
         {
             host.setActionBar(false, "&cEmpty plan", 2500L);
-            return;
+            return false;
         }
 
         int totalEntries = countPlaceEntries(placeArgs);
@@ -112,13 +123,13 @@ public final class MlDslModule
             placeArgs = skipPlaceEntries(placeArgs, skipEntries);
         }
 
-        if ("check".equals(sub))
+        if (checkOnly)
         {
             host.setActionBar(true,
                 "&a/mldsl check: entries=" + totalEntries + " start=" + start + " scanning...",
                 3500L);
             placeModule.runPlaceAdvancedPlanCheckCommand(server, sender, placeArgs.toArray(new String[0]));
-            return;
+            return true;
         }
 
         host.setActionBar(true,
@@ -127,6 +138,7 @@ public final class MlDslModule
 
         // Plan-run uses the blue-glass code map allocator (±4Z, ±10Y), instead of the legacy -2X row placer.
         placeModule.runPlaceAdvancedPlanCommand(server, sender, placeArgs.toArray(new String[0]));
+        return true;
     }
 
     private static File resolvePlanPath(File gameDir, String raw)

@@ -441,7 +441,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         new com.example.examplemod.feature.mldsl.MlDslModule(this, placeModule);
     // Download modules from MLDSL Hub (/loadmodule <postId> [file])
     private final com.example.examplemod.feature.hub.HubModule hubModule =
-        new com.example.examplemod.feature.hub.HubModule(this);
+        new com.example.examplemod.feature.hub.HubModule(this, mlDslModule);
     // Discover/crawl menus into clickMenuMap
     private final RegAllActionsModule regAllActionsModule = new RegAllActionsModule(this);
     // Copy code between plots (/copycode, /cancelcopy)

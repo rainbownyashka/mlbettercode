@@ -1,6 +1,7 @@
 package com.example.examplemod.feature.hub;
 
 import com.example.examplemod.feature.place.PlaceModuleHost;
+import com.example.examplemod.feature.mldsl.MlDslModule;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -28,13 +29,15 @@ public final class HubModule
     private static final long MAX_TOTAL_DOWNLOAD_BYTES = 2_500L * 1024L;
 
     private final PlaceModuleHost host;
+    private final MlDslModule mlDslModule;
     private final String baseUrl;
     private volatile String confirmKeyHint = null;
     private volatile PendingLoad pending = null;
 
-    public HubModule(PlaceModuleHost host)
+    public HubModule(PlaceModuleHost host, MlDslModule mlDslModule)
     {
         this.host = host;
+        this.mlDslModule = mlDslModule;
         this.baseUrl = "https://mldsl-hub.pages.dev";
     }
 
@@ -151,16 +154,13 @@ public final class HubModule
             host.setActionBar(false, "&cNo plan.json downloaded for this post.", 3500L);
             return;
         }
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null || mc.player == null)
+        if (mlDslModule == null)
         {
-            host.setActionBar(false, "&cNo player", 2000L);
+            host.setActionBar(false, "&cMLDSL module unavailable", 2500L);
             return;
         }
-        String abs = pl.planFile.getAbsolutePath().replace("\\", "\\\\");
-        String cmd = "/mldsl run \"" + abs + "\"";
-        host.setActionBar(true, "&aRunning: " + cmd, 2500L);
-        mc.addScheduledTask(() -> mc.player.sendChatMessage(cmd));
+        host.setActionBar(true, "&aRunning plan.json directly (no chat command)", 2500L);
+        mlDslModule.runPlan(pl.planFile, 1, false, server, sender);
     }
 
     private PendingLoad downloadAll(String postId, File outDir) throws Exception
