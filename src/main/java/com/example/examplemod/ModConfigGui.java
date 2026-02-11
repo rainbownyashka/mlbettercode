@@ -25,7 +25,11 @@ public class ModConfigGui extends GuiConfig
         }
         return java.util.Arrays.asList(
             new ConfigElement(cfg.getCategory("hotbar")),
-            new ConfigElement(cfg.getCategory("hologram"))
+            new ConfigElement(cfg.getCategory("hologram")),
+            new ConfigElement(cfg.getCategory("code")),
+            new ConfigElement(cfg.getCategory("chest")),
+            new ConfigElement(cfg.getCategory("place")),
+            new ConfigElement(cfg.getCategory("hub"))
         );
     }
 }

@@ -30,7 +30,7 @@ public final class HubModule
 
     private final PlaceModuleHost host;
     private final MlDslModule mlDslModule;
-    private final String baseUrl;
+    private volatile String baseUrl;
     private volatile String confirmKeyHint = null;
     private volatile PendingLoad pending = null;
 
@@ -38,12 +38,26 @@ public final class HubModule
     {
         this.host = host;
         this.mlDslModule = mlDslModule;
-        this.baseUrl = "https://mldsl-hub.pages.dev";
+        this.baseUrl = "https://mldsl-hub.vercel.app";
     }
 
     public void setConfirmKeyHint(String hint)
     {
         this.confirmKeyHint = hint;
+    }
+
+    public void setBaseUrl(String baseUrl)
+    {
+        if (baseUrl == null)
+        {
+            return;
+        }
+        String v = baseUrl.trim();
+        if (v.isEmpty())
+        {
+            return;
+        }
+        this.baseUrl = v;
     }
 
     public void runCommand(MinecraftServer server, ICommandSender sender, String[] args)
@@ -105,7 +119,7 @@ public final class HubModule
                     String hint = confirmKeyHint == null || confirmKeyHint.trim().isEmpty()
                         ? "/confirmload"
                         : "/confirmload (&f" + confirmKeyHint + "&e)";
-                    scheduleChat("&eПодтвердить печать plan.json: &a" + hint);
+                    scheduleChat("&eПодтвердить печать plan.json: &e" + hint);
                 }
             }
             catch (Exception e)
@@ -159,7 +173,7 @@ public final class HubModule
             host.setActionBar(false, "&cMLDSL module unavailable", 2500L);
             return;
         }
-        host.setActionBar(true, "&aRunning plan.json directly (no chat command)", 2500L);
+        host.setActionBar(true, "&aRunning plan.json directly", 2500L);
         mlDslModule.runPlan(pl.planFile, 1, false, server, sender);
     }
 

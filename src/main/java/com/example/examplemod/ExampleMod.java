@@ -244,6 +244,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private static Logger logger;
     private static Configuration config;
     private static boolean enableSecondHotbar = true;
+    private static final String HUB_BASE_URL_PRIMARY = "https://mldsl-hub.vercel.app";
+    private static final String HUB_BASE_URL_MIRROR = "https://mldsl-hub.duckdns.org";
+    private static boolean hubSwitchToMirror = false;
     // --- Auto chest cache settings (config) ---
     private static boolean autoCacheEnabled = false;
     private static int autoCacheRadius = 6;
@@ -551,6 +554,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         logger = event.getModLog();
         MinecraftForge.EVENT_BUS.register(this);
         loadConfig(event);
+        hubModule.setBaseUrl(getHubBaseUrl());
         initEntriesFile(event);
         initIoExecutor();
     }
@@ -887,6 +891,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         if (event != null && MODID.equals(event.getModID()))
         {
             syncConfig(false);
+            hubModule.setBaseUrl(getHubBaseUrl());
             setActionBar(true, "&eConfig: hotbar=" + enableSecondHotbar + " holo=#"
                 + String.format(Locale.ROOT, "%06X", chestHoloTextColor), 3000L);
             if (!enableSecondHotbar)
@@ -3117,7 +3122,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         catch (Exception ignore) { }
 
-        String url = "https://mldsl-hub.pages.dev/publish";
+        String url = getHubPublishUrl();
         setActionBar(true, "&aПакет готов (" + copied + " файлов). Открываю папку и Hub...", 4500L);
         mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "Папка публикации: " + dir.getAbsolutePath()));
         mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
@@ -12934,6 +12939,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             placeParamsChestAutoOpenDelayMs = config.getInt("placeParamsChestAutoOpenDelayMs", "place", 1500, 200, 8000,
                 "PLACE/MLDSL: if after selecting an action the params chest does not open automatically,\n"
                     + "close the menu and try to open it after this delay (ms).");
+            hubSwitchToMirror = config.getBoolean("switchToMirror", "hub", false,
+                "Use mirror for MLDSL Hub endpoints.\n"
+                    + "false = " + HUB_BASE_URL_PRIMARY + "\n"
+                    + "true  = " + HUB_BASE_URL_MIRROR);
             String holoColor = config.getString("holoTextColor", "hologram", "FFFFFF",
                 "Hex RGB text color for chest holograms (e.g. FFFFFF).");
             chestHoloTextColor = parseHexColor(holoColor, 0xFFFFFF);
@@ -12945,6 +12954,16 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 config.save();
             }
         }
+    }
+
+    private static String getHubBaseUrl()
+    {
+        return hubSwitchToMirror ? HUB_BASE_URL_MIRROR : HUB_BASE_URL_PRIMARY;
+    }
+
+    private static String getHubPublishUrl()
+    {
+        return getHubBaseUrl() + "/publish";
     }
 
 
