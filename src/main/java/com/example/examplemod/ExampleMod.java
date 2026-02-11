@@ -930,6 +930,25 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             return;
         }
+        try
+        {
+            Minecraft mc = Minecraft.getMinecraft();
+            if (mc != null && mc.player != null)
+            {
+                int executed = ClientCommandHandler.instance.executeCommand(mc.player, message);
+                if (executed > 0)
+                {
+                    // Force client command execution path even for programmatic sendChatMessage(...)
+                    // so /confirmload and /mldsl run do not leak to server as "Unknown command".
+                    event.setCanceled(true);
+                    return;
+                }
+            }
+        }
+        catch (Exception ignore)
+        {
+            // Keep legacy behavior if client-command dispatch fails.
+        }
         String lower = message.toLowerCase(Locale.ROOT);
         String cmd = lower.split("\\s+")[0];
         if ("/dev".equals(cmd))
