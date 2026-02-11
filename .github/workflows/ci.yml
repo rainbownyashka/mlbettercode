@@ -33,3 +33,10 @@ jobs:
           test -f docs/ARCHITECTURE.md
           test -f docs/CONTRIBUTING.md
           test -f docs/ERRORS.md
+          test -f docs/STATUS.md
+          test -f docs/TODO.md
+          test -f docs/CROSS_PROJECT_INDEX.md
+
+      - name: Docs scope guard
+        run: |
+          python3 tools/check_docs_scope.py
