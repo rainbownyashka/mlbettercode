@@ -133,7 +133,7 @@ public final class MlDslModule
         }
 
         host.setActionBar(true,
-            "&a/mldsl run: entries=" + totalEntries + " start=" + start + " queued=" + countPlaceEntries(placeArgs),
+            "&aq/mldsl run: entries=" + totalEntries + " start=" + start + " queued=" + countPlaceEntries(placeArgs),
             3500L);
 
         // Plan-run uses the blue-glass code map allocator (±4Z, ±10Y), instead of the legacy -2X row placer.

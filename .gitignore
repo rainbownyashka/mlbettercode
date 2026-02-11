@@ -28,3 +28,6 @@ dev_scoreboard.patch
 nm.py
 src/main/java/com/example/examplemod/ExampleMod.javaai
 tools/*.exportcode.json
+tools/mldsl-vscode/*.vsix
+tools/paged_actions_report.txt
+tools/rag_export_search/index_regallactions.json
