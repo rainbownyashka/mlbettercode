@@ -493,6 +493,30 @@ function findCallContext(lineText, positionChar) {
   return { module: normalizeModuleName(last.module), func: last.func, inside };
 }
 
+function findCallContextFromDocument(document, position) {
+  // AGENT_TAG: multiline_call_context
+  // Support completions inside multiline calls:
+  // game.func(
+  //   arg=...
+  // )
+  // We scan text from start of file to cursor, so context is preserved across lines.
+  const range = new vscode.Range(new vscode.Position(0, 0), position);
+  const left = document.getText(range);
+  if (!left) return null;
+  if ((left.match(/\"/g) || []).length % 2 === 1) return null;
+
+  const re = /([a-zA-Z_\u0400-\u04FF][\w\u0400-\u04FF]*(?:\.[a-zA-Z_\u0400-\u04FF][\w\u0400-\u04FF]*)*)\.([\w\u0400-\u04FF]+)\s*\(/g;
+  let m;
+  let last = null;
+  while ((m = re.exec(left))) {
+    last = { module: m[1], func: m[2], openParen: m.index + m[0].length - 1 };
+  }
+  if (!last) return null;
+  const inside = left.slice(last.openParen + 1);
+  if (inside.includes(")")) return null;
+  return { module: normalizeModuleName(last.module), func: last.func, inside };
+}
+
 function specToMarkdown(spec) {
   function escapeHtml(s) {
     return (s || "")
@@ -1229,7 +1253,7 @@ function activate(context) {
         }
 
         // Argument completion: module.func(... here ...)
-        const call = findCallContext(line, position.character);
+        const call = findCallContextFromDocument(document, position) || findCallContext(line, position.character);
         if (call) {
           const mod = lookup[call.module];
           if (!mod) return;
