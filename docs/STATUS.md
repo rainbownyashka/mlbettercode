@@ -12,6 +12,8 @@
 - Modern runtime core scaffold added under `modern/core`:
   - shared `RuntimeCore`, `GameBridge`, `RuntimeErrorCode`, `SignLineNormalizer`.
   - explicit debug tags: `publish-debug`, `printer-debug`, `confirmload-debug`.
+  - `/mldsl run` now performs real Hub download into `mldsl_modules/<postId>`.
+  - `/confirmload` now parses downloaded `plan.json` and reports entries count.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,

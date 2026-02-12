@@ -8,4 +8,7 @@ Includes:
 - `RuntimeErrorCode` model
 - `SignLineNormalizer` utility for formatting-code-safe matching
 
-This layer intentionally returns explicit `UNIMPLEMENTED_PLATFORM_OPERATION` until each adapter wires full parity logic.
+Current migration state:
+- `run`: downloads module files + `plan.json` from Hub into local `mldsl_modules/<postId>`.
+- `confirmload`: parses downloaded `plan.json` and reports entry count.
+- `publish`: still explicit `UNIMPLEMENTED_PLATFORM_OPERATION` until full parity wiring.

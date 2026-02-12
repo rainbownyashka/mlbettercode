@@ -47,4 +47,6 @@ Notes:
 
 Current state is explicit bootstrap for runtime parity migration:
 - shared runtime contract and debug tags in `modern/core`,
-- transparent `UNIMPLEMENTED_PLATFORM_OPERATION` errors where parity path is not yet wired.
+- `/mldsl run` downloads files from Hub and stores them in `mldsl_modules/<postId>`,
+- `/confirmload` parses downloaded `plan.json` and prints entries count,
+- transparent `UNIMPLEMENTED_PLATFORM_OPERATION` errors where place/publish parity is not yet wired.

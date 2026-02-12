@@ -259,6 +259,11 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
         }
 
         @Override
+        public Path runDirectory() {
+            return MinecraftClient.getInstance().runDirectory.toPath();
+        }
+
+        @Override
         public List<String> scoreboardLines() {
             List<String> out = new ArrayList<>();
             MinecraftClient mc = MinecraftClient.getInstance();
