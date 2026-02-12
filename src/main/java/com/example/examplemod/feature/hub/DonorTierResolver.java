@@ -62,9 +62,9 @@ final class DonorTierResolver
             return Result.empty();
         }
 
-        int bestRank = 0;
+        int bestRank = -1;
         Set<String> matched = new LinkedHashSet<>();
-        String bestTier = "gamer";
+        String bestTier = "player";
 
         for (int i = 0; i < TIER_ORDER.size(); i++)
         {
@@ -212,13 +212,13 @@ final class DonorTierResolver
 
         Result(String tier, Set<String> ids)
         {
-            this.tier = tier == null ? "gamer" : tier;
+            this.tier = tier == null ? "player" : tier;
             this.ids = ids == null ? Collections.<String>emptySet() : ids;
         }
 
         static Result empty()
         {
-            return new Result("gamer", Collections.<String>emptySet());
+            return new Result("player", Collections.<String>emptySet());
         }
 
         String idsPreview(int max)

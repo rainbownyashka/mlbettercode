@@ -718,16 +718,10 @@ function buildKeywordCallSnippet(funcAlias, spec) {
 }
 
 function trySetSnippetInsertRule(item) {
-  // AGENT_TAG: snippet_rule_compat
-  // Some VS Code builds/environments may not expose CompletionItemInsertTextRule.
-  // SnippetString works without this flag, so we set the rule only when available.
-  try {
-    const rule =
-      vscode &&
-      vscode.CompletionItemInsertTextRule &&
-      vscode.CompletionItemInsertTextRule.InsertAsSnippet;
-    if (rule != null) item.insertTextRules = rule;
-  } catch {}
+  // AGENT_TAG: snippet_rule_disabled
+  // Compatibility-first: do not touch insertTextRules.
+  // SnippetString is enough and avoids VS Code API/version mismatches.
+  return;
 }
 
 function activate(context) {
@@ -1403,7 +1397,10 @@ function activate(context) {
 
           const parts = call.inside.split(",");
           const token = String(parts[parts.length - 1] || "").trim();
-          const mEq = token.match(/^([\w\u0400-\u04FF]+)\s*=\s*(.*)$/);
+          // AGENT_TAG: enum_value_ctx_multiline
+          // Detect key=value by looking at the tail up to cursor, including multiline fragments.
+          const mEqTail = String(call.inside || "").match(/(?:^|,)\s*([\w\u0400-\u04FF]+)\s*=\s*([^,\)]*)$/s);
+          const mEq = mEqTail ? [mEqTail[0], mEqTail[1], mEqTail[2]] : token.match(/^([\w\u0400-\u04FF]+)\s*=\s*(.*)$/);
 
           // Value completion for enum: key=value (suggest enum options)
           if (mEq) {
@@ -1499,8 +1496,10 @@ function activate(context) {
               argItems.push(item);
             };
 
-            addItem(name, name, null);
+            // AGENT_TAG: enum_keys_ru_first
+            // Prefer RU key labels in completion UI, keep EN as alias for compatibility.
             if (nameRu && nameRu !== name) addItem(nameRu, nameRu, `alias for ${name}`);
+            addItem(name, name, nameRu && nameRu !== name ? `alias ${nameRu}` : null);
           }
           if (argItems.length) {
             output.appendLine(`[completion#${id}] arg keys ${call.module}.${entry.funcName} items=${argItems.length}`);
