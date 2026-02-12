@@ -41,6 +41,7 @@ Notes:
 ## Modern command set (bootstrap)
 
 - `/mldsl run <postId> [config]`
+- `/loadmodule <postId> [file]`
 - `/confirmload`
 - `/module publish`
 - `/bc_print_plan [path]`

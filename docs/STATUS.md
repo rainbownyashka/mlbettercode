@@ -11,8 +11,10 @@
 - Donor tier resolver from loaded file IDs available in hub module flow.
 - Modern runtime core scaffold added under `modern/core`:
   - shared `RuntimeCore`, `GameBridge`, `RuntimeErrorCode`, `SignLineNormalizer`.
+  - `ScoreboardParser` + `ScoreboardContext` for explicit scoreboard-derived context logging.
   - explicit debug tags: `publish-debug`, `printer-debug`, `confirmload-debug`.
   - `/mldsl run` now performs real Hub download into `mldsl_modules/<postId>`.
+  - `/loadmodule` alias added in modern Fabric targets (`/loadmodule <postId> [file]`).
   - `/confirmload` now parses downloaded `plan.json` and reports entries count.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),

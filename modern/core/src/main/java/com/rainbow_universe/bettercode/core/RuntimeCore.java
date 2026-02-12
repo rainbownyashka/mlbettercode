@@ -35,18 +35,32 @@ public final class RuntimeCore {
     }
 
     public RuntimeResult handleRun(String postId, String configKey, GameBridge bridge) {
+        return handleLoadModule(postId, null, configKey, bridge);
+    }
+
+    public RuntimeResult handleLoadModule(String postId, String fileName, String configKey, GameBridge bridge) {
         if (postId == null || postId.trim().isEmpty()) {
             return RuntimeResult.fail(RuntimeErrorCode.DOWNLOAD_FAILED, "postId is required");
         }
         String cfg = configKey == null || configKey.trim().isEmpty() ? "default" : configKey.trim();
         String safePostId = safePath(postId.trim());
-        logger.info("printer-debug", "run requested postId=" + safePostId + " config=" + cfg + " dim=" + bridge.currentDimension());
+        ScoreboardContext ctx = ScoreboardParser.parse(bridge.scoreboardLines());
+        logger.info("printer-debug",
+            "run requested postId=" + safePostId
+                + " file=" + (fileName == null ? "all" : fileName)
+                + " config=" + cfg
+                + " dim=" + bridge.currentDimension()
+                + " tier=" + ctx.detectedTier()
+                + " editorLike=" + ctx.editorLike()
+        );
         try {
             File outDir = bridge.runDirectory().resolve("mldsl_modules").resolve(safePostId).toFile();
             if (!outDir.exists() && !outDir.mkdirs()) {
                 return RuntimeResult.fail(RuntimeErrorCode.DOWNLOAD_FAILED, "cannot create module dir: " + outDir.getPath());
             }
-            PendingLoad pl = downloadAll(safePostId, outDir);
+            PendingLoad pl = (fileName == null || fileName.trim().isEmpty())
+                ? downloadAll(safePostId, outDir)
+                : downloadOne(safePostId, fileName.trim(), outDir);
             pendingLoad = pl;
             bridge.sendChat("[publish-debug] downloaded files=" + pl.savedFiles.size() + " postId=" + safePostId);
             bridge.sendChat("[publish-debug] events=" + pl.events + " funcs=" + pl.funcs + " loops=" + pl.loops + " actions~=" + pl.actions);
@@ -123,6 +137,30 @@ public final class RuntimeCore {
             if (it.name.toLowerCase().endsWith(".mldsl")) {
                 pl.addStats(new String(data, StandardCharsets.UTF_8));
             }
+        }
+        return pl;
+    }
+
+    private PendingLoad downloadOne(String postId, String fileName, File outDir) throws Exception {
+        byte[] data = httpGet(buildDownloadUrl(postId, fileName));
+        String outName = safePath(fileName);
+        File outFile = new File(outDir, outName);
+        FileOutputStream fos = null;
+        try {
+            fos = new FileOutputStream(outFile);
+            fos.write(data);
+        } finally {
+            if (fos != null) {
+                fos.close();
+            }
+        }
+        PendingLoad pl = new PendingLoad(postId);
+        pl.savedFiles.add(outFile);
+        if ("plan.json".equalsIgnoreCase(fileName)) {
+            pl.planFile = outFile;
+        }
+        if (outName.toLowerCase().endsWith(".mldsl")) {
+            pl.addStats(new String(data, StandardCharsets.UTF_8));
         }
         return pl;
     }

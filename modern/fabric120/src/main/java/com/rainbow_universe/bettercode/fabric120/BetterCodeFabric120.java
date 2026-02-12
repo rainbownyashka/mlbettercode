@@ -67,6 +67,18 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
         ));
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
+            ClientCommandManager.literal("loadmodule")
+                .then(ClientCommandManager.argument("postId", StringArgumentType.word())
+                    .executes(ctx -> loadModule(ctx.getSource(), StringArgumentType.getString(ctx, "postId"), null))
+                    .then(ClientCommandManager.argument("file", StringArgumentType.greedyString())
+                        .executes(ctx -> loadModule(
+                            ctx.getSource(),
+                            StringArgumentType.getString(ctx, "postId"),
+                            StringArgumentType.getString(ctx, "file")
+                        ))))
+        ));
+
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
             ClientCommandManager.literal("mldsl")
                 .then(ClientCommandManager.literal("run")
                     .then(ClientCommandManager.argument("postId", StringArgumentType.word())
@@ -89,6 +101,16 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
                 .then(ClientCommandManager.literal("publish")
                     .executes(ctx -> publishModule(ctx.getSource())))
         ));
+    }
+
+    private static int loadModule(FabricClientCommandSource source, String postId, String file) {
+        RuntimeResult result = RUNTIME.handleLoadModule(postId, file, null, new FabricBridge(source));
+        if (result.ok()) {
+            source.sendFeedback(Text.literal(result.message()));
+            return 1;
+        }
+        source.sendError(Text.literal("[" + result.errorCode() + "] " + result.message()));
+        return 0;
     }
 
     private static int runMldsl(FabricClientCommandSource source, String postId, String config) {
