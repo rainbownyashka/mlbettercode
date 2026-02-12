@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "bettercode_fabric120",
+  "id": "bettercode_fabric1165",
   "version": "${version}",
-  "name": "BetterCode Fabric 1.20",
-  "description": "BetterCode modern bootstrap for Fabric 1.20.1 with runtime-core bridge.",
+  "name": "BetterCode Fabric 1.16.5",
+  "description": "BetterCode modern bootstrap for Fabric 1.16.5 with runtime-core bridge.",
   "authors": [
     "rainbownyashka"
   ],
@@ -15,12 +15,12 @@
   "environment": "client",
   "entrypoints": {
     "client": [
-      "com.rainbow_universe.bettercode.fabric120.BetterCodeFabric120"
+      "com.rainbow_universe.bettercode.fabric1165.BetterCodeFabric1165"
     ]
   },
   "depends": {
-    "fabricloader": ">=0.15.0",
-    "minecraft": "~1.20.1",
+    "fabricloader": ">=0.14.0",
+    "minecraft": "~1.16.5",
     "fabric-api": "*"
   }
 }

@@ -3,7 +3,7 @@
   "id": "bettercode_fabric121",
   "version": "${version}",
   "name": "BetterCode Fabric 1.21",
-  "description": "Minimal BetterCode feature set for Fabric 1.21.1 (printer/export selector).",
+  "description": "BetterCode modern bootstrap for Fabric 1.21.1 with runtime-core bridge.",
   "authors": [
     "rainbownyashka"
   ],

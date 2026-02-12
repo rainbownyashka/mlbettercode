@@ -6,11 +6,18 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.rainbow_universe.bettercode.core.CoreLogger;
+import com.rainbow_universe.bettercode.core.GameBridge;
+import com.rainbow_universe.bettercode.core.RuntimeCore;
+import com.rainbow_universe.bettercode.core.RuntimeResult;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.scoreboard.Scoreboard;
+import net.minecraft.scoreboard.ScoreboardDisplaySlot;
+import net.minecraft.scoreboard.ScoreboardObjective;
 import net.minecraft.text.Text;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -19,12 +26,15 @@ import net.minecraft.util.math.BlockPos;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 public final class BetterCodeFabric121 implements ClientModInitializer {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Map<String, SelectedBlock> SELECTED = new LinkedHashMap<>();
+    private static final RuntimeCore RUNTIME = new RuntimeCore(new FabricCoreLogger());
 
     @Override
     public void onInitializeClient() {
@@ -56,6 +66,60 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                 .then(ClientCommandManager.argument("path", StringArgumentType.greedyString())
                     .executes(ctx -> inspectPlan(ctx.getSource(), Path.of(StringArgumentType.getString(ctx, "path")))))
         ));
+
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
+            ClientCommandManager.literal("mldsl")
+                .then(ClientCommandManager.literal("run")
+                    .then(ClientCommandManager.argument("postId", StringArgumentType.word())
+                        .executes(ctx -> runMldsl(ctx.getSource(), StringArgumentType.getString(ctx, "postId"), null))
+                        .then(ClientCommandManager.argument("config", StringArgumentType.word())
+                            .executes(ctx -> runMldsl(
+                                ctx.getSource(),
+                                StringArgumentType.getString(ctx, "postId"),
+                                StringArgumentType.getString(ctx, "config")
+                            )))))
+        ));
+
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
+            ClientCommandManager.literal("confirmload")
+                .executes(ctx -> confirmLoad(ctx.getSource()))
+        ));
+
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
+            ClientCommandManager.literal("module")
+                .then(ClientCommandManager.literal("publish")
+                    .executes(ctx -> publishModule(ctx.getSource())))
+        ));
+    }
+
+    private static int runMldsl(FabricClientCommandSource source, String postId, String config) {
+        RuntimeResult result = RUNTIME.handleRun(postId, config, new FabricBridge(source));
+        if (result.ok()) {
+            source.sendFeedback(Text.literal(result.message()));
+            return 1;
+        }
+        source.sendError(Text.literal("[" + result.errorCode() + "] " + result.message()));
+        return 0;
+    }
+
+    private static int confirmLoad(FabricClientCommandSource source) {
+        RuntimeResult result = RUNTIME.handleConfirmLoad(new FabricBridge(source));
+        if (result.ok()) {
+            source.sendFeedback(Text.literal(result.message()));
+            return 1;
+        }
+        source.sendError(Text.literal("[" + result.errorCode() + "] " + result.message()));
+        return 0;
+    }
+
+    private static int publishModule(FabricClientCommandSource source) {
+        RuntimeResult result = RUNTIME.handlePublish(new FabricBridge(source));
+        if (result.ok()) {
+            source.sendFeedback(Text.literal(result.message()));
+            return 1;
+        }
+        source.sendError(Text.literal("[" + result.errorCode() + "] " + result.message()));
+        return 0;
     }
 
     private static int toggleCurrentBlock(FabricClientCommandSource source) {
@@ -161,6 +225,67 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
     }
 
     private record SelectedBlock(String dimension, int x, int y, int z) { }
+
+    private static final class FabricCoreLogger implements CoreLogger {
+        @Override
+        public void info(String tag, String message) {
+            System.out.println("[" + tag + "] " + message);
+        }
+
+        @Override
+        public void warn(String tag, String message) {
+            System.out.println("[" + tag + "] WARN " + message);
+        }
+
+        @Override
+        public void error(String tag, String message) {
+            System.err.println("[" + tag + "] ERROR " + message);
+        }
+    }
+
+    private static final class FabricBridge implements GameBridge {
+        private final FabricClientCommandSource source;
+
+        private FabricBridge(FabricClientCommandSource source) {
+            this.source = source;
+        }
+
+        @Override
+        public String currentDimension() {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.world == null) {
+                return "unknown";
+            }
+            return mc.world.getRegistryKey().getValue().toString();
+        }
+
+        @Override
+        public List<String> scoreboardLines() {
+            List<String> out = new ArrayList<>();
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.world == null) {
+                return out;
+            }
+            Scoreboard scoreboard = mc.world.getScoreboard();
+            ScoreboardObjective sidebar = scoreboard.getObjectiveForSlot(ScoreboardDisplaySlot.SIDEBAR);
+            if (sidebar == null) {
+                return out;
+            }
+            out.add(sidebar.getDisplayName().getString());
+            return out;
+        }
+
+        @Override
+        public void sendChat(String message) {
+            source.sendFeedback(Text.literal(message));
+        }
+
+        @Override
+        public void sendActionBar(String message) {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.player != null) {
+                mc.player.sendMessage(Text.literal(message), true);
+            }
+        }
+    }
 }
-
-

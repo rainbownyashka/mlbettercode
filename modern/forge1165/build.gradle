@@ -1,0 +1,49 @@
+plugins {
+    id "java"
+    id "maven-publish"
+}
+
+def ciTag = System.getenv("GITHUB_REF_NAME")
+def tagVersion = null
+if (ciTag != null && ciTag.trim()) {
+    tagVersion = ciTag.startsWith("v") ? ciTag.substring(1) : ciTag
+}
+def propVersion = project.hasProperty("modVersion") ? String.valueOf(project.property("modVersion")) : null
+def resolvedVersion = (propVersion != null && propVersion.trim()) ? propVersion.trim() : ((tagVersion != null && tagVersion.trim()) ? tagVersion.trim() : "0.1.0-forge1165")
+
+version = resolvedVersion
+group = "com.rainbow_universe.bettercode"
+archivesBaseName = "bettercode-forge1165-bootstrap"
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir "../core/src/main/java"
+        }
+        resources {
+            srcDir "src/main/resources"
+        }
+    }
+}
+
+jar {
+    manifest {
+        attributes(
+            "Implementation-Title": "BetterCode Forge 1.16.5 Bootstrap",
+            "Implementation-Version": project.version
+        )
+    }
+}

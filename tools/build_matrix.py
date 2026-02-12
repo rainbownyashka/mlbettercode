@@ -124,12 +124,38 @@ def build_fabric121(repo: Path, task: str) -> None:
     env["PATH"] = str(Path(java21) / "bin") + os.pathsep + env.get("PATH", "")
     run([*gradle_cmd_for_module(module, repo), "-p", str(module), task], repo, env=env)
 
+def build_fabric1165(repo: Path, task: str) -> None:
+    module = repo / "modern" / "fabric1165"
+    java17 = _pick_java_home(17)
+    if not java17:
+        raise SystemExit(
+            "Fabric 1.16.5 build uses Loom and requires JDK 17 runtime.\n"
+            "Set JAVA_HOME_17_X64 (or JAVA_HOME_17) and rerun."
+        )
+    env = os.environ.copy()
+    env["JAVA_HOME"] = java17
+    env["PATH"] = str(Path(java17) / "bin") + os.pathsep + env.get("PATH", "")
+    run([*gradle_cmd_for_module(module, repo), "-p", str(module), task], repo, env=env)
+
+def build_forge1165(repo: Path, task: str) -> None:
+    module = repo / "modern" / "forge1165"
+    java17 = _pick_java_home(17)
+    if not java17:
+        raise SystemExit(
+            "Forge 1.16.5 bootstrap build requires JDK 17 runtime.\n"
+            "Set JAVA_HOME_17_X64 (or JAVA_HOME_17) and rerun."
+        )
+    env = os.environ.copy()
+    env["JAVA_HOME"] = java17
+    env["PATH"] = str(Path(java17) / "bin") + os.pathsep + env.get("PATH", "")
+    run([*gradle_cmd_for_module(module, repo), "-p", str(module), task], repo, env=env)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build matrix for BetterCode multi-version targets")
     parser.add_argument(
         "target",
-        choices=["legacy112", "fabric120", "fabric121", "all"],
+        choices=["legacy112", "fabric1165", "fabric120", "fabric121", "forge1165", "modern_all", "all"],
         help="Build target profile",
     )
     parser.add_argument(
@@ -142,10 +168,19 @@ def main() -> int:
     repo = Path(__file__).resolve().parents[1]
     if args.target == "legacy112":
         build_legacy112(repo, args.task)
+    elif args.target == "fabric1165":
+        build_fabric1165(repo, args.task)
     elif args.target == "fabric120":
         build_fabric120(repo, args.task)
     elif args.target == "fabric121":
         build_fabric121(repo, args.task)
+    elif args.target == "forge1165":
+        build_forge1165(repo, args.task)
+    elif args.target == "modern_all":
+        build_fabric1165(repo, args.task)
+        build_fabric120(repo, args.task)
+        build_fabric121(repo, args.task)
+        build_forge1165(repo, args.task)
     else:
         build_legacy112(repo, args.task)
         build_fabric120(repo, args.task)

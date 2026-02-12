@@ -34,6 +34,14 @@ java {
     withSourcesJar()
 }
 
+sourceSets {
+    main {
+        java {
+            srcDir "../core/src/main/java"
+        }
+    }
+}
+
 tasks.withType(JavaCompile).configureEach {
     options.release = 17
 }

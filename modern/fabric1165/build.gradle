@@ -1,5 +1,5 @@
 plugins {
-    id "fabric-loom" version "1.8.13"
+    id "fabric-loom" version "1.6.12"
     id "maven-publish"
 }
 
@@ -9,11 +9,11 @@ if (ciTag != null && ciTag.trim()) {
     tagVersion = ciTag.startsWith("v") ? ciTag.substring(1) : ciTag
 }
 def propVersion = project.hasProperty("modVersion") ? String.valueOf(project.property("modVersion")) : null
-def resolvedVersion = (propVersion != null && propVersion.trim()) ? propVersion.trim() : ((tagVersion != null && tagVersion.trim()) ? tagVersion.trim() : "0.1.0-fabric121")
+def resolvedVersion = (propVersion != null && propVersion.trim()) ? propVersion.trim() : ((tagVersion != null && tagVersion.trim()) ? tagVersion.trim() : "0.1.0-fabric1165")
 
 version = resolvedVersion
 group = "com.rainbow_universe.bettercode"
-archivesBaseName = "bettercode-fabric121"
+archivesBaseName = "bettercode-fabric1165"
 
 repositories {
     mavenCentral()
@@ -29,9 +29,11 @@ dependencies {
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
+        languageVersion = JavaLanguageVersion.of(17)
     }
     withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
 }
 
 sourceSets {
@@ -40,10 +42,6 @@ sourceSets {
             srcDir "../core/src/main/java"
         }
     }
-}
-
-tasks.withType(JavaCompile).configureEach {
-    options.release = 21
 }
 
 processResources {

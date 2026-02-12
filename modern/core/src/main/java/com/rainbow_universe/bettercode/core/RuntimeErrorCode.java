@@ -1,0 +1,10 @@
+package com.rainbow_universe.bettercode.core;
+
+public enum RuntimeErrorCode {
+    PARSE_SCHEMA_MISMATCH,
+    SLOT_DESYNC,
+    PACKET_SKIP_RETRY_EXHAUSTED,
+    MISSING_REQUIRED_ITEM,
+    PUBLISH_PAYLOAD_INVALID,
+    UNIMPLEMENTED_PLATFORM_OPERATION
+}

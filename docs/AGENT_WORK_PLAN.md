@@ -8,6 +8,7 @@ Keep persistent project state between sessions: what is tested, what is broken, 
 - Prevent cross-flow interference (extra clicks/replays/old chest context).
 - Keep logs clear enough for fast root-cause isolation without excessive spam.
 - Define modern (Fabric 1.20/1.21) roadmap toward core feature parity with legacy flows.
+- Bootstrap shared `modern/core` contract and extend target matrix with 1.16.5 variants.
 
 ## Last Confirmed User Feedback (Summary)
 - In multiple runs, only last page was effectively persisted in output despite page traversal logs.
@@ -24,13 +25,15 @@ Keep persistent project state between sessions: what is tested, what is broken, 
 5. Verify new Forge mirror settings for hub publish/load URLs in live run.
 6. Keep multi-version docs aligned with real build matrix script and Java requirements.
 7. Prepare staged implementation plan for Fabric 1.20/1.21 parity (without regallactions).
+8. Roll out runtime-core scaffold to Fabric 1.16.5/1.20.1/1.21.1 command entrypoints.
+9. Land Forge 1.16.5 bootstrap target and then replace it with real Forge adapter wiring.
 
 ## Blockers / Assumptions
 - Final correctness must be validated in live server conditions (user runtime).
 - Some GUI timing is server-latency dependent; waits/guards must account for it.
 
 ## Next Action
-Run targeted verification on `regallactions resave2` and confirm merged result contains all expected page arguments.
+Run multi-target smoke builds (`fabric1165`, `fabric120`, `fabric121`, `forge1165`) and start replacing `UNIMPLEMENTED_PLATFORM_OPERATION` paths with real publish/parser/printer flows.
 
 ## TODO Backlog
 - Add compile-time donor requirements report:
