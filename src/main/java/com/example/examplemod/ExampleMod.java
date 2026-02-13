@@ -4419,6 +4419,25 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                             + entry.getX() + "," + entry.getY() + "," + entry.getZ()
                             + " пустая/некорректная или не закэширована. Облети весь код, чтобы закэшировать таблички, и повтори /module publish.";
                     }
+                    else
+                    {
+                        try
+                        {
+                            IBlockState entryState = world.getBlockState(entry);
+                            Block entryBlock = entryState == null ? Blocks.AIR : entryState.getBlock();
+                            if (entryBlock != null && entryBlock != Blocks.AIR)
+                            {
+                                lastExportBuildError = "Не удалось восстановить табличку для строки кода у "
+                                    + entry.getX() + "," + entry.getY() + "," + entry.getZ()
+                                    + " (entryBlock=" + blockNameSafe(entryBlock) + "). "
+                                    + "Облети весь код, чтобы закэшировать таблички, и повтори /module publish.";
+                            }
+                        }
+                        catch (Exception ignore)
+                        {
+                            // keep previous error state
+                        }
+                    }
                 }
                 return null;
             }
