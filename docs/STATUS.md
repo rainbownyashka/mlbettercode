@@ -79,6 +79,16 @@
   - `modern/forge1165` (bootstrap jar, Forge hooks pending).
 - Fabric 1.16.5 loader compatibility fix applied:
   - `fabric.mod.json` dependency switched from `fabric-api` to `fabric` for TL/Fabric Loader resolution.
+- Legacy `1.12.2` no-cache publish warmup anti-stall fix:
+  - page-turn retries now advance on `slot_not_found` and click exceptions,
+  - warmup no longer hangs forever on `has_next_page`; after retry exhaustion it closes chest with explicit `publish_trace` reason `next_page_retry_exhausted`.
+
+## Migration checkpoint (where port currently stops)
+- Direct runtime port is active in modern Fabric adapters only for:
+  - `skip` steps,
+  - block-only steps with empty `name/args`.
+- Steps with menu/sign/action arguments (`name/args`) are still not ported to direct client executor and remain blocked by explicit `UNIMPLEMENTED_MENU_ARGS`.
+- Next required porting block: legacy menu/sign args pipeline (`PlaceState` parity) into modern adapters/core (see TODO `MOD-030`).
 
 ## Known regressions / risks
 - Ongoing high-risk area: GUI/chest timing races on unstable server latency.

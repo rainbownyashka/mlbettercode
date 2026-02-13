@@ -7415,14 +7415,21 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                             }
                             catch (Exception e)
                             {
+                                chestPageRetryCount++;
+                                chestPageNextActionMs = now + 300L;
                                 if (logger != null) logger.info("CHEST_PAGE_CLICK click_failed key={} err={}", chestPageScanKey, e.getClass().getSimpleName());
                                 exportCodeDbg(mc, "chest-page: click failed key=" + chestPageScanKey + " err=" + e.getClass().getSimpleName());
                             }
                         }
-                        else if (logger != null)
+                        else
                         {
-                            logger.info("CHEST_PAGE_ACTION skip_click key={} reason=slot_not_found page={} size={}",
-                                key, chestPageScanIndex + 1, size);
+                            chestPageRetryCount++;
+                            chestPageNextActionMs = now + 300L;
+                            if (logger != null)
+                            {
+                                logger.info("CHEST_PAGE_ACTION skip_click key={} reason=slot_not_found page={} size={}",
+                                    key, chestPageScanIndex + 1, size);
+                            }
                         }
                     }
                     else if (chestPageRetryCount >= CHEST_PAGE_MAX_RETRIES)
@@ -7576,6 +7583,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             boolean pageTurnAllowedNow = modulePublishWarmupActive || autoCachePageTurnAllowed || regAllOwnsPaging || regAllGraceActiveNow;
             if (hasNextPageNow && pageTurnAllowedNow)
             {
+                if (chestPageRetryCount >= CHEST_PAGE_MAX_RETRIES)
+                {
+                    publishTrace(mc, "autocache.close", "reason=next_page_retry_exhausted ageMs=" + ageMs
+                        + " page=" + (chestPageScanIndex + 1) + " retries=" + chestPageRetryCount + "/" + CHEST_PAGE_MAX_RETRIES
+                        + " mode=" + (modulePublishWarmupActive ? "publish_warmup" : "normal_snapshot"));
+                }
+                else
+                {
                 publishTrace(mc, "autocache.keep_open", "reason=has_next_page ageMs=" + ageMs
                     + " page=" + (chestPageScanIndex + 1) + " nextActionInMs=" + Math.max(0L, chestPageNextActionMs - System.currentTimeMillis())
                     + " retries=" + chestPageRetryCount + "/" + CHEST_PAGE_MAX_RETRIES
@@ -7584,6 +7599,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     + " regAllGrace=" + regAllGraceActiveNow
                     + " graceMsLeft=" + Math.max(0L, regAllPagingGraceUntilMs - System.currentTimeMillis()));
                 return;
+                }
             }
             if (hasNextPageNow && !pageTurnAllowedNow)
             {
