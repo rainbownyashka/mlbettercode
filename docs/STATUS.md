@@ -28,9 +28,11 @@
   - `/mldsl run` now accepts config in two forms:
     - positional: `/mldsl run <postId> <config>`
     - flag: `/mldsl run <postId> --config <config>`
-  - modern place execution now uses local-only dispatch with explicit logs:
-    - local dispatcher attempt,
-    - on failure: hard error (`LOCAL_DISPATCH_FAILED`) without server chat fallback.
+  - modern place execution now sends explicit command packets via Java bridge (`sendChatCommand`/`sendCommand`/`sendChatMessage` by API availability), not local dispatcher.
+  - place command payload is sanitized before send (strip color codes/control chars, normalize block id) to reduce invalid-symbol kicks.
+  - explicit logs added per step:
+    - `[printer-debug] server_command_sent ...`
+    - `[printer-debug] server_command_failed ...`
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,

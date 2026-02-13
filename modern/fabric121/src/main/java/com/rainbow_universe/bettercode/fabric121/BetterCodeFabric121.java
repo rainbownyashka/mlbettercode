@@ -517,18 +517,14 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             int executed = 0;
             for (int i = 0; i < ops.size(); i++) {
                 PlaceOp op = ops.get(i);
-                String cmd;
-                if (op.kind() == PlaceOp.Kind.AIR) {
-                    cmd = "placeadvanced air";
-                } else {
-                    cmd = "placeadvanced " + quote(op.blockId()) + " " + quote(op.name()) + " " + quote(op.args());
+                String cmd = buildServerPlaceAdvancedCommand(op);
+                String sendFail = sendServerCommand(cmd);
+                if (sendFail != null) {
+                    System.err.println("[printer-debug] server_command_failed step=" + i + " cmd=" + cmd + " reason=" + sendFail);
+                    return PlaceExecResult.fail(executed, i, "SERVER_COMMAND_FAILED",
+                        "cmd=" + cmd + "\nreason=" + sendFail);
                 }
-                String localFail = tryLocalDispatch(cmd);
-                if (localFail != null) {
-                    System.err.println("[printer-debug] local_dispatch_failed step=" + i + " cmd=" + cmd + " reason=" + localFail + " switching=none");
-                    return PlaceExecResult.fail(executed, i, "LOCAL_DISPATCH_FAILED",
-                        "cmd=" + cmd + "\nlocalFail=" + localFail + "\nserverFallback=disabled_by_design");
-                }
+                System.out.println("[printer-debug] server_command_sent step=" + i + " cmd=" + cmd);
                 executed++;
             }
             return PlaceExecResult.ok(executed);
@@ -586,16 +582,64 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             return s;
         }
 
-        private String tryLocalDispatch(String cmd) {
-            if (CLIENT_DISPATCHER == null) {
-                return "dispatcher_null";
+        private String buildServerPlaceAdvancedCommand(PlaceOp op) {
+            if (op.kind() == PlaceOp.Kind.AIR) {
+                return "placeadvanced air";
+            }
+            String block = sanitizeBlockId(op.blockId());
+            String name = sanitizeForCommandArg(op.name());
+            String args = sanitizeForCommandArg(op.args());
+            if (args.isEmpty()) {
+                args = "no";
+            }
+            return "placeadvanced " + quote(block) + " " + quote(name) + " " + quote(args);
+        }
+
+        private static String sanitizeBlockId(String raw) {
+            String s = raw == null ? "" : raw.trim().toLowerCase();
+            if (s.isEmpty()) {
+                return "air";
+            }
+            if (s.matches("[a-z0-9_:-]+")) {
+                return s;
+            }
+            String cleaned = s.replaceAll("[^a-z0-9_:-]", "");
+            return cleaned.isEmpty() ? "air" : cleaned;
+        }
+
+        private static String sanitizeForCommandArg(String raw) {
+            String s = raw == null ? "" : raw;
+            s = s.replaceAll("(?i)§[0-9A-FK-OR]", "");
+            s = s.replace('\u00A7', ' ');
+            s = s.replaceAll("[\\p{Cntrl}&&[^\r\n\t]]", " ");
+            s = s.replace("\"", "'");
+            s = s.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ');
+            s = s.trim();
+            if (s.length() > 380) {
+                s = s.substring(0, 380);
+            }
+            return s;
+        }
+
+        private String sendServerCommand(String cmd) {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.player == null || mc.player.networkHandler == null) {
+                return "player_or_network_missing";
             }
             try {
-                int result = CLIENT_DISPATCHER.execute(cmd, source);
-                if (result <= 0) {
-                    return "non_positive_result=" + result;
+                String noSlash = cmd.startsWith("/") ? cmd.substring(1) : cmd;
+                Object nh = mc.player.networkHandler;
+                Exception last = null;
+                for (String method : new String[] {"sendChatCommand", "sendCommand", "sendChatMessage"}) {
+                    try {
+                        String payload = "sendChatMessage".equals(method) ? ("/" + noSlash) : noSlash;
+                        nh.getClass().getMethod(method, String.class).invoke(nh, payload);
+                        return null;
+                    } catch (Exception ex) {
+                        last = ex;
+                    }
                 }
-                return null;
+                return "no_command_method:" + (last == null ? "unknown" : throwableToString(last));
             } catch (Exception e) {
                 return throwableToString(e);
             }
