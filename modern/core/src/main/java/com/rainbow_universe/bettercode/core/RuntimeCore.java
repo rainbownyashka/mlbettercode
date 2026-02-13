@@ -11,6 +11,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.SocketTimeoutException;
 import java.net.URL;
@@ -18,6 +19,7 @@ import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -101,11 +103,57 @@ public final class RuntimeCore {
     }
 
     public RuntimeResult handlePublish(GameBridge bridge) {
-        logger.info("publish-debug", "publish requested scoreboardLines=" + bridge.scoreboardLines().size());
-        return RuntimeResult.fail(
-            RuntimeErrorCode.UNIMPLEMENTED_PLATFORM_OPERATION,
-            "Publish pipeline parity is not wired for this modern adapter yet."
-        );
+        ScoreboardContext ctx = ScoreboardParser.parse(bridge.scoreboardLines());
+        logger.info("publish-debug",
+            "publish requested scoreboardLines=" + ctx.lineCount() + " tier=" + ctx.detectedTier() + " editorLike=" + ctx.editorLike());
+
+        PendingLoad pl = pendingLoad;
+        if (pl == null || pl.savedFiles.isEmpty()) {
+            return RuntimeResult.fail(RuntimeErrorCode.NO_PENDING_PLAN, "No pending module data. Use /loadmodule first.");
+        }
+        try {
+            Path publishRoot = bridge.runDirectory().resolve("mldsl_publish");
+            Files.createDirectories(publishRoot);
+            String bundleName = "bundle_" + safePath(pl.postId) + "_" + System.currentTimeMillis();
+            Path bundleDir = publishRoot.resolve(bundleName);
+            Files.createDirectories(bundleDir);
+
+            int copied = 0;
+            for (File src : pl.savedFiles) {
+                if (src == null || !src.exists()) {
+                    continue;
+                }
+                Path dst = bundleDir.resolve(safePath(src.getName()));
+                Files.copy(src.toPath(), dst, StandardCopyOption.REPLACE_EXISTING);
+                copied++;
+            }
+            Path meta = bundleDir.resolve("publish_meta.json");
+            OutputStreamWriter writer = null;
+            try {
+                writer = new OutputStreamWriter(Files.newOutputStream(meta), StandardCharsets.UTF_8);
+                writer.write("{\n");
+                writer.write("  \"postId\": \"" + escapeJson(pl.postId) + "\",\n");
+                writer.write("  \"generatedAt\": " + System.currentTimeMillis() + ",\n");
+                writer.write("  \"copiedFiles\": " + copied + ",\n");
+                writer.write("  \"events\": " + pl.events + ",\n");
+                writer.write("  \"funcs\": " + pl.funcs + ",\n");
+                writer.write("  \"loops\": " + pl.loops + ",\n");
+                writer.write("  \"actions\": " + pl.actions + "\n");
+                writer.write("}\n");
+            } finally {
+                if (writer != null) {
+                    writer.close();
+                }
+            }
+
+            bridge.sendChat("[publish-debug] prepared bundle=" + bundleDir.getFileName() + " files=" + copied);
+            bridge.sendActionBar("publish bundle ready: " + bundleDir.getFileName());
+            return RuntimeResult.ok("Publish bundle prepared at: " + bundleDir.toAbsolutePath());
+        } catch (Exception e) {
+            String reason = describeDownloadError(e);
+            logger.error("publish-debug", "publish prep failed reason=" + reason);
+            return RuntimeResult.fail(RuntimeErrorCode.PUBLISH_PREP_FAILED, reason);
+        }
     }
 
     private PendingLoad downloadAll(String postId, File outDir) throws Exception {
@@ -491,6 +539,13 @@ public final class RuntimeCore {
             sb.append(parts.get(i));
         }
         return sb.toString();
+    }
+
+    private static String escapeJson(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        return raw.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private static String describeDownloadError(Throwable err) {

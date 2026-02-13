@@ -12,4 +12,4 @@ Current migration state:
 - `run`: downloads module files + `plan.json` from Hub into local `mldsl_modules/<postId>`.
 - `loadmodule`: explicit alias flow with optional file name (`/loadmodule <postId> [file]`).
 - `confirmload`: parses downloaded `plan.json` and dispatches `/placeadvanced ...` commands via adapter command bridge.
-- `publish`: still explicit `UNIMPLEMENTED_PLATFORM_OPERATION` until full parity wiring.
+- `publish`: prepares local publish bundle in `runDir/mldsl_publish/bundle_<postId>_<ts>` with copied files + `publish_meta.json`.

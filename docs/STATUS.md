@@ -16,6 +16,7 @@
   - `/mldsl run` now performs real Hub download into `mldsl_modules/<postId>`.
   - `/loadmodule` alias added in modern Fabric targets (`/loadmodule <postId> [file]`).
   - `/confirmload` now parses downloaded `plan.json` and dispatches `/placeadvanced ...` commands through adapter command bridge.
+  - `/module publish` now prepares local bundle (`mldsl_publish/bundle_*`) with copied files and metadata JSON.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,
