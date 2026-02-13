@@ -89,7 +89,7 @@
     "Облети весь код, чтобы закэшировать таблички, и повтори /module publish."
   - sign cache now rejects invalid empty signs:
     - all-empty sign lines are not saved to cache,
-    - existing cache entry for that sign is removed when sign becomes empty,
+    - existing valid cache entry is preserved (empty read cannot overwrite cache),
     - publish/export treats empty sign content as missing data and fails with explicit guidance to recache by flying through code.
 
 ## Migration checkpoint (where port currently stops)

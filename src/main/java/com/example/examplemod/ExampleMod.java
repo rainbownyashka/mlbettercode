@@ -15663,19 +15663,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         String key2 = world.provider.getDimension() + ":" + pos.toLong();
         if (isAllSignLinesEmpty(lines))
         {
-            boolean removed = false;
-            if (signLinesCache.remove(key1) != null)
-            {
-                removed = true;
-            }
-            if (signLinesCacheByDimPos.remove(key2) != null)
-            {
-                removed = true;
-            }
-            if (removed)
-            {
-                codeCacheDirty = true;
-            }
+            // Empty sign payload is invalid and must never overwrite valid cache.
+            // Keep previous cached value (if any) to avoid accidental cache loss on transient empty reads.
             return;
         }
         signLinesCache.put(key1, lines);
