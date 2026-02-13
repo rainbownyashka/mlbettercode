@@ -97,6 +97,8 @@
   - strict publish guard for chest-backed entries:
     - if chest data exists but sign text is missing/invalid and not recoverable from cache, publish aborts with
       `publish.sign.invalid` trace + explicit user-facing error.
+- Release CI fix:
+  - added explicit JUnit test dependency in legacy `build.gradle` to prevent `:compileTestJava` failure (`org.junit` missing) on GitHub release workflow.
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:
