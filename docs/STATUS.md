@@ -18,6 +18,7 @@
   - `/confirmload` now parses downloaded `plan.json` and dispatches `/placeadvanced ...` commands through adapter command bridge.
   - `/module publish` now prepares local bundle (`mldsl_publish/bundle_*`) with copied files and metadata JSON.
   - `/modsettings` added in modern Fabric targets: clickable chat controls for bool/int/string settings with persisted JSON config.
+  - `/mldsl run <postId> [config]` now performs config-aware fetch (`config` is propagated to Hub `/files` and `/file`).
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,

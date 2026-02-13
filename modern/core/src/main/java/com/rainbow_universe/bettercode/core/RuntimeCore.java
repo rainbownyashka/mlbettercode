@@ -85,20 +85,20 @@ public final class RuntimeCore {
             PendingLoad pl;
             if (fileName == null || fileName.trim().isEmpty()) {
                 try {
-                    pl = downloadAll(safePostId, outDir);
+                    pl = downloadAll(safePostId, cfg, outDir);
                 } catch (IllegalStateException listErr) {
                     String msg = listErr.getMessage() == null ? "" : listErr.getMessage();
                     if (!msg.contains("empty_files_list")) {
                         throw listErr;
                     }
                     logger.warn("publish-debug", "files list empty for postId=" + safePostId + ", fallback to default /file");
-                    pl = downloadDefault(safePostId, outDir);
+                    pl = downloadDefault(safePostId, cfg, outDir);
                 }
             } else {
-                pl = downloadOne(safePostId, fileName.trim(), outDir);
+                pl = downloadOne(safePostId, fileName.trim(), cfg, outDir);
             }
             pendingLoad = pl;
-            bridge.sendChat("[publish-debug] downloaded files=" + pl.savedFiles.size() + " postId=" + safePostId);
+            bridge.sendChat("[publish-debug] downloaded files=" + pl.savedFiles.size() + " postId=" + safePostId + " config=" + pl.configKey);
             bridge.sendChat("[publish-debug] events=" + pl.events + " funcs=" + pl.funcs + " loops=" + pl.loops + " actions~=" + pl.actions);
             if (pl.planFile != null) {
                 bridge.sendActionBar("plan.json downloaded. use /confirmload");
@@ -123,7 +123,7 @@ public final class RuntimeCore {
         try {
             List<String> placeArgs = loadPlaceAdvancedArgs(pl.planFile.toPath());
             int entries = countPlaceEntries(placeArgs);
-            bridge.sendChat("[confirmload-debug] plan=" + pl.planFile.getName() + " entries=" + entries + " postId=" + pl.postId);
+            bridge.sendChat("[confirmload-debug] plan=" + pl.planFile.getName() + " entries=" + entries + " postId=" + pl.postId + " config=" + pl.configKey);
             if (entries <= 0) {
                 return RuntimeResult.fail(RuntimeErrorCode.PLAN_PARSE_FAILED, "plan has no place entries");
             }
@@ -170,6 +170,7 @@ public final class RuntimeCore {
                 writer = new OutputStreamWriter(Files.newOutputStream(meta), StandardCharsets.UTF_8);
                 writer.write("{\n");
                 writer.write("  \"postId\": \"" + escapeJson(pl.postId) + "\",\n");
+                writer.write("  \"config\": \"" + escapeJson(pl.configKey) + "\",\n");
                 writer.write("  \"generatedAt\": " + System.currentTimeMillis() + ",\n");
                 writer.write("  \"copiedFiles\": " + copied + ",\n");
                 writer.write("  \"events\": " + pl.events + ",\n");
@@ -193,18 +194,18 @@ public final class RuntimeCore {
         }
     }
 
-    private PendingLoad downloadAll(String postId, File outDir) throws Exception {
-        List<FileItem> list = fetchFilesList(postId);
+    private PendingLoad downloadAll(String postId, String configKey, File outDir) throws Exception {
+        List<FileItem> list = fetchFilesList(postId, configKey);
         if (list.isEmpty()) {
             throw new IllegalStateException("empty_files_list");
         }
         long total = 0L;
-        PendingLoad pl = new PendingLoad(postId);
+        PendingLoad pl = new PendingLoad(postId, configKey);
         for (FileItem it : list) {
             if (it.name == null || it.name.trim().isEmpty()) {
                 continue;
             }
-            byte[] data = httpGet(buildDownloadUrl(postId, it.name));
+            byte[] data = httpGet(buildDownloadUrl(postId, it.name, configKey));
             total += data.length;
             if (total > MAX_TOTAL_DOWNLOAD_BYTES) {
                 throw new IllegalStateException("too_big_total");
@@ -230,8 +231,8 @@ public final class RuntimeCore {
         return pl;
     }
 
-    private PendingLoad downloadOne(String postId, String fileName, File outDir) throws Exception {
-        byte[] data = httpGet(buildDownloadUrl(postId, fileName));
+    private PendingLoad downloadOne(String postId, String fileName, String configKey, File outDir) throws Exception {
+        byte[] data = httpGet(buildDownloadUrl(postId, fileName, configKey));
         String outName = safePath(fileName);
         File outFile = new File(outDir, outName);
         FileOutputStream fos = null;
@@ -243,7 +244,7 @@ public final class RuntimeCore {
                 fos.close();
             }
         }
-        PendingLoad pl = new PendingLoad(postId);
+        PendingLoad pl = new PendingLoad(postId, configKey);
         pl.savedFiles.add(outFile);
         if ("plan.json".equalsIgnoreCase(fileName)) {
             pl.planFile = outFile;
@@ -254,8 +255,8 @@ public final class RuntimeCore {
         return pl;
     }
 
-    private PendingLoad downloadDefault(String postId, File outDir) throws Exception {
-        byte[] data = httpGet(buildDefaultDownloadUrl(postId));
+    private PendingLoad downloadDefault(String postId, String configKey, File outDir) throws Exception {
+        byte[] data = httpGet(buildDefaultDownloadUrl(postId, configKey));
         String outName = "module.mldsl";
         File outFile = new File(outDir, outName);
         FileOutputStream fos = null;
@@ -267,17 +268,17 @@ public final class RuntimeCore {
                 fos.close();
             }
         }
-        PendingLoad pl = new PendingLoad(postId);
+        PendingLoad pl = new PendingLoad(postId, configKey);
         pl.savedFiles.add(outFile);
         pl.addStats(new String(data, StandardCharsets.UTF_8));
         return pl;
     }
 
-    private List<FileItem> fetchFilesList(String postId) throws Exception {
+    private List<FileItem> fetchFilesList(String postId, String configKey) throws Exception {
         String hubBaseUrl = resolveHubBaseUrl();
         int connectTimeout = settings.getInt("network.connectTimeoutMs", 8000);
         int readTimeout = settings.getInt("network.readTimeoutMs", 12000);
-        String url = hubBaseUrl + "/api/post/" + encodePath(postId) + "/files";
+        String url = hubBaseUrl + "/api/post/" + encodePath(postId) + "/files" + buildConfigQuery(configKey);
         HttpURLConnection conn = null;
         try {
             conn = (HttpURLConnection) new URL(url).openConnection();
@@ -324,14 +325,28 @@ public final class RuntimeCore {
         }
     }
 
-    private String buildDownloadUrl(String postId, String fileName) {
+    private String buildDownloadUrl(String postId, String fileName, String configKey) {
         String hubBaseUrl = resolveHubBaseUrl();
-        return hubBaseUrl + "/api/post/" + encodePath(postId) + "/file?name=" + urlEncode(fileName);
+        return hubBaseUrl + "/api/post/" + encodePath(postId) + "/file?name=" + urlEncode(fileName) + buildConfigQuery(configKey, true);
     }
 
-    private String buildDefaultDownloadUrl(String postId) {
+    private String buildDefaultDownloadUrl(String postId, String configKey) {
         String hubBaseUrl = resolveHubBaseUrl();
-        return hubBaseUrl + "/api/post/" + encodePath(postId) + "/file";
+        return hubBaseUrl + "/api/post/" + encodePath(postId) + "/file" + buildConfigQuery(configKey);
+    }
+
+    private static String buildConfigQuery(String configKey) {
+        if (configKey == null || configKey.trim().isEmpty()) {
+            return "";
+        }
+        return "?config=" + urlEncode(configKey.trim());
+    }
+
+    private static String buildConfigQuery(String configKey, boolean hasQuery) {
+        if (configKey == null || configKey.trim().isEmpty()) {
+            return "";
+        }
+        return (hasQuery ? "&" : "?") + "config=" + urlEncode(configKey.trim());
     }
 
     private byte[] httpGet(String rawUrl) throws Exception {
@@ -698,6 +713,7 @@ public final class RuntimeCore {
 
     private static final class PendingLoad {
         final String postId;
+        final String configKey;
         final List<File> savedFiles = new ArrayList<File>();
         File planFile;
         int events;
@@ -705,8 +721,9 @@ public final class RuntimeCore {
         int loops;
         int actions;
 
-        PendingLoad(String postId) {
+        PendingLoad(String postId, String configKey) {
             this.postId = postId;
+            this.configKey = configKey == null || configKey.trim().isEmpty() ? "default" : configKey.trim();
         }
 
         void addStats(String code) {
