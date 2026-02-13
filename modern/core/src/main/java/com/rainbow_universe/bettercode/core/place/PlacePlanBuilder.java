@@ -20,6 +20,10 @@ public final class PlacePlanBuilder {
                 out.add(PlaceEntrySpec.pause());
                 continue;
             }
+            if (op.kind() == PlaceOp.Kind.SKIP) {
+                out.add(PlaceEntrySpec.skip());
+                continue;
+            }
             String rawName = op.name() == null ? "" : op.name().trim();
             String sign1 = rawName;
             String sign2 = "";
@@ -51,4 +55,3 @@ public final class PlacePlanBuilder {
         return value == null ? "" : value.trim();
     }
 }
-

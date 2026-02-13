@@ -607,6 +607,10 @@ public final class RuntimeCore {
             if ("newline".equalsIgnoreCase(block) || "row".equalsIgnoreCase(block)) {
                 continue;
             }
+            if ("skip".equalsIgnoreCase(block)) {
+                out.add(PlaceOp.skip());
+                continue;
+            }
             if ("air".equalsIgnoreCase(block) || "minecraft:air".equalsIgnoreCase(block)) {
                 out.add(PlaceOp.air());
                 continue;
@@ -665,6 +669,11 @@ public final class RuntimeCore {
             }
             String low = tok.trim().toLowerCase();
             if ("newline".equals(low)) {
+                i++;
+                continue;
+            }
+            if ("skip".equals(low)) {
+                out.add(PlaceOp.skip());
                 i++;
                 continue;
             }

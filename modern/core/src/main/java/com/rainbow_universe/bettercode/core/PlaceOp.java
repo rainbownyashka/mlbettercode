@@ -3,6 +3,7 @@ package com.rainbow_universe.bettercode.core;
 public final class PlaceOp {
     public enum Kind {
         AIR,
+        SKIP,
         BLOCK
     }
 
@@ -20,6 +21,10 @@ public final class PlaceOp {
 
     public static PlaceOp air() {
         return new PlaceOp(Kind.AIR, "minecraft:air", "", "");
+    }
+
+    public static PlaceOp skip() {
+        return new PlaceOp(Kind.SKIP, "skip", "", "");
     }
 
     public static PlaceOp block(String blockId, String name, String args) {
@@ -42,4 +47,3 @@ public final class PlaceOp {
         return args;
     }
 }
-

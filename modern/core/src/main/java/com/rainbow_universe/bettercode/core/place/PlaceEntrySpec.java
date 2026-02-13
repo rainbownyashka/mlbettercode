@@ -6,6 +6,7 @@ import java.util.List;
 
 public final class PlaceEntrySpec {
     private final boolean pause;
+    private final boolean skip;
     private final String blockId;
     private final String name;
     private final String expectedSign1;
@@ -15,6 +16,7 @@ public final class PlaceEntrySpec {
 
     private PlaceEntrySpec(
         boolean pause,
+        boolean skip,
         String blockId,
         String name,
         String expectedSign1,
@@ -23,6 +25,7 @@ public final class PlaceEntrySpec {
         List<PlaceArgSpec> args
     ) {
         this.pause = pause;
+        this.skip = skip;
         this.blockId = blockId == null ? "" : blockId;
         this.name = name == null ? "" : name;
         this.expectedSign1 = expectedSign1 == null ? "" : expectedSign1;
@@ -32,7 +35,11 @@ public final class PlaceEntrySpec {
     }
 
     public static PlaceEntrySpec pause() {
-        return new PlaceEntrySpec(true, "minecraft:air", "", "", "", "", Collections.<PlaceArgSpec>emptyList());
+        return new PlaceEntrySpec(true, false, "minecraft:air", "", "", "", "", Collections.<PlaceArgSpec>emptyList());
+    }
+
+    public static PlaceEntrySpec skip() {
+        return new PlaceEntrySpec(false, true, "skip", "", "", "", "", Collections.<PlaceArgSpec>emptyList());
     }
 
     public static PlaceEntrySpec block(
@@ -43,11 +50,15 @@ public final class PlaceEntrySpec {
         String argsRaw,
         List<PlaceArgSpec> args
     ) {
-        return new PlaceEntrySpec(false, blockId, name, expectedSign1, expectedSign2, argsRaw, args);
+        return new PlaceEntrySpec(false, false, blockId, name, expectedSign1, expectedSign2, argsRaw, args);
     }
 
     public boolean isPause() {
         return pause;
+    }
+
+    public boolean isSkip() {
+        return skip;
     }
 
     public String blockId() {
@@ -74,4 +85,3 @@ public final class PlaceEntrySpec {
         return Collections.unmodifiableList(args);
     }
 }
-

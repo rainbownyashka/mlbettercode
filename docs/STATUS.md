@@ -51,6 +51,10 @@
   - runtime queue state extracted into core place model:
     - new `PlaceRuntimeEntry` + `PlaceRuntimeState`,
     - `PendingExecution` now runs through `PlaceRuntimeState` instead of raw list index.
+  - typed runtime step model now preserves `skip` as a dedicated move-only operation:
+    - `PlaceOp.Kind.SKIP` added,
+    - parser supports standalone `skip` tokens in `placeadvanced` arrays,
+    - plan builder/runtime entry carry `skip` flag explicitly (no `placeadvanced skip ...` command synthesis).
   - bridge contract advanced toward direct runtime execution:
     - `GameBridge.executePlaceStep(PlaceRuntimeEntry, checkOnly)` added,
     - `RuntimeCore` tick executor now calls step-level bridge API,

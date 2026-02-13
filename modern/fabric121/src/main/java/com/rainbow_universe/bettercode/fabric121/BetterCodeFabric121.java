@@ -522,8 +522,10 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             for (int i = 0; i < ops.size(); i++) {
                 PlaceOp op = ops.get(i);
                 PlaceRuntimeEntry step = op.kind() == PlaceOp.Kind.AIR
-                    ? new PlaceRuntimeEntry(true, "minecraft:air", "", "", java.util.Collections.<com.rainbow_universe.bettercode.core.place.PlaceArgSpec>emptyList())
-                    : new PlaceRuntimeEntry(false, op.blockId(), op.name(), op.args(), java.util.Collections.<com.rainbow_universe.bettercode.core.place.PlaceArgSpec>emptyList());
+                    ? new PlaceRuntimeEntry(true, false, "minecraft:air", "", "", java.util.Collections.<com.rainbow_universe.bettercode.core.place.PlaceArgSpec>emptyList())
+                    : op.kind() == PlaceOp.Kind.SKIP
+                        ? new PlaceRuntimeEntry(false, true, "skip", "", "", java.util.Collections.<com.rainbow_universe.bettercode.core.place.PlaceArgSpec>emptyList())
+                        : new PlaceRuntimeEntry(false, false, op.blockId(), op.name(), op.args(), java.util.Collections.<com.rainbow_universe.bettercode.core.place.PlaceArgSpec>emptyList());
                 PlaceExecResult stepRes = executePlaceStep(step, false);
                 if (!stepRes.ok()) {
                     return PlaceExecResult.fail(executed, i, stepRes.errorCode(), stepRes.errorMessage());
@@ -540,6 +542,14 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             }
             if (checkOnly) {
                 return PlaceExecResult.ok(1);
+            }
+            if (entry.isPause()) {
+                return PlaceExecResult.ok(1);
+            }
+            if (entry.isSkip() || entry.moveOnly()) {
+                System.out.println("[printer-debug] move_step_not_implemented mode=direct_java block=" + entry.blockId());
+                return PlaceExecResult.fail(0, 0, "UNIMPLEMENTED_MOVE_STEP",
+                    "skip/move-only runtime step is not implemented in modern direct executor yet");
             }
             String cmd = PlaceCommandBridgeUtil.buildPlaceAdvancedCommand(entry);
             MinecraftClient mc = MinecraftClient.getInstance();
