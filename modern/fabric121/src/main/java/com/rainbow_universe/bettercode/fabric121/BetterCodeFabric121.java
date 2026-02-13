@@ -525,12 +525,9 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                 }
                 String localFail = tryLocalDispatch(cmd);
                 if (localFail != null) {
-                    System.err.println("[printer-debug] local_dispatch_failed step=" + i + " cmd=" + cmd + " reason=" + localFail + " switching=server_chat");
-                    String serverFail = tryServerDispatch(cmd);
-                    if (serverFail != null) {
-                        return PlaceExecResult.fail(executed, i, "COMMAND_EXECUTION_EXCEPTION",
-                            "cmd=" + cmd + "\nlocalFail=" + localFail + "\nserverFail=" + serverFail);
-                    }
+                    System.err.println("[printer-debug] local_dispatch_failed step=" + i + " cmd=" + cmd + " reason=" + localFail + " switching=none");
+                    return PlaceExecResult.fail(executed, i, "LOCAL_DISPATCH_FAILED",
+                        "cmd=" + cmd + "\nlocalFail=" + localFail + "\nserverFallback=disabled_by_design");
                 }
                 executed++;
             }
@@ -601,26 +598,6 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                 return null;
             } catch (Exception e) {
                 return throwableToString(e);
-            }
-        }
-
-        private static String tryServerDispatch(String cmd) {
-            try {
-                MinecraftClient mc = MinecraftClient.getInstance();
-                if (mc == null || mc.player == null || mc.getNetworkHandler() == null) {
-                    return "network_unavailable";
-                }
-                String raw = cmd == null ? "" : cmd.trim();
-                if (raw.startsWith("/")) {
-                    raw = raw.substring(1);
-                }
-                if (raw.isEmpty()) {
-                    return "empty_command";
-                }
-                mc.getNetworkHandler().sendChatCommand(raw);
-                return null;
-            } catch (Throwable t) {
-                return throwableToString(t);
             }
         }
 

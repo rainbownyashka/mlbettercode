@@ -20,3 +20,4 @@ Format: `id | task | priority | owner | needs_user_test | state | links`
 - MOD-016 | Fix Fabric 1.16.5 dependency id in `fabric.mod.json` (`fabric` vs `fabric-api`) for loader compatibility | P0 | agent | yes | done | modern/fabric1165/src/main/resources/fabric.mod.json
 - MOD-017 | Add `/mldsl run local <path>` and `/mldsl check local <path>` with typed place-op execution bridge | P0 | agent | yes | done | modern/core, modern/fabric1165, modern/fabric120, modern/fabric121
 - MOD-018 | Support `/mldsl run <postId> --config <id>` syntax and explicit local->server command dispatch logs | P0 | agent | yes | done | modern/fabric1165, modern/fabric120, modern/fabric121
+- MOD-019 | Remove server chat fallback for place execution to avoid kicks; keep local-only dispatch with explicit hard errors | P0 | agent | yes | done | modern/fabric1165, modern/fabric120, modern/fabric121

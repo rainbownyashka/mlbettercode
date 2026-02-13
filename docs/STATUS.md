@@ -28,9 +28,9 @@
   - `/mldsl run` now accepts config in two forms:
     - positional: `/mldsl run <postId> <config>`
     - flag: `/mldsl run <postId> --config <config>`
-  - modern place execution now uses dual path with explicit logs:
+  - modern place execution now uses local-only dispatch with explicit logs:
     - local dispatcher attempt,
-    - fallback to server chat command send (`local_dispatch_failed ... switching=server_chat`).
+    - on failure: hard error (`LOCAL_DISPATCH_FAILED`) without server chat fallback.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,
