@@ -191,6 +191,19 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
 
         @Override
+        public boolean executeClientCommand(String command) {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.player == null || mc.player.networkHandler == null) {
+                return false;
+            }
+            String raw = command == null ? "" : command.trim();
+            if (raw.isEmpty()) {
+                return false;
+            }
+            return dispatchCommand(mc.player.networkHandler, raw);
+        }
+
+        @Override
         public void sendChat(String message) {
             source.sendFeedback(new LiteralText(message));
         }
@@ -201,6 +214,25 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             if (mc.player != null) {
                 mc.player.sendMessage(new LiteralText(message), true);
             }
+        }
+
+        private static boolean dispatchCommand(Object networkHandler, String command) {
+            try {
+                java.lang.reflect.Method m = networkHandler.getClass().getMethod("sendChatCommand", String.class);
+                m.invoke(networkHandler, command);
+                return true;
+            } catch (Exception ignore) { }
+            try {
+                java.lang.reflect.Method m = networkHandler.getClass().getMethod("sendCommand", String.class);
+                m.invoke(networkHandler, command);
+                return true;
+            } catch (Exception ignore) { }
+            try {
+                java.lang.reflect.Method m = networkHandler.getClass().getMethod("sendChatMessage", String.class);
+                m.invoke(networkHandler, "/" + command);
+                return true;
+            } catch (Exception ignore) { }
+            return false;
         }
     }
 }

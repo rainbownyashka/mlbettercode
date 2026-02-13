@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonParseException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -85,14 +86,17 @@ public final class RuntimeCore {
             return RuntimeResult.fail(RuntimeErrorCode.NO_PENDING_PLAN, "No plan.json in pending load.");
         }
         try {
-            int entries = readPlanEntries(pl.planFile.toPath());
+            List<String> placeArgs = loadPlaceAdvancedArgs(pl.planFile.toPath());
+            int entries = countPlaceEntries(placeArgs);
             bridge.sendChat("[confirmload-debug] plan=" + pl.planFile.getName() + " entries=" + entries + " postId=" + pl.postId);
-            return RuntimeResult.fail(
-                RuntimeErrorCode.UNIMPLEMENTED_PLATFORM_OPERATION,
-                "Plan parsed (" + entries + " entries), but place pipeline parity is not wired yet."
-            );
+            if (entries <= 0) {
+                return RuntimeResult.fail(RuntimeErrorCode.PLAN_PARSE_FAILED, "plan has no place entries");
+            }
+            int executed = executePlaceAdvanced(bridge, placeArgs);
+            bridge.sendActionBar("confirmload: queued " + executed + " placeadvanced command(s)");
+            return RuntimeResult.ok("Plan applied via /placeadvanced commands: " + executed);
         } catch (Exception e) {
-            return RuntimeResult.fail(RuntimeErrorCode.PLAN_PARSE_FAILED, "plan parse failed: " + e.getClass().getSimpleName());
+            return RuntimeResult.fail(RuntimeErrorCode.PLAN_PARSE_FAILED, "plan parse failed: " + describeDownloadError(e));
         }
     }
 
@@ -263,24 +267,230 @@ public final class RuntimeCore {
         }
     }
 
-    private int readPlanEntries(Path path) throws Exception {
+    private List<String> loadPlaceAdvancedArgs(Path path) throws Exception {
         InputStreamReader reader = null;
         try {
             reader = new InputStreamReader(Files.newInputStream(path), StandardCharsets.UTF_8);
             JsonElement root = new JsonParser().parse(reader);
             if (!root.isJsonObject()) {
-                throw new IllegalStateException("plan_not_object");
+                throw new JsonParseException("plan_not_object");
             }
             JsonObject obj = root.getAsJsonObject();
-            if (!obj.has("entries") || !obj.get("entries").isJsonArray()) {
-                throw new IllegalStateException("entries_missing");
+
+            if (obj.has("placeadvanced") && obj.get("placeadvanced").isJsonArray()) {
+                return readStringArray(obj.getAsJsonArray("placeadvanced"));
             }
-            return obj.getAsJsonArray("entries").size();
+            if (obj.has("entries") && obj.get("entries").isJsonArray()) {
+                return buildPlaceAdvancedArgsFromEntries(obj.getAsJsonArray("entries"));
+            }
+            if (obj.has("steps") && obj.get("steps").isJsonArray()) {
+                return buildPlaceAdvancedArgsFromEntries(obj.getAsJsonArray("steps"));
+            }
+            if (obj.has("rows") && obj.get("rows").isJsonArray()) {
+                return buildPlaceAdvancedArgsFromRows(obj.getAsJsonArray("rows"));
+            }
+            throw new JsonParseException("missing placeadvanced/entries/steps/rows");
         } finally {
             if (reader != null) {
                 reader.close();
             }
         }
+    }
+
+    private int executePlaceAdvanced(GameBridge bridge, List<String> args) {
+        int i = 0;
+        int executed = 0;
+        while (i < args.size()) {
+            String tok = args.get(i);
+            if (tok == null) {
+                i++;
+                continue;
+            }
+            String low = tok.trim().toLowerCase();
+            if ("newline".equals(low)) {
+                i++;
+                continue;
+            }
+            if ("air".equals(low) || "minecraft:air".equals(low)) {
+                if (!bridge.executeClientCommand("placeadvanced air")) {
+                    throw new IllegalStateException("placeadvanced_air_failed");
+                }
+                executed++;
+                i++;
+                continue;
+            }
+            if (i + 2 >= args.size()) {
+                throw new IllegalStateException("bad_placeadvanced_triplet");
+            }
+            String block = args.get(i);
+            String name = args.get(i + 1);
+            String arg = args.get(i + 2);
+            String cmd = "placeadvanced " + quoteIfNeeded(block) + " " + quoteIfNeeded(name) + " " + quoteIfNeeded(arg);
+            if (!bridge.executeClientCommand(cmd)) {
+                throw new IllegalStateException("placeadvanced_exec_failed");
+            }
+            executed++;
+            i += 3;
+        }
+        if (executed <= 0) {
+            throw new IllegalStateException("no_commands_executed");
+        }
+        return executed;
+    }
+
+    private static List<String> buildPlaceAdvancedArgsFromEntries(JsonArray entries) {
+        List<String> out = new ArrayList<String>();
+        for (JsonElement el : entries) {
+            if (el == null || !el.isJsonObject()) {
+                continue;
+            }
+            JsonObject e = el.getAsJsonObject();
+            String block = getString(e, "block");
+            if (block == null || block.trim().isEmpty()) {
+                continue;
+            }
+            if ("newline".equalsIgnoreCase(block) || "row".equalsIgnoreCase(block)) {
+                out.add("newline");
+                continue;
+            }
+            if ("air".equalsIgnoreCase(block) || "minecraft:air".equalsIgnoreCase(block)) {
+                out.add("air");
+                continue;
+            }
+            String name = getString(e, "name");
+            if (name == null) {
+                name = "";
+            }
+            String args = getString(e, "args");
+            if (args == null && e.has("argsList") && e.get("argsList").isJsonArray()) {
+                List<String> parts = readStringArray(e.getAsJsonArray("argsList"));
+                args = joinWithComma(parts);
+            }
+            if (args == null) {
+                args = "no";
+            }
+            out.add(block);
+            out.add(name);
+            out.add(args);
+        }
+        return out;
+    }
+
+    private static List<String> buildPlaceAdvancedArgsFromRows(JsonArray rows) {
+        List<String> out = new ArrayList<String>();
+        if (rows == null) {
+            return out;
+        }
+        boolean first = true;
+        for (JsonElement el : rows) {
+            if (el == null || !el.isJsonArray()) {
+                continue;
+            }
+            List<String> toks = readStringArray(el.getAsJsonArray());
+            if (toks.isEmpty()) {
+                continue;
+            }
+            if (!first) {
+                out.add("newline");
+            }
+            out.addAll(toks);
+            first = false;
+        }
+        return out;
+    }
+
+    private static int countPlaceEntries(List<String> args) {
+        if (args == null) {
+            return 0;
+        }
+        int count = 0;
+        int i = 0;
+        while (i < args.size()) {
+            String tok = args.get(i);
+            if (tok == null) {
+                i++;
+                continue;
+            }
+            String low = tok.trim().toLowerCase();
+            if ("newline".equals(low)) {
+                i++;
+                continue;
+            }
+            if ("air".equals(low) || "minecraft:air".equals(low)) {
+                count++;
+                i++;
+                continue;
+            }
+            if (i + 2 >= args.size()) {
+                break;
+            }
+            count++;
+            i += 3;
+        }
+        return count;
+    }
+
+    private static List<String> readStringArray(JsonArray arr) {
+        List<String> out = new ArrayList<String>();
+        if (arr == null) {
+            return out;
+        }
+        for (JsonElement el : arr) {
+            if (el == null || el.isJsonNull()) {
+                continue;
+            }
+            if (!el.isJsonPrimitive()) {
+                continue;
+            }
+            String s = el.getAsString();
+            if (s != null) {
+                out.add(s);
+            }
+        }
+        return out;
+    }
+
+    private static String getString(JsonObject o, String key) {
+        if (o == null || key == null || !o.has(key)) {
+            return null;
+        }
+        JsonElement el = o.get(key);
+        if (el == null || el.isJsonNull()) {
+            return null;
+        }
+        if (!el.isJsonPrimitive()) {
+            return null;
+        }
+        return el.getAsString();
+    }
+
+    private static String quoteIfNeeded(String s) {
+        if (s == null) {
+            return "\"\"";
+        }
+        String t = s.trim();
+        if (t.contains("\"")) {
+            t = t.replace("\"", "'");
+        }
+        boolean need = t.isEmpty() || t.contains(" ");
+        if (!need) {
+            return t;
+        }
+        return "\"" + t + "\"";
+    }
+
+    private static String joinWithComma(List<String> parts) {
+        if (parts == null || parts.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < parts.size(); i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append(parts.get(i));
+        }
+        return sb.toString();
     }
 
     private static String describeDownloadError(Throwable err) {

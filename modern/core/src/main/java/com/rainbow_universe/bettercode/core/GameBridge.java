@@ -7,6 +7,7 @@ public interface GameBridge {
     String currentDimension();
     Path runDirectory();
     List<String> scoreboardLines();
+    boolean executeClientCommand(String command);
     void sendChat(String message);
     void sendActionBar(String message);
 }
