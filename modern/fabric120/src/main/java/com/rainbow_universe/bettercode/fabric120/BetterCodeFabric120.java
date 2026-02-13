@@ -14,6 +14,7 @@ import com.rainbow_universe.bettercode.core.PlaceExecResult;
 import com.rainbow_universe.bettercode.core.PlaceOp;
 import com.rainbow_universe.bettercode.core.RuntimeCore;
 import com.rainbow_universe.bettercode.core.RuntimeResult;
+import com.rainbow_universe.bettercode.core.place.PlaceRuntimeEntry;
 import com.rainbow_universe.bettercode.core.settings.ModSettingsService;
 import com.rainbow_universe.bettercode.core.settings.SettingDef;
 import com.rainbow_universe.bettercode.core.settings.SettingType;
@@ -520,17 +521,35 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
             int executed = 0;
             for (int i = 0; i < ops.size(); i++) {
                 PlaceOp op = ops.get(i);
-                String cmd = buildServerPlaceAdvancedCommand(op);
-                String sendFail = sendServerCommand(cmd);
-                if (sendFail != null) {
-                    System.err.println("[printer-debug] server_command_failed step=" + i + " cmd=" + cmd + " reason=" + sendFail);
-                    return PlaceExecResult.fail(executed, i, "SERVER_COMMAND_FAILED",
-                        "cmd=" + cmd + "\nreason=" + sendFail);
+                PlaceRuntimeEntry step = op.kind() == PlaceOp.Kind.AIR
+                    ? new PlaceRuntimeEntry(true, "minecraft:air", "", "", java.util.Collections.<com.rainbow_universe.bettercode.core.place.PlaceArgSpec>emptyList())
+                    : new PlaceRuntimeEntry(false, op.blockId(), op.name(), op.args(), java.util.Collections.<com.rainbow_universe.bettercode.core.place.PlaceArgSpec>emptyList());
+                PlaceExecResult stepRes = executePlaceStep(step, false);
+                if (!stepRes.ok()) {
+                    return PlaceExecResult.fail(executed, i, stepRes.errorCode(), stepRes.errorMessage());
                 }
-                System.out.println("[printer-debug] server_command_sent step=" + i + " cmd=" + cmd);
                 executed++;
             }
             return PlaceExecResult.ok(executed);
+        }
+
+        @Override
+        public PlaceExecResult executePlaceStep(PlaceRuntimeEntry entry, boolean checkOnly) {
+            if (entry == null) {
+                return PlaceExecResult.fail(0, 0, "PARSE_SCHEMA_MISMATCH", "null runtime entry");
+            }
+            if (checkOnly) {
+                return PlaceExecResult.ok(1);
+            }
+            String cmd = buildServerPlaceAdvancedCommand(entry);
+            String sendFail = sendServerCommand(cmd);
+            if (sendFail != null) {
+                System.err.println("[printer-debug] server_command_failed step=single cmd=" + cmd + " reason=" + sendFail);
+                return PlaceExecResult.fail(0, 0, "SERVER_COMMAND_FAILED",
+                    "cmd=" + cmd + "\nreason=" + sendFail);
+            }
+            System.out.println("[printer-debug] server_command_sent step=single cmd=" + cmd);
+            return PlaceExecResult.ok(1);
         }
 
         @Override
@@ -605,6 +624,19 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
             String block = sanitizeBlockId(op.blockId());
             String name = sanitizeForCommandArg(op.name());
             String args = sanitizeForCommandArg(op.args());
+            if (args.isEmpty()) {
+                args = "no";
+            }
+            return "placeadvanced " + quote(block) + " " + quote(name) + " " + quote(args);
+        }
+
+        private String buildServerPlaceAdvancedCommand(PlaceRuntimeEntry entry) {
+            if (entry == null || entry.isPause()) {
+                return "placeadvanced air";
+            }
+            String block = sanitizeBlockId(entry.blockId());
+            String name = sanitizeForCommandArg(entry.name());
+            String args = sanitizeForCommandArg(entry.argsRaw());
             if (args.isEmpty()) {
                 args = "no";
             }

@@ -217,10 +217,7 @@ public final class RuntimeCore {
             pendingExecution = null;
             return;
         }
-        PlaceOp op = stepEntry.isPause()
-            ? PlaceOp.air()
-            : PlaceOp.block(stepEntry.blockId(), stepEntry.name(), stepEntry.argsRaw());
-        PlaceExecResult step = bridge.executePlacePlan(singleton(op), false);
+        PlaceExecResult step = bridge.executePlaceStep(stepEntry, false);
         if (!step.ok()) {
             String code = step.errorCode() == null ? "exec_failed" : step.errorCode();
             String msg = step.errorMessage() == null ? "" : step.errorMessage();
@@ -837,12 +834,6 @@ public final class RuntimeCore {
     private String resolveHubBaseUrl() {
         boolean mirror = settings.getBoolean("hub.useMirror", false);
         return mirror ? HUB_BASE_URL_MIRROR : HUB_BASE_URL_PRIMARY;
-    }
-
-    private static List<PlaceOp> singleton(PlaceOp op) {
-        List<PlaceOp> out = new ArrayList<PlaceOp>();
-        out.add(op);
-        return out;
     }
 
     private static String safePath(String s) {

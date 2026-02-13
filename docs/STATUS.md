@@ -51,6 +51,10 @@
   - runtime queue state extracted into core place model:
     - new `PlaceRuntimeEntry` + `PlaceRuntimeState`,
     - `PendingExecution` now runs through `PlaceRuntimeState` instead of raw list index.
+  - bridge contract advanced toward direct runtime execution:
+    - `GameBridge.executePlaceStep(PlaceRuntimeEntry, checkOnly)` added,
+    - `RuntimeCore` tick executor now calls step-level bridge API,
+    - Fabric adapters implement step executor and reuse it from batch path.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,
