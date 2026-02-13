@@ -91,6 +91,9 @@
     - all-empty sign lines are not saved to cache,
     - existing valid cache entry is preserved (empty read cannot overwrite cache),
     - publish/export treats empty sign content as missing data and fails with explicit guidance to recache by flying through code.
+  - added explicit sign-cache diagnostics in logs:
+    - `SIGN_CACHE_STORE ... lines=[...]` when cache entry is created/updated,
+    - `publish.sign.cache_hit ... source=<scope|dim> key=<...> lines=[...]` when publish resolves missing live sign via cache.
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:

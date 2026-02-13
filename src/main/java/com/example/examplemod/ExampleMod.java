@@ -4402,16 +4402,24 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 {
                     if (signPos != null)
                     {
-                        String[] cached = getCachedSignLines(world, signPos);
-                        if (cached != null)
+                        SignCacheResolved cacheHit = resolveCachedSignLines(world, signPos);
+                        if (cacheHit != null)
                         {
-                            return cached;
+                            publishTrace(mc, "publish.sign.cache_hit", "entry=" + entry.getX() + "," + entry.getY() + "," + entry.getZ()
+                                + " source=" + cacheHit.source + " key=" + cacheHit.key + " lines=" + formatSignLinesForLog(cacheHit.lines));
+                            return cacheHit.lines;
                         }
                     }
                     BlockPos cachedSignPos = findCachedSignAtZMinus1(world, entry);
                     if (cachedSignPos != null)
                     {
-                        return getCachedSignLines(world, cachedSignPos);
+                        SignCacheResolved cacheHit = resolveCachedSignLines(world, cachedSignPos);
+                        if (cacheHit != null)
+                        {
+                            publishTrace(mc, "publish.sign.cache_hit", "entry=" + entry.getX() + "," + entry.getY() + "," + entry.getZ()
+                                + " source=" + cacheHit.source + " key=" + cacheHit.key + " lines=" + formatSignLinesForLog(cacheHit.lines));
+                            return cacheHit.lines;
+                        }
                     }
                     if (hasSignBlockAtZMinus1(world, entry))
                     {
@@ -15482,23 +15490,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     @Override
     public String[] getCachedSignLines(World world, BlockPos signPos)
     {
-        if (world == null || signPos == null)
-        {
-            return null;
-        }
-        String key1 = getCodeGlassScopeKey(world) + ":" + signPos.toLong();
-        String[] hit = signLinesCache.get(key1);
-        if (hit != null && !isAllSignLinesEmpty(hit))
-        {
-            return hit;
-        }
-        String key2 = world.provider.getDimension() + ":" + signPos.toLong();
-        String[] byDim = signLinesCacheByDimPos.get(key2);
-        if (byDim != null && !isAllSignLinesEmpty(byDim))
-        {
-            return byDim;
-        }
-        return null;
+        SignCacheResolved hit = resolveCachedSignLines(world, signPos);
+        return hit == null ? null : hit.lines;
     }
 
     private String[] getLiveSignLines(World world, BlockPos signPos)
@@ -15525,6 +15518,41 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             return null;
         }
         return out;
+    }
+
+    private static final class SignCacheResolved
+    {
+        final String source;
+        final String key;
+        final String[] lines;
+
+        SignCacheResolved(String source, String key, String[] lines)
+        {
+            this.source = source;
+            this.key = key;
+            this.lines = lines;
+        }
+    }
+
+    private SignCacheResolved resolveCachedSignLines(World world, BlockPos signPos)
+    {
+        if (world == null || signPos == null)
+        {
+            return null;
+        }
+        String scopeKey = getCodeGlassScopeKey(world) + ":" + signPos.toLong();
+        String[] byScope = signLinesCache.get(scopeKey);
+        if (byScope != null && !isAllSignLinesEmpty(byScope))
+        {
+            return new SignCacheResolved("scope", scopeKey, byScope);
+        }
+        String dimKey = world.provider.getDimension() + ":" + signPos.toLong();
+        String[] byDim = signLinesCacheByDimPos.get(dimKey);
+        if (byDim != null && !isAllSignLinesEmpty(byDim))
+        {
+            return new SignCacheResolved("dim", dimKey, byDim);
+        }
+        return null;
     }
 
     private BlockPos findCachedSignAtZMinus1(World world, BlockPos basePos)
@@ -15667,8 +15695,19 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             // Keep previous cached value (if any) to avoid accidental cache loss on transient empty reads.
             return;
         }
+        String[] prevScope = signLinesCache.get(key1);
+        String[] prevDim = signLinesCacheByDimPos.get(key2);
+        boolean newScope = prevScope == null;
+        boolean newDim = prevDim == null;
+        boolean changedScope = !newScope && !isSameSignLines(prevScope, lines);
+        boolean changedDim = !newDim && !isSameSignLines(prevDim, lines);
         signLinesCache.put(key1, lines);
         signLinesCacheByDimPos.put(key2, lines);
+        if (logger != null && (newScope || newDim || changedScope || changedDim))
+        {
+            logger.info("SIGN_CACHE_STORE scopeKey={} dimKey={} newScope={} changedScope={} newDim={} changedDim={} lines={}",
+                key1, key2, newScope, changedScope, newDim, changedDim, formatSignLinesForLog(lines));
+        }
         codeCacheDirty = true;
     }
 
@@ -15686,6 +15725,53 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
         }
         return true;
+    }
+
+    private boolean isSameSignLines(String[] a, String[] b)
+    {
+        if (a == b)
+        {
+            return true;
+        }
+        if (a == null || b == null)
+        {
+            return false;
+        }
+        for (int i = 0; i < 4; i++)
+        {
+            String av = i < a.length ? (a[i] == null ? "" : a[i].trim()) : "";
+            String bv = i < b.length ? (b[i] == null ? "" : b[i].trim()) : "";
+            if (!av.equals(bv))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private String formatSignLinesForLog(String[] lines)
+    {
+        if (lines == null)
+        {
+            return "[]";
+        }
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < 4; i++)
+        {
+            if (i > 0)
+            {
+                sb.append(" | ");
+            }
+            String v = i < lines.length ? lines[i] : "";
+            if (v == null)
+            {
+                v = "";
+            }
+            v = v.replace("\r", "").replace("\n", "\\n");
+            sb.append(v);
+        }
+        sb.append("]");
+        return sb.toString();
     }
 
     private String parseNestingLevel(World world, BlockPos pos)
