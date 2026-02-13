@@ -6,6 +6,12 @@ import java.nio.file.Path;
 import java.util.List;
 
 public interface GameBridge {
+    default void onExecutionStart(int totalSteps) {
+    }
+
+    default void onExecutionStop() {
+    }
+
     String currentDimension();
     Path runDirectory();
     List<String> scoreboardLines();

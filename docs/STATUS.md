@@ -63,6 +63,12 @@
     - server-command bridge removed from `executePlaceStep`,
     - block/action steps now fail explicitly with `UNIMPLEMENTED_DIRECT_PLACE_RUNTIME` until direct GUI/tick runtime is fully ported.
   - `PlaceExecResult` now supports `inProgress`; runtime tick loop can keep current step without auto-advancing.
+  - direct client-side place executor baseline added in modern Fabric adapters:
+    - runtime start/stop hooks reset adapter execution state (`seed`, `cursor`),
+    - `skip` is handled locally by cursor advance,
+    - block-only steps with empty `name/args` place by local `interactBlock` using selected/crosshair seed and hotbar item.
+  - explicit unsupported branch (transparent, no fallback):
+    - steps with non-empty `name/args` now fail as `UNIMPLEMENTED_MENU_ARGS` (GUI/menu arg pipeline not ported yet).
   - duplicated Fabric command bridge logic reduced:
     - common `PlaceCommandBridgeUtil` introduced in `modern/core/place`,
     - command build/sanitize/send reflection moved out of adapters.

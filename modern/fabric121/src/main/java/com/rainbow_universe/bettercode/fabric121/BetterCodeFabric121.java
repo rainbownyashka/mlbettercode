@@ -23,7 +23,11 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.minecraft.block.Block;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraft.registry.Registries;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardDisplaySlot;
 import net.minecraft.scoreboard.ScoreboardObjective;
@@ -31,9 +35,14 @@ import net.minecraft.text.ClickEvent;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Style;
 import net.minecraft.text.Text;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.Vec3d;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -49,6 +58,7 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
     private static volatile CommandDispatcher<FabricClientCommandSource> CLIENT_DISPATCHER;
     private static volatile ModSettingsService SETTINGS;
     private static volatile RuntimeCore RUNTIME;
+    private static final DirectPlaceState DIRECT_PLACE_STATE = new DirectPlaceState();
 
     @Override
     public void onInitializeClient() {
@@ -450,6 +460,22 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
 
     private record SelectedBlock(String dimension, int x, int y, int z) { }
 
+    private static final class DirectPlaceState {
+        boolean active;
+        int cursor;
+        BlockPos seed;
+        String dimension;
+        String failReason;
+
+        void reset() {
+            active = false;
+            cursor = 0;
+            seed = null;
+            dimension = null;
+            failReason = "";
+        }
+    }
+
     private static final class FabricCoreLogger implements CoreLogger {
         @Override
         public void info(String tag, String message) {
@@ -510,6 +536,35 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
         }
 
         @Override
+        public void onExecutionStart(int totalSteps) {
+            synchronized (DIRECT_PLACE_STATE) {
+                DIRECT_PLACE_STATE.reset();
+                MinecraftClient mc = MinecraftClient.getInstance();
+                if (mc.world == null || mc.player == null || mc.interactionManager == null) {
+                    DIRECT_PLACE_STATE.failReason = "player/world/interactionManager unavailable";
+                    return;
+                }
+                BlockPos seed = resolveSeed(mc);
+                if (seed == null) {
+                    DIRECT_PLACE_STATE.failReason = "no selected seed block; use /bc_select on blue-glass start";
+                    return;
+                }
+                DIRECT_PLACE_STATE.seed = seed;
+                DIRECT_PLACE_STATE.dimension = mc.world.getRegistryKey().getValue().toString();
+                DIRECT_PLACE_STATE.cursor = 0;
+                DIRECT_PLACE_STATE.active = true;
+                System.out.println("[printer-debug] direct_runtime_start seed=" + seed + " dim=" + DIRECT_PLACE_STATE.dimension + " steps=" + totalSteps);
+            }
+        }
+
+        @Override
+        public void onExecutionStop() {
+            synchronized (DIRECT_PLACE_STATE) {
+                DIRECT_PLACE_STATE.reset();
+            }
+        }
+
+        @Override
         public PlaceExecResult executePlacePlan(List<PlaceOp> ops, boolean checkOnly) {
             if (ops == null || ops.isEmpty()) {
                 return PlaceExecResult.fail(0, 0, "PARSE_SCHEMA_MISMATCH", "no place operations");
@@ -545,17 +600,102 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             if (entry.isPause()) {
                 return PlaceExecResult.ok(1);
             }
-            if (entry.isSkip() || entry.moveOnly()) {
-                System.out.println("[printer-debug] move_step_not_implemented mode=client_runtime block=" + entry.blockId());
-                return PlaceExecResult.fail(0, 0, "UNIMPLEMENTED_MOVE_STEP",
-                    "skip/move-only runtime step is not implemented in modern direct executor yet");
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.world == null || mc.player == null || mc.interactionManager == null) {
+                return PlaceExecResult.fail(0, 0, "CLIENT_CONTEXT_MISSING", "player/world/interactionManager unavailable");
             }
-            String block = entry.blockId() == null ? "" : entry.blockId();
-            String name = entry.name() == null ? "" : entry.name();
-            String args = entry.argsRaw() == null ? "" : entry.argsRaw();
-            System.err.println("[printer-debug] direct_step_unimplemented block=" + block + " name=" + name + " args=" + args);
-            return PlaceExecResult.fail(0, 0, "UNIMPLEMENTED_DIRECT_PLACE_RUNTIME",
-                "client-side direct place runtime for block/action steps is not implemented yet; block=" + block + " name=" + name);
+            synchronized (DIRECT_PLACE_STATE) {
+                if (!DIRECT_PLACE_STATE.active || DIRECT_PLACE_STATE.seed == null) {
+                    return PlaceExecResult.fail(0, 0, "DIRECT_RUNTIME_NOT_READY",
+                        DIRECT_PLACE_STATE.failReason == null || DIRECT_PLACE_STATE.failReason.isEmpty()
+                            ? "direct runtime not started; call /confirmload again"
+                            : DIRECT_PLACE_STATE.failReason);
+                }
+
+                if (entry.isSkip() || entry.moveOnly()) {
+                    DIRECT_PLACE_STATE.cursor++;
+                    System.out.println("[printer-debug] direct_skip_step cursor=" + DIRECT_PLACE_STATE.cursor);
+                    return PlaceExecResult.ok(1);
+                }
+
+                String rawName = entry.name() == null ? "" : entry.name().trim();
+                String rawArgs = entry.argsRaw() == null ? "" : entry.argsRaw().trim();
+                if (!rawName.isEmpty() || (!rawArgs.isEmpty() && !"no".equalsIgnoreCase(rawArgs))) {
+                    return PlaceExecResult.fail(0, 0, "UNIMPLEMENTED_MENU_ARGS",
+                        "name/args runtime not ported yet for direct mode: name='" + rawName + "' args='" + rawArgs + "'");
+                }
+
+                String blockId = entry.blockId() == null ? "" : entry.blockId().trim();
+                Identifier id = Identifier.tryParse(blockId);
+                if (id == null) {
+                    return PlaceExecResult.fail(0, 0, "INVALID_BLOCK_ID", "invalid block id: " + blockId);
+                }
+                Block block = Registries.BLOCK.get(id);
+                if (block == null || block.asItem() == null || block.asItem() == ItemStack.EMPTY.getItem()) {
+                    return PlaceExecResult.fail(0, 0, "INVALID_BLOCK_ID", "unknown block: " + blockId);
+                }
+
+                Item item = block.asItem();
+                int slot = findHotbarSlot(mc, item);
+                if (slot < 0) {
+                    return PlaceExecResult.fail(0, 0, "MISSING_REQUIRED_ITEM", "required item not in hotbar: " + blockId);
+                }
+                if (mc.player.getInventory().selectedSlot != slot) {
+                    mc.player.getInventory().selectedSlot = slot;
+                }
+
+                BlockPos target = DIRECT_PLACE_STATE.seed.add(-2 * DIRECT_PLACE_STATE.cursor, 1, 0);
+                BlockPos support = target.down();
+                BlockHitResult hit = new BlockHitResult(
+                    new Vec3d(support.getX() + 0.5, support.getY() + 1.0, support.getZ() + 0.5),
+                    Direction.UP,
+                    support,
+                    false
+                );
+                ActionResult result = mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
+                if (result == null || !result.isAccepted()) {
+                    return PlaceExecResult.fail(0, 0, "PLACE_INTERACT_REJECTED",
+                        "interactBlock rejected at target=" + target + " support=" + support + " result=" + String.valueOf(result));
+                }
+                DIRECT_PLACE_STATE.cursor++;
+                System.out.println("[printer-debug] direct_step_ok block=" + blockId + " target=" + target + " cursor=" + DIRECT_PLACE_STATE.cursor);
+                return PlaceExecResult.ok(1);
+            }
+        }
+
+        private static BlockPos resolveSeed(MinecraftClient mc) {
+            String dim = mc.world == null ? "" : mc.world.getRegistryKey().getValue().toString();
+            for (SelectedBlock s : SELECTED.values()) {
+                if (s == null) {
+                    continue;
+                }
+                if (dim.equals(s.dimension())) {
+                    return new BlockPos(s.x(), s.y(), s.z());
+                }
+            }
+            for (SelectedBlock s : SELECTED.values()) {
+                if (s != null) {
+                    return new BlockPos(s.x(), s.y(), s.z());
+                }
+            }
+            HitResult target = mc.crosshairTarget;
+            if (target instanceof BlockHitResult bhr) {
+                return bhr.getBlockPos();
+            }
+            return null;
+        }
+
+        private static int findHotbarSlot(MinecraftClient mc, Item item) {
+            if (mc.player == null || item == null) {
+                return -1;
+            }
+            for (int i = 0; i < 9; i++) {
+                ItemStack st = mc.player.getInventory().getStack(i);
+                if (st != null && !st.isEmpty() && st.getItem() == item) {
+                    return i;
+                }
+            }
+            return -1;
         }
 
         @Override

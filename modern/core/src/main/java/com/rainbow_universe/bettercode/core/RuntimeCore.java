@@ -185,6 +185,7 @@ public final class RuntimeCore {
             }
             List<PlaceEntrySpec> specs = PlacePlanBuilder.fromOps(ops);
             pendingExecution = new PendingExecution(specs, pl.source, pl.postId, pl.configKey, pl.localPath);
+            bridge.onExecutionStart(specs.size());
             bridge.sendActionBar("confirmload: runtime queued " + entries + " step(s)");
             return RuntimeResult.ok("Plan queued: " + entries + " place operation(s)");
         } catch (Exception e) {
@@ -210,11 +211,13 @@ public final class RuntimeCore {
             bridge.sendActionBar("print done: " + exec.state.executedCount() + " step(s)");
             bridge.sendChat("[printer-debug] runtime done source=" + exec.source + " postId=" + exec.postId + " config=" + exec.config);
             pendingExecution = null;
+            bridge.onExecutionStop();
             return;
         }
         PlaceRuntimeEntry stepEntry = exec.state.currentOrNext();
         if (stepEntry == null) {
             pendingExecution = null;
+            bridge.onExecutionStop();
             return;
         }
         PlaceExecResult step = bridge.executePlaceStep(stepEntry, false);
@@ -229,6 +232,7 @@ public final class RuntimeCore {
             bridge.sendChat("[printer-debug] runtime failed step=" + exec.state.executedCount() + " code=" + code + " reason=" + msg);
             bridge.sendActionBar("print failed at step " + exec.state.executedCount());
             pendingExecution = null;
+            bridge.onExecutionStop();
             return;
         }
         if (step.inProgress()) {
