@@ -10,6 +10,7 @@ import com.rainbow_universe.bettercode.core.PlaceExecResult;
 import com.rainbow_universe.bettercode.core.PlaceOp;
 import com.rainbow_universe.bettercode.core.RuntimeCore;
 import com.rainbow_universe.bettercode.core.RuntimeResult;
+import com.rainbow_universe.bettercode.core.place.PlaceCommandBridgeUtil;
 import com.rainbow_universe.bettercode.core.place.PlaceRuntimeEntry;
 import com.rainbow_universe.bettercode.core.settings.ModSettingsService;
 import com.rainbow_universe.bettercode.core.settings.SettingDef;
@@ -26,8 +27,6 @@ import net.minecraft.text.LiteralText;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Style;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -426,8 +425,10 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             if (checkOnly) {
                 return PlaceExecResult.ok(1);
             }
-            String cmd = buildServerPlaceAdvancedCommand(entry);
-            String sendFail = sendServerCommand(cmd);
+            String cmd = PlaceCommandBridgeUtil.buildPlaceAdvancedCommand(entry);
+            MinecraftClient mc = MinecraftClient.getInstance();
+            Object networkHandler = (mc.player == null) ? null : mc.player.networkHandler;
+            String sendFail = PlaceCommandBridgeUtil.sendServerCommand(networkHandler, cmd);
             if (sendFail != null) {
                 System.err.println("[printer-debug] server_command_failed step=single cmd=" + cmd + " reason=" + sendFail);
                 return PlaceExecResult.fail(0, 0, "SERVER_COMMAND_FAILED",
@@ -482,107 +483,6 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             if (mc.player != null) {
                 mc.player.sendMessage(new LiteralText(message), true);
             }
-        }
-
-        private static String quote(String value) {
-            String s = value == null ? "" : value.trim();
-            if (s.isEmpty()) {
-                return "\"\"";
-            }
-            if (s.contains("\"")) {
-                s = s.replace("\"", "'");
-            }
-            if (s.contains(" ")) {
-                return "\"" + s + "\"";
-            }
-            return s;
-        }
-
-        private String buildServerPlaceAdvancedCommand(PlaceOp op) {
-            if (op.kind() == PlaceOp.Kind.AIR) {
-                return "placeadvanced air";
-            }
-            String block = sanitizeBlockId(op.blockId());
-            String name = sanitizeForCommandArg(op.name());
-            String args = sanitizeForCommandArg(op.args());
-            if (args.isEmpty()) {
-                args = "no";
-            }
-            return "placeadvanced " + quote(block) + " " + quote(name) + " " + quote(args);
-        }
-
-        private String buildServerPlaceAdvancedCommand(PlaceRuntimeEntry entry) {
-            if (entry == null || entry.isPause()) {
-                return "placeadvanced air";
-            }
-            String block = sanitizeBlockId(entry.blockId());
-            String name = sanitizeForCommandArg(entry.name());
-            String args = sanitizeForCommandArg(entry.argsRaw());
-            if (args.isEmpty()) {
-                args = "no";
-            }
-            return "placeadvanced " + quote(block) + " " + quote(name) + " " + quote(args);
-        }
-
-        private static String sanitizeBlockId(String raw) {
-            String s = raw == null ? "" : raw.trim().toLowerCase();
-            if (s.isEmpty()) {
-                return "air";
-            }
-            if (s.matches("[a-z0-9_:-]+")) {
-                return s;
-            }
-            String cleaned = s.replaceAll("[^a-z0-9_:-]", "");
-            return cleaned.isEmpty() ? "air" : cleaned;
-        }
-
-        private static String sanitizeForCommandArg(String raw) {
-            String s = raw == null ? "" : raw;
-            s = s.replaceAll("(?i)§[0-9A-FK-OR]", "");
-            s = s.replace('\u00A7', ' ');
-            s = s.replaceAll("[\\p{Cntrl}&&[^\r\n\t]]", " ");
-            s = s.replace("\"", "'");
-            s = s.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ');
-            s = s.trim();
-            if (s.length() > 380) {
-                s = s.substring(0, 380);
-            }
-            return s;
-        }
-
-        private String sendServerCommand(String cmd) {
-            MinecraftClient mc = MinecraftClient.getInstance();
-            if (mc.player == null || mc.player.networkHandler == null) {
-                return "player_or_network_missing";
-            }
-            try {
-                String noSlash = cmd.startsWith("/") ? cmd.substring(1) : cmd;
-                Object nh = mc.player.networkHandler;
-                Exception last = null;
-                for (String method : new String[] {"sendChatCommand", "sendCommand", "sendChatMessage"}) {
-                    try {
-                        String payload = "sendChatMessage".equals(method) ? ("/" + noSlash) : noSlash;
-                        nh.getClass().getMethod(method, String.class).invoke(nh, payload);
-                        return null;
-                    } catch (Exception ex) {
-                        last = ex;
-                    }
-                }
-                return "no_command_method:" + (last == null ? "unknown" : throwableToString(last));
-            } catch (Exception e) {
-                return throwableToString(e);
-            }
-        }
-
-        private static String throwableToString(Throwable err) {
-            if (err == null) {
-                return "null";
-            }
-            StringWriter sw = new StringWriter();
-            PrintWriter pw = new PrintWriter(sw);
-            err.printStackTrace(pw);
-            pw.flush();
-            return sw.toString();
         }
 
     }

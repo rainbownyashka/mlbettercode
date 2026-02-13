@@ -55,6 +55,9 @@
     - `GameBridge.executePlaceStep(PlaceRuntimeEntry, checkOnly)` added,
     - `RuntimeCore` tick executor now calls step-level bridge API,
     - Fabric adapters implement step executor and reuse it from batch path.
+  - duplicated Fabric command bridge logic reduced:
+    - common `PlaceCommandBridgeUtil` introduced in `modern/core/place`,
+    - command build/sanitize/send reflection moved out of adapters.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,
