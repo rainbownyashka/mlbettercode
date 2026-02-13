@@ -33,6 +33,8 @@ import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
 
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -511,8 +513,13 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
                 } else {
                     cmd = "placeadvanced " + quote(op.blockId()) + " " + quote(op.name()) + " " + quote(op.args());
                 }
-                if (!executeClientCommand(cmd)) {
-                    return PlaceExecResult.fail(executed, i, "COMMAND_EXECUTION_FAILED", "command failed: " + cmd);
+                try {
+                    int result = CLIENT_DISPATCHER.execute(cmd, source);
+                    if (result <= 0) {
+                        return PlaceExecResult.fail(executed, i, "COMMAND_EXECUTION_FAILED", "non-positive result=" + result + " cmd=" + cmd);
+                    }
+                } catch (Exception e) {
+                    return PlaceExecResult.fail(executed, i, "COMMAND_EXECUTION_EXCEPTION", "cmd=" + cmd + "\n" + throwableToString(e));
                 }
                 executed++;
             }
@@ -569,6 +576,17 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
                 return "\"" + s + "\"";
             }
             return s;
+        }
+
+        private static String throwableToString(Throwable err) {
+            if (err == null) {
+                return "null";
+            }
+            StringWriter sw = new StringWriter();
+            PrintWriter pw = new PrintWriter(sw);
+            err.printStackTrace(pw);
+            pw.flush();
+            return sw.toString();
         }
 
     }

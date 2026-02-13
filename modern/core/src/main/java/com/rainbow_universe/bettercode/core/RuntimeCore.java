@@ -10,10 +10,11 @@ import com.rainbow_universe.bettercode.core.settings.SettingsProvider;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.net.HttpURLConnection;
 import java.net.SocketTimeoutException;
 import java.net.URL;
@@ -192,11 +193,13 @@ public final class RuntimeCore {
             bridge.sendActionBar("confirmload: queued " + exec.executed() + " place operation(s)");
             return RuntimeResult.ok("Plan applied: " + exec.executed() + " place operation(s)");
         } catch (Exception e) {
-            String reason = describeDownloadError(e);
+            String full = stackTraceToString(e);
+            logger.error("confirmload-debug", "confirm exception stacktrace:\n" + full);
+            String reason = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
             if (isCommandExecutionFailure(reason)) {
-                return RuntimeResult.fail(RuntimeErrorCode.COMMAND_EXECUTION_FAILED, reason);
+                return RuntimeResult.fail(RuntimeErrorCode.COMMAND_EXECUTION_FAILED, reason + " | " + full);
             }
-            return RuntimeResult.fail(RuntimeErrorCode.PLAN_PARSE_FAILED, "plan parse failed: " + reason);
+            return RuntimeResult.fail(RuntimeErrorCode.PLAN_PARSE_FAILED, "plan parse failed: " + reason + " | " + full);
         }
     }
 
@@ -723,6 +726,17 @@ public final class RuntimeCore {
         }
         String low = reason.toLowerCase();
         return low.contains("command_exec:");
+    }
+
+    private static String stackTraceToString(Throwable err) {
+        if (err == null) {
+            return "null";
+        }
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+        err.printStackTrace(pw);
+        pw.flush();
+        return sw.toString();
     }
 
     private static String normalizeBaseUrl(String raw) {
