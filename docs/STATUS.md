@@ -20,6 +20,10 @@
   - `/modsettings` added in modern Fabric targets: clickable chat controls for bool/int/string settings with persisted JSON config.
   - `/mldsl run <postId> [config]` now performs config-aware fetch (`config` is propagated to Hub `/files` and `/file`).
   - printer diagnostics improved: failed command execution now logs exact `placeadvanced` command + step index (`printer-debug`) in core and Fabric adapters.
+  - modern runtime now supports local plan staging/check commands:
+    - `/mldsl run local <path>`
+    - `/mldsl check local <path>`
+  - core confirmload now executes typed place operations through `GameBridge.executePlacePlan(...)` (no direct command-string execution inside core).
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,

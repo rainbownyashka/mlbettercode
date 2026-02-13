@@ -18,3 +18,4 @@ Format: `id | task | priority | owner | needs_user_test | state | links`
 - MOD-014 | Fabric executeClientCommand path currently depends on network send methods; switch to local Brigadier dispatcher execution | P0 | agent | yes | done | modern/fabric1165, modern/fabric120, modern/fabric121
 - MOD-015 | Add `/modsettings` command with clickable controls and persisted JSON config for modern Fabric targets | P1 | agent | yes | done | modern/core/settings, modern/fabric1165, modern/fabric120, modern/fabric121
 - MOD-016 | Fix Fabric 1.16.5 dependency id in `fabric.mod.json` (`fabric` vs `fabric-api`) for loader compatibility | P0 | agent | yes | done | modern/fabric1165/src/main/resources/fabric.mod.json
+- MOD-017 | Add `/mldsl run local <path>` and `/mldsl check local <path>` with typed place-op execution bridge | P0 | agent | yes | done | modern/core, modern/fabric1165, modern/fabric120, modern/fabric121

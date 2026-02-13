@@ -7,6 +7,8 @@ public interface GameBridge {
     String currentDimension();
     Path runDirectory();
     List<String> scoreboardLines();
+    boolean supportsPlacePlanExecution();
+    PlaceExecResult executePlacePlan(List<PlaceOp> ops, boolean checkOnly);
     boolean executeClientCommand(String command);
     void sendChat(String message);
     void sendActionBar(String message);

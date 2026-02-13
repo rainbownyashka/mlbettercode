@@ -10,6 +10,7 @@ import com.rainbow_universe.bettercode.core.settings.SettingsProvider;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
@@ -20,6 +21,7 @@ import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
@@ -60,6 +62,46 @@ public final class RuntimeCore {
 
     public RuntimeResult handleRun(String postId, String configKey, GameBridge bridge) {
         return handleLoadModule(postId, null, configKey, bridge);
+    }
+
+    public RuntimeResult handleRunLocal(String rawPath, boolean checkOnly, GameBridge bridge) {
+        if (rawPath == null || rawPath.trim().isEmpty()) {
+            return RuntimeResult.fail(RuntimeErrorCode.PARSE_SCHEMA_MISMATCH, "local path is required");
+        }
+        Path resolved = resolveLocalPath(rawPath.trim(), bridge.runDirectory());
+        if (!Files.exists(resolved)) {
+            return RuntimeResult.fail(RuntimeErrorCode.PARSE_SCHEMA_MISMATCH, "local file not found: " + resolved);
+        }
+        if (!Files.isRegularFile(resolved)) {
+            return RuntimeResult.fail(RuntimeErrorCode.PARSE_SCHEMA_MISMATCH, "local path is not a file: " + resolved);
+        }
+        try {
+            long size = Files.size(resolved);
+            if (size > MAX_DOWNLOAD_BYTES) {
+                return RuntimeResult.fail(RuntimeErrorCode.PARSE_SCHEMA_MISMATCH, "local file too big: " + size + " bytes");
+            }
+            String ext = lowerExt(resolved.getFileName().toString());
+            if ("mldsl".equals(ext)) {
+                return RuntimeResult.fail(RuntimeErrorCode.PARSE_SCHEMA_MISMATCH, "local .mldsl compile is not implemented in modern runtime");
+            }
+            if (!"json".equals(ext)) {
+                return RuntimeResult.fail(RuntimeErrorCode.PARSE_SCHEMA_MISMATCH, "unsupported local extension: ." + ext);
+            }
+            List<PlaceOp> ops = loadPlaceOps(resolved);
+            if (checkOnly) {
+                return checkPlaceOps(ops, bridge, "local", "-", "default", resolved.toString());
+            }
+            PendingLoad pl = new PendingLoad("local", "default", "local", resolved.toString());
+            pl.planFile = resolved.toFile();
+            pl.savedFiles.add(resolved.toFile());
+            pendingLoad = pl;
+            bridge.sendChat("[confirmload-debug] local plan staged path=" + resolved + " entries=" + ops.size());
+            bridge.sendActionBar("local plan ready. use /confirmload");
+            return RuntimeResult.ok("Local plan staged: " + resolved.getFileName());
+        } catch (Exception e) {
+            String reason = describeDownloadError(e);
+            return RuntimeResult.fail(RuntimeErrorCode.PARSE_SCHEMA_MISMATCH, "local parse failed: " + reason);
+        }
     }
 
     public RuntimeResult handleLoadModule(String postId, String fileName, String configKey, GameBridge bridge) {
@@ -121,15 +163,34 @@ public final class RuntimeCore {
             return RuntimeResult.fail(RuntimeErrorCode.NO_PENDING_PLAN, "No plan.json in pending load.");
         }
         try {
-            List<String> placeArgs = loadPlaceAdvancedArgs(pl.planFile.toPath());
-            int entries = countPlaceEntries(placeArgs);
-            bridge.sendChat("[confirmload-debug] plan=" + pl.planFile.getName() + " entries=" + entries + " postId=" + pl.postId + " config=" + pl.configKey);
+            List<PlaceOp> ops = loadPlaceOps(pl.planFile.toPath());
+            int entries = ops.size();
+            bridge.sendChat("[confirmload-debug] source=" + pl.source
+                + " plan=" + pl.planFile.getName()
+                + " entries=" + entries
+                + " postId=" + pl.postId
+                + " config=" + pl.configKey
+                + " path=" + (pl.localPath == null ? "-" : pl.localPath));
             if (entries <= 0) {
                 return RuntimeResult.fail(RuntimeErrorCode.PLAN_PARSE_FAILED, "plan has no place entries");
             }
-            int executed = executePlaceAdvanced(bridge, placeArgs);
-            bridge.sendActionBar("confirmload: queued " + executed + " placeadvanced command(s)");
-            return RuntimeResult.ok("Plan applied via /placeadvanced commands: " + executed);
+            PlaceExecResult exec = bridge.executePlacePlan(ops, false);
+            if (!exec.ok()) {
+                String code = exec.errorCode() == null ? "exec_failed" : exec.errorCode();
+                String msg = exec.errorMessage() == null ? "" : exec.errorMessage();
+                logger.error("printer-debug", "confirm exec failed source=" + pl.source
+                    + " failedAt=" + exec.failedAt()
+                    + " executed=" + exec.executed()
+                    + " errorCode=" + code
+                    + " reason=" + msg
+                    + " supportsPlacePlanExecution=" + bridge.supportsPlacePlanExecution());
+                RuntimeErrorCode mapped = code.toUpperCase().contains("UNIMPLEMENTED")
+                    ? RuntimeErrorCode.UNIMPLEMENTED_PLATFORM_OPERATION
+                    : RuntimeErrorCode.COMMAND_EXECUTION_FAILED;
+                return RuntimeResult.fail(mapped, "failedAt=" + exec.failedAt() + " code=" + code + " reason=" + msg);
+            }
+            bridge.sendActionBar("confirmload: queued " + exec.executed() + " place operation(s)");
+            return RuntimeResult.ok("Plan applied: " + exec.executed() + " place operation(s)");
         } catch (Exception e) {
             String reason = describeDownloadError(e);
             if (isCommandExecutionFailure(reason)) {
@@ -397,7 +458,31 @@ public final class RuntimeCore {
         }
     }
 
-    private List<String> loadPlaceAdvancedArgs(Path path) throws Exception {
+    private RuntimeResult checkPlaceOps(List<PlaceOp> ops, GameBridge bridge, String source, String postId, String config, String path) {
+        if (ops == null || ops.isEmpty()) {
+            return RuntimeResult.fail(RuntimeErrorCode.PLAN_PARSE_FAILED, "plan has no place entries");
+        }
+        PlaceExecResult check = bridge.executePlacePlan(ops, true);
+        if (!check.ok()) {
+            String code = check.errorCode() == null ? "check_failed" : check.errorCode();
+            String msg = check.errorMessage() == null ? "" : check.errorMessage();
+            logger.error("printer-debug", "check failed source=" + source
+                + " postId=" + postId
+                + " config=" + config
+                + " path=" + path
+                + " failedAt=" + check.failedAt()
+                + " code=" + code
+                + " reason=" + msg
+                + " supportsPlacePlanExecution=" + bridge.supportsPlacePlanExecution());
+            RuntimeErrorCode mapped = code.toUpperCase().contains("UNIMPLEMENTED")
+                ? RuntimeErrorCode.UNIMPLEMENTED_PLATFORM_OPERATION
+                : RuntimeErrorCode.COMMAND_EXECUTION_FAILED;
+            return RuntimeResult.fail(mapped, "check failedAt=" + check.failedAt() + " code=" + code + " reason=" + msg);
+        }
+        return RuntimeResult.ok("check ok: " + check.executed() + " place operation(s)");
+    }
+
+    private List<PlaceOp> loadPlaceOps(Path path) throws Exception {
         InputStreamReader reader = null;
         try {
             reader = new InputStreamReader(Files.newInputStream(path), StandardCharsets.UTF_8);
@@ -408,16 +493,16 @@ public final class RuntimeCore {
             JsonObject obj = root.getAsJsonObject();
 
             if (obj.has("placeadvanced") && obj.get("placeadvanced").isJsonArray()) {
-                return readStringArray(obj.getAsJsonArray("placeadvanced"));
+                return parsePlaceOpsFromTokens(readStringArray(obj.getAsJsonArray("placeadvanced")));
             }
             if (obj.has("entries") && obj.get("entries").isJsonArray()) {
-                return buildPlaceAdvancedArgsFromEntries(obj.getAsJsonArray("entries"));
+                return buildPlaceOpsFromEntries(obj.getAsJsonArray("entries"));
             }
             if (obj.has("steps") && obj.get("steps").isJsonArray()) {
-                return buildPlaceAdvancedArgsFromEntries(obj.getAsJsonArray("steps"));
+                return buildPlaceOpsFromEntries(obj.getAsJsonArray("steps"));
             }
             if (obj.has("rows") && obj.get("rows").isJsonArray()) {
-                return buildPlaceAdvancedArgsFromRows(obj.getAsJsonArray("rows"));
+                return parsePlaceOpsFromTokens(buildPlaceAdvancedArgsFromRows(obj.getAsJsonArray("rows")));
             }
             throw new JsonParseException("missing placeadvanced/entries/steps/rows");
         } finally {
@@ -427,53 +512,8 @@ public final class RuntimeCore {
         }
     }
 
-    private int executePlaceAdvanced(GameBridge bridge, List<String> args) {
-        int i = 0;
-        int executed = 0;
-        while (i < args.size()) {
-            String tok = args.get(i);
-            if (tok == null) {
-                i++;
-                continue;
-            }
-            String low = tok.trim().toLowerCase();
-            if ("newline".equals(low)) {
-                i++;
-                continue;
-            }
-            if ("air".equals(low) || "minecraft:air".equals(low)) {
-                logger.info("printer-debug", "placeadvanced step=" + executed + " cmd=placeadvanced air");
-                if (!bridge.executeClientCommand("placeadvanced air")) {
-                    logger.error("printer-debug", "placeadvanced failed step=" + executed + " cmd=placeadvanced air");
-                    throw new IllegalStateException("command_exec:placeadvanced_air_failed step=" + executed + " cmd=placeadvanced air");
-                }
-                executed++;
-                i++;
-                continue;
-            }
-            if (i + 2 >= args.size()) {
-                throw new IllegalStateException("plan_parse:bad_placeadvanced_triplet");
-            }
-            String block = args.get(i);
-            String name = args.get(i + 1);
-            String arg = args.get(i + 2);
-            String cmd = "placeadvanced " + quoteIfNeeded(block) + " " + quoteIfNeeded(name) + " " + quoteIfNeeded(arg);
-            logger.info("printer-debug", "placeadvanced step=" + executed + " cmd=" + cmd);
-            if (!bridge.executeClientCommand(cmd)) {
-                logger.error("printer-debug", "placeadvanced failed step=" + executed + " cmd=" + cmd);
-                throw new IllegalStateException("command_exec:placeadvanced_exec_failed step=" + executed + " cmd=" + cmd);
-            }
-            executed++;
-            i += 3;
-        }
-        if (executed <= 0) {
-            throw new IllegalStateException("command_exec:no_commands_executed");
-        }
-        return executed;
-    }
-
-    private static List<String> buildPlaceAdvancedArgsFromEntries(JsonArray entries) {
-        List<String> out = new ArrayList<String>();
+    private List<PlaceOp> buildPlaceOpsFromEntries(JsonArray entries) {
+        List<PlaceOp> out = new ArrayList<PlaceOp>();
         for (JsonElement el : entries) {
             if (el == null || !el.isJsonObject()) {
                 continue;
@@ -484,11 +524,10 @@ public final class RuntimeCore {
                 continue;
             }
             if ("newline".equalsIgnoreCase(block) || "row".equalsIgnoreCase(block)) {
-                out.add("newline");
                 continue;
             }
             if ("air".equalsIgnoreCase(block) || "minecraft:air".equalsIgnoreCase(block)) {
-                out.add("air");
+                out.add(PlaceOp.air());
                 continue;
             }
             String name = getString(e, "name");
@@ -503,9 +542,7 @@ public final class RuntimeCore {
             if (args == null) {
                 args = "no";
             }
-            out.add(block);
-            out.add(name);
-            out.add(args);
+            out.add(PlaceOp.block(block, name, args));
         }
         return out;
     }
@@ -533,11 +570,11 @@ public final class RuntimeCore {
         return out;
     }
 
-    private static int countPlaceEntries(List<String> args) {
+    private List<PlaceOp> parsePlaceOpsFromTokens(List<String> args) {
+        List<PlaceOp> out = new ArrayList<PlaceOp>();
         if (args == null) {
-            return 0;
+            return out;
         }
-        int count = 0;
         int i = 0;
         while (i < args.size()) {
             String tok = args.get(i);
@@ -551,17 +588,20 @@ public final class RuntimeCore {
                 continue;
             }
             if ("air".equals(low) || "minecraft:air".equals(low)) {
-                count++;
+                out.add(PlaceOp.air());
                 i++;
                 continue;
             }
             if (i + 2 >= args.size()) {
-                break;
+                throw new IllegalStateException("plan_parse:bad_placeadvanced_triplet at index=" + i);
             }
-            count++;
+            String block = args.get(i);
+            String name = args.get(i + 1);
+            String arg = args.get(i + 2);
+            out.add(PlaceOp.block(block, name, arg));
             i += 3;
         }
-        return count;
+        return out;
     }
 
     private static List<String> readStringArray(JsonArray arr) {
@@ -658,6 +698,25 @@ public final class RuntimeCore {
         return msg.replace('\n', ' ').replace('\r', ' ');
     }
 
+    private static Path resolveLocalPath(String rawPath, Path runDir) {
+        Path p = Paths.get(rawPath);
+        if (!p.isAbsolute()) {
+            p = runDir.resolve(rawPath);
+        }
+        return p.normalize();
+    }
+
+    private static String lowerExt(String name) {
+        if (name == null) {
+            return "";
+        }
+        int dot = name.lastIndexOf('.');
+        if (dot < 0 || dot + 1 >= name.length()) {
+            return "";
+        }
+        return name.substring(dot + 1).toLowerCase();
+    }
+
     private static boolean isCommandExecutionFailure(String reason) {
         if (reason == null) {
             return false;
@@ -718,6 +777,8 @@ public final class RuntimeCore {
     private static final class PendingLoad {
         final String postId;
         final String configKey;
+        final String source;
+        final String localPath;
         final List<File> savedFiles = new ArrayList<File>();
         File planFile;
         int events;
@@ -726,8 +787,14 @@ public final class RuntimeCore {
         int actions;
 
         PendingLoad(String postId, String configKey) {
+            this(postId, configKey, "hub", null);
+        }
+
+        PendingLoad(String postId, String configKey, String source, String localPath) {
             this.postId = postId;
             this.configKey = configKey == null || configKey.trim().isEmpty() ? "default" : configKey.trim();
+            this.source = source == null || source.trim().isEmpty() ? "hub" : source.trim();
+            this.localPath = localPath;
         }
 
         void addStats(String code) {

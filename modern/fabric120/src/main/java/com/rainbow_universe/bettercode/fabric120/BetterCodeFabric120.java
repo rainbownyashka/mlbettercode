@@ -10,6 +10,8 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.rainbow_universe.bettercode.core.CoreLogger;
 import com.rainbow_universe.bettercode.core.GameBridge;
+import com.rainbow_universe.bettercode.core.PlaceExecResult;
+import com.rainbow_universe.bettercode.core.PlaceOp;
 import com.rainbow_universe.bettercode.core.RuntimeCore;
 import com.rainbow_universe.bettercode.core.RuntimeResult;
 import com.rainbow_universe.bettercode.core.settings.ModSettingsService;
@@ -119,6 +121,9 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
             ClientCommandManager.literal("mldsl")
                 .then(ClientCommandManager.literal("run")
+                    .then(ClientCommandManager.literal("local")
+                        .then(ClientCommandManager.argument("path", StringArgumentType.greedyString())
+                            .executes(ctx -> runLocal(ctx.getSource(), StringArgumentType.getString(ctx, "path")))))
                     .then(ClientCommandManager.argument("postId", StringArgumentType.word())
                         .executes(ctx -> runMldsl(ctx.getSource(), StringArgumentType.getString(ctx, "postId"), null))
                         .then(ClientCommandManager.argument("config", StringArgumentType.word())
@@ -127,6 +132,10 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
                                 StringArgumentType.getString(ctx, "postId"),
                                 StringArgumentType.getString(ctx, "config")
                             )))))
+                .then(ClientCommandManager.literal("check")
+                    .then(ClientCommandManager.literal("local")
+                        .then(ClientCommandManager.argument("path", StringArgumentType.greedyString())
+                            .executes(ctx -> checkLocal(ctx.getSource(), StringArgumentType.getString(ctx, "path"))))))
         ));
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
@@ -153,6 +162,26 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
 
     private static int runMldsl(FabricClientCommandSource source, String postId, String config) {
         RuntimeResult result = runtime().handleRun(postId, config, new FabricBridge(source));
+        if (result.ok()) {
+            source.sendFeedback(Text.literal(result.message()));
+            return 1;
+        }
+        source.sendError(Text.literal("[" + result.errorCode() + "] " + result.message()));
+        return 0;
+    }
+
+    private static int runLocal(FabricClientCommandSource source, String path) {
+        RuntimeResult result = runtime().handleRunLocal(path, false, new FabricBridge(source));
+        if (result.ok()) {
+            source.sendFeedback(Text.literal(result.message()));
+            return 1;
+        }
+        source.sendError(Text.literal("[" + result.errorCode() + "] " + result.message()));
+        return 0;
+    }
+
+    private static int checkLocal(FabricClientCommandSource source, String path) {
+        RuntimeResult result = runtime().handleRunLocal(path, true, new FabricBridge(source));
         if (result.ok()) {
             source.sendFeedback(Text.literal(result.message()));
             return 1;
@@ -458,6 +487,39 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
         }
 
         @Override
+        public boolean supportsPlacePlanExecution() {
+            return true;
+        }
+
+        @Override
+        public PlaceExecResult executePlacePlan(List<PlaceOp> ops, boolean checkOnly) {
+            if (ops == null || ops.isEmpty()) {
+                return PlaceExecResult.fail(0, 0, "PARSE_SCHEMA_MISMATCH", "no place operations");
+            }
+            if (checkOnly) {
+                return PlaceExecResult.ok(ops.size());
+            }
+            if (CLIENT_DISPATCHER == null || CLIENT_DISPATCHER.getRoot().getChild("placeadvanced") == null) {
+                return PlaceExecResult.fail(0, 0, "UNIMPLEMENTED_PLACEADVANCED_COMMAND", "placeadvanced command is not registered in this build");
+            }
+            int executed = 0;
+            for (int i = 0; i < ops.size(); i++) {
+                PlaceOp op = ops.get(i);
+                String cmd;
+                if (op.kind() == PlaceOp.Kind.AIR) {
+                    cmd = "placeadvanced air";
+                } else {
+                    cmd = "placeadvanced " + quote(op.blockId()) + " " + quote(op.name()) + " " + quote(op.args());
+                }
+                if (!executeClientCommand(cmd)) {
+                    return PlaceExecResult.fail(executed, i, "COMMAND_EXECUTION_FAILED", "command failed: " + cmd);
+                }
+                executed++;
+            }
+            return PlaceExecResult.ok(executed);
+        }
+
+        @Override
         public boolean executeClientCommand(String command) {
             String raw = command == null ? "" : command.trim();
             if (raw.isEmpty()) {
@@ -493,6 +555,20 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
             if (mc.player != null) {
                 mc.player.sendMessage(Text.literal(message), true);
             }
+        }
+
+        private static String quote(String value) {
+            String s = value == null ? "" : value.trim();
+            if (s.isEmpty()) {
+                return "\"\"";
+            }
+            if (s.contains("\"")) {
+                s = s.replace("\"", "'");
+            }
+            if (s.contains(" ")) {
+                return "\"" + s + "\"";
+            }
+            return s;
         }
 
     }
