@@ -24,3 +24,4 @@ Format: `id | task | priority | owner | needs_user_test | state | links`
 - MOD-020 | Port true local placeadvanced runtime (no server command reliance): queue/tick/gui parity with legacy | P0 | agent | yes | open | modern/core, modern/fabric1165, modern/fabric120, modern/fabric121
 - MOD-021 | Port legacy place args/data layer into modern core and wire parser diagnostics before GUI runtime migration | P0 | agent | no | done | modern/core/place, modern/core/RuntimeCore
 - MOD-022 | Port legacy item(...) spec parsing to platform-neutral core model and prepare adapter conversion path | P0 | agent | no | done | modern/core/place/ItemSpec, modern/core/place/PlaceArgsParser
+- MOD-023 | Introduce typed place entry plan builder in modern core (pre-step for PlaceState/tick GUI runtime port) | P0 | agent | no | done | modern/core/place/PlaceEntrySpec, modern/core/place/PlacePlanBuilder, modern/core/RuntimeCore

@@ -7,6 +7,8 @@ import com.google.gson.JsonParser;
 import com.google.gson.JsonParseException;
 import com.rainbow_universe.bettercode.core.place.PlaceArgSpec;
 import com.rainbow_universe.bettercode.core.place.PlaceArgsParser;
+import com.rainbow_universe.bettercode.core.place.PlaceEntrySpec;
+import com.rainbow_universe.bettercode.core.place.PlacePlanBuilder;
 import com.rainbow_universe.bettercode.core.settings.SettingsProvider;
 
 import java.io.ByteArrayOutputStream;
@@ -493,26 +495,27 @@ public final class RuntimeCore {
         if (ops == null || ops.isEmpty()) {
             return;
         }
+        List<PlaceEntrySpec> plan = PlacePlanBuilder.fromOps(ops);
+        int entries = plan.size();
+        int pauses = 0;
         int parsedArgs = 0;
         int parseFailures = 0;
         int parsedItemSpecs = 0;
-        for (PlaceOp op : ops) {
-            if (op == null || op.kind() != PlaceOp.Kind.BLOCK) {
+        for (PlaceEntrySpec entry : plan) {
+            if (entry == null) {
                 continue;
             }
-            String args = op.args();
+            if (entry.isPause()) {
+                pauses++;
+                continue;
+            }
+            String args = entry.argsRaw();
             if (args == null || args.trim().isEmpty() || "no".equalsIgnoreCase(args.trim())) {
                 continue;
             }
             try {
-                List<PlaceArgSpec> parsed = PlaceArgsParser.parsePlaceAdvancedArgs(args, new PlaceArgsParser.Normalizer() {
-                    @Override
-                    public String normalizeForMatch(String value) {
-                        return SignLineNormalizer.normalizeForMatch(value == null ? "" : value);
-                    }
-                });
-                parsedArgs += parsed.size();
-                for (PlaceArgSpec spec : parsed) {
+                parsedArgs += entry.args().size();
+                for (PlaceArgSpec spec : entry.args()) {
                     if (spec != null && spec.itemSpec() != null) {
                         parsedItemSpecs++;
                     }
@@ -524,7 +527,8 @@ public final class RuntimeCore {
         logger.info("printer-debug", "place_args_summary parsed=" + parsedArgs
             + " itemSpecs=" + parsedItemSpecs
             + " parseFailures=" + parseFailures
-            + " ops=" + ops.size());
+            + " entries=" + entries
+            + " pauses=" + pauses);
     }
 
     private List<PlaceOp> loadPlaceOps(Path path) throws Exception {

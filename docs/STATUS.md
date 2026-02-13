@@ -40,6 +40,9 @@
     - new `modern/core/place/ItemSpec`.
     - `PlaceArgSpec` now carries parsed `itemSpec`.
     - diagnostics extended with `itemSpecs=` count.
+  - typed plan layer added for direct runtime migration:
+    - new `modern/core/place/PlaceEntrySpec` and `PlacePlanBuilder` (from `List<PlaceOp>`).
+    - `RuntimeCore` summaries now operate on typed entries (`entries`, `pauses`, parsed args).
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,
