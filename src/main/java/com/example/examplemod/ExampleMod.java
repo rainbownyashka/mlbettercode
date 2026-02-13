@@ -10824,6 +10824,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         CodeCacheIO.save(target, blocksByKey, signsByKey, signsByDimPos, entryToSignByKey);
     }
 
+    @Override
+    public String resolveHubBaseUrl()
+    {
+        return getHubBaseUrl();
+    }
+
     private void loadShulkerHolos()
     {
         shulkerHolos.clear();

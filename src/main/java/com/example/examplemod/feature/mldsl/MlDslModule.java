@@ -11,9 +11,15 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.command.ICommandSender;
 import net.minecraft.server.MinecraftServer;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,6 +27,7 @@ import java.util.List;
 public final class MlDslModule
 {
     private static final Gson GSON = new Gson();
+    private static final long MAX_PLAN_BYTES = 800L * 1024L;
 
     private final MlDslHost host;
     private final PlaceModule placeModule;
@@ -122,16 +129,37 @@ public final class MlDslModule
         {
             if (path != null && looksLikePostId(path))
             {
-                host.setActionBar(false, "&cModule not downloaded. Run /loadmodule " + path + " first.", 4000L);
+                try
+                {
+                    host.setActionBar(true, "&eDownloading plan from Hub...", 2500L);
+                    File downloaded = downloadPlanForPost(mc.mcDataDir, path, configId);
+                    if (downloaded != null && downloaded.exists())
+                    {
+                        file = downloaded;
+                    }
+                }
+                catch (Exception e)
+                {
+                    String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                    if (msg.length() > 110)
+                    {
+                        msg = msg.substring(0, 110);
+                    }
+                    host.setActionBar(false, "&cHub download failed: " + msg, 4500L);
+                    return;
+                }
+            }
+        }
+
+        if (file == null || !file.exists())
+        {
+            if (path != null && looksLikePostId(path))
+            {
+                host.setActionBar(false, "&cPlan missing for post. Try /loadmodule " + path + " plan.json", 4500L);
                 return;
             }
             host.setActionBar(false, "&cPlan not found: " + (file == null ? "null" : file.getPath()), 3500L);
             return;
-        }
-        if (configId != null && !configId.isEmpty())
-        {
-            // 1.12 flow prints local plan.json; config is selected on Hub download side.
-            host.setActionBar(true, "&e--config ignored in local 1.12 run (download stage decides config)", 2800L);
         }
 
         runPlan(file, start, "check".equals(sub), server, sender);
@@ -269,6 +297,111 @@ public final class MlDslModule
             return "x";
         }
         return s.replaceAll("[^a-zA-Z0-9._\\-]+", "_");
+    }
+
+    private File downloadPlanForPost(File gameDir, String postId, String configId) throws Exception
+    {
+        String cleanId = safePath(postId);
+        File outDir = new File(gameDir, "mldsl_modules" + File.separator + cleanId);
+        if (!outDir.exists() && !outDir.mkdirs())
+        {
+            throw new IllegalStateException("can't create dir: " + outDir.getPath());
+        }
+        File planFile = new File(outDir, "plan.json");
+        String base = host.resolveHubBaseUrl();
+        if (base == null || base.trim().isEmpty())
+        {
+            base = "https://mldsl-hub.vercel.app";
+        }
+        StringBuilder url = new StringBuilder();
+        url.append(trimSlash(base))
+            .append("/api/post/")
+            .append(urlEncodePath(postId))
+            .append("/file?name=plan.json");
+        if (configId != null && !configId.trim().isEmpty())
+        {
+            url.append("&config=").append(urlEncode(configId.trim()));
+        }
+
+        byte[] data = httpGetBytes(url.toString());
+        try (FileOutputStream fos = new FileOutputStream(planFile))
+        {
+            fos.write(data);
+        }
+        return planFile;
+    }
+
+    private static byte[] httpGetBytes(String rawUrl) throws Exception
+    {
+        HttpURLConnection conn = null;
+        try
+        {
+            conn = (HttpURLConnection) new URL(rawUrl).openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(8000);
+            conn.setReadTimeout(15000);
+            conn.setRequestProperty("Accept", "application/json,text/plain,*/*");
+            int code = conn.getResponseCode();
+            if (code != 200)
+            {
+                throw new IllegalStateException("http_" + code);
+            }
+            try (InputStream in = conn.getInputStream(); ByteArrayOutputStream out = new ByteArrayOutputStream())
+            {
+                byte[] buf = new byte[8192];
+                long total = 0L;
+                while (true)
+                {
+                    int n = in.read(buf);
+                    if (n < 0)
+                    {
+                        break;
+                    }
+                    total += n;
+                    if (total > MAX_PLAN_BYTES)
+                    {
+                        throw new IllegalStateException("plan_too_big");
+                    }
+                    out.write(buf, 0, n);
+                }
+                return out.toByteArray();
+            }
+        }
+        finally
+        {
+            if (conn != null)
+            {
+                conn.disconnect();
+            }
+        }
+    }
+
+    private static String trimSlash(String s)
+    {
+        String v = s == null ? "" : s.trim();
+        while (v.endsWith("/"))
+        {
+            v = v.substring(0, v.length() - 1);
+        }
+        return v;
+    }
+
+    private static String urlEncodePath(String s)
+    {
+        String v = s == null ? "" : s.trim();
+        return v.replace("..", "").replace("/", "").replace("\\", "");
+    }
+
+    private static String urlEncode(String s)
+    {
+        try
+        {
+            return URLEncoder.encode(s, "UTF-8");
+        }
+        catch (Exception e)
+        {
+            return "";
+        }
     }
 
     private static List<String> loadPlaceAdvancedArgs(File file) throws Exception
