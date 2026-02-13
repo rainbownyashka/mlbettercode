@@ -94,6 +94,9 @@
   - added explicit sign-cache diagnostics in logs:
     - `SIGN_CACHE_STORE ... lines=[...]` when cache entry is created/updated,
     - `publish.sign.cache_hit ... source=<scope|dim> key=<...> lines=[...]` when publish resolves missing live sign via cache.
+  - strict publish guard for chest-backed entries:
+    - if chest data exists but sign text is missing/invalid and not recoverable from cache, publish aborts with
+      `publish.sign.invalid` trace + explicit user-facing error.
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:

@@ -4455,7 +4455,39 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             {
                 BlockPos entry = new BlockPos(entryPos.x, entryPos.y, entryPos.z);
                 BlockPos signPos = findSignAtZMinus1(world, entry);
-                return buildNearbyExportChestJson(world, entry, signPos, preferChestCacheInner);
+                String chestJson = buildNearbyExportChestJson(world, entry, signPos, preferChestCacheInner);
+                if (chestJson == null || chestJson.isEmpty())
+                {
+                    return chestJson;
+                }
+
+                // Strict validation: if chest params exist for this entry, sign text must be resolvable.
+                String[] live = getLiveSignLines(world, signPos);
+                if (live != null && !isAllSignLinesEmpty(live))
+                {
+                    return chestJson;
+                }
+                SignCacheResolved cacheHit = (signPos == null) ? null : resolveCachedSignLines(world, signPos);
+                if (cacheHit == null)
+                {
+                    BlockPos cachedSignPos = findCachedSignAtZMinus1(world, entry);
+                    if (cachedSignPos != null)
+                    {
+                        cacheHit = resolveCachedSignLines(world, cachedSignPos);
+                    }
+                }
+                if (cacheHit != null && cacheHit.lines != null && !isAllSignLinesEmpty(cacheHit.lines))
+                {
+                    return chestJson;
+                }
+
+                lastExportBuildError = "У строки кода " + entry.getX() + "," + entry.getY() + "," + entry.getZ()
+                    + " есть данные сундука, но табличка пустая/невалидная и не восстановилась из кэша. "
+                    + "Облети весь код для пересканирования табличек и повтори /module publish.";
+                publishTrace(mc, "publish.sign.invalid",
+                    "entry=" + entry.getX() + "," + entry.getY() + "," + entry.getZ()
+                        + " reason=chest_present_sign_missing signPos=" + String.valueOf(signPos));
+                return "";
             }
 
             @Override
