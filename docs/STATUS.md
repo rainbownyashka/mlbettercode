@@ -87,6 +87,10 @@
   - publish/export row parser (`preferChestCache=true`) now falls back to cached sign lines by `dim:pos` when live sign tile is unavailable.
   - strict publish/export fail added: if sign block exists but no live text and no cached text, export stops with explicit message:
     "Облети весь код, чтобы закэшировать таблички, и повтори /module publish."
+  - sign cache now rejects invalid empty signs:
+    - all-empty sign lines are not saved to cache,
+    - existing cache entry for that sign is removed when sign becomes empty,
+    - publish/export treats empty sign content as missing data and fails with explicit guidance to recache by flying through code.
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:

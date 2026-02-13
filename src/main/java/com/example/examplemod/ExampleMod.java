@@ -4415,9 +4415,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     }
                     if (hasSignBlockAtZMinus1(world, entry))
                     {
-                        lastExportBuildError = "Не найден кэш табличек для строки кода у "
+                        lastExportBuildError = "Табличка у строки кода "
                             + entry.getX() + "," + entry.getY() + "," + entry.getZ()
-                            + ". Облети весь код, чтобы закэшировать таблички, и повтори /module publish.";
+                            + " пустая/некорректная или не закэширована. Облети весь код, чтобы закэшировать таблички, и повтори /module publish.";
                     }
                 }
                 return null;
@@ -15469,12 +15469,17 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         String key1 = getCodeGlassScopeKey(world) + ":" + signPos.toLong();
         String[] hit = signLinesCache.get(key1);
-        if (hit != null)
+        if (hit != null && !isAllSignLinesEmpty(hit))
         {
             return hit;
         }
         String key2 = world.provider.getDimension() + ":" + signPos.toLong();
-        return signLinesCacheByDimPos.get(key2);
+        String[] byDim = signLinesCacheByDimPos.get(key2);
+        if (byDim != null && !isAllSignLinesEmpty(byDim))
+        {
+            return byDim;
+        }
+        return null;
     }
 
     private String[] getLiveSignLines(World world, BlockPos signPos)
@@ -15496,6 +15501,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             raw = TextFormatting.getTextWithoutFormattingCodes(raw);
             out[i] = raw == null ? "" : raw;
         }
+        if (isAllSignLinesEmpty(out))
+        {
+            return null;
+        }
         return out;
     }
 
@@ -15510,7 +15519,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             BlockPos checkPos = basePos.add(0, dy, -1);
             String key = dim + ":" + checkPos.toLong();
-            if (signLinesCacheByDimPos.containsKey(key))
+            String[] lines = signLinesCacheByDimPos.get(key);
+            if (lines != null && !isAllSignLinesEmpty(lines))
             {
                 return checkPos;
             }
@@ -15631,10 +15641,43 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             lines[i] = raw == null ? "" : raw;
         }
         String key1 = getCodeGlassScopeKey(world) + ":" + pos.toLong();
-        signLinesCache.put(key1, lines);
         String key2 = world.provider.getDimension() + ":" + pos.toLong();
+        if (isAllSignLinesEmpty(lines))
+        {
+            boolean removed = false;
+            if (signLinesCache.remove(key1) != null)
+            {
+                removed = true;
+            }
+            if (signLinesCacheByDimPos.remove(key2) != null)
+            {
+                removed = true;
+            }
+            if (removed)
+            {
+                codeCacheDirty = true;
+            }
+            return;
+        }
+        signLinesCache.put(key1, lines);
         signLinesCacheByDimPos.put(key2, lines);
         codeCacheDirty = true;
+    }
+
+    private boolean isAllSignLinesEmpty(String[] lines)
+    {
+        if (lines == null || lines.length == 0)
+        {
+            return true;
+        }
+        for (String line : lines)
+        {
+            if (line != null && !line.trim().isEmpty())
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private String parseNestingLevel(World world, BlockPos pos)
