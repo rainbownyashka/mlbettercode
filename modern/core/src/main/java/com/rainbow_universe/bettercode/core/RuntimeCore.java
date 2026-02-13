@@ -9,6 +9,8 @@ import com.rainbow_universe.bettercode.core.place.PlaceArgSpec;
 import com.rainbow_universe.bettercode.core.place.PlaceArgsParser;
 import com.rainbow_universe.bettercode.core.place.PlaceEntrySpec;
 import com.rainbow_universe.bettercode.core.place.PlacePlanBuilder;
+import com.rainbow_universe.bettercode.core.place.PlaceRuntimeEntry;
+import com.rainbow_universe.bettercode.core.place.PlaceRuntimeState;
 import com.rainbow_universe.bettercode.core.settings.SettingsProvider;
 
 import java.io.ByteArrayOutputStream;
@@ -181,7 +183,8 @@ public final class RuntimeCore {
             if (entries <= 0) {
                 return RuntimeResult.fail(RuntimeErrorCode.PLAN_PARSE_FAILED, "plan has no place entries");
             }
-            pendingExecution = new PendingExecution(ops, pl.source, pl.postId, pl.configKey, pl.localPath);
+            List<PlaceEntrySpec> specs = PlacePlanBuilder.fromOps(ops);
+            pendingExecution = new PendingExecution(specs, pl.source, pl.postId, pl.configKey, pl.localPath);
             bridge.sendActionBar("confirmload: runtime queued " + entries + " step(s)");
             return RuntimeResult.ok("Plan queued: " + entries + " place operation(s)");
         } catch (Exception e) {
@@ -203,34 +206,41 @@ public final class RuntimeCore {
         if (nowMs < exec.nextStepAtMs) {
             return;
         }
-        if (exec.index >= exec.ops.size()) {
-            bridge.sendActionBar("print done: " + exec.ops.size() + " step(s)");
+        if (!exec.state.isActive()) {
+            bridge.sendActionBar("print done: " + exec.state.executedCount() + " step(s)");
             bridge.sendChat("[printer-debug] runtime done source=" + exec.source + " postId=" + exec.postId + " config=" + exec.config);
             pendingExecution = null;
             return;
         }
-        PlaceOp op = exec.ops.get(exec.index);
+        PlaceRuntimeEntry stepEntry = exec.state.currentOrNext();
+        if (stepEntry == null) {
+            pendingExecution = null;
+            return;
+        }
+        PlaceOp op = stepEntry.isPause()
+            ? PlaceOp.air()
+            : PlaceOp.block(stepEntry.blockId(), stepEntry.name(), stepEntry.argsRaw());
         PlaceExecResult step = bridge.executePlacePlan(singleton(op), false);
         if (!step.ok()) {
             String code = step.errorCode() == null ? "exec_failed" : step.errorCode();
             String msg = step.errorMessage() == null ? "" : step.errorMessage();
             logger.error("printer-debug", "tick step failed source=" + exec.source
-                + " step=" + exec.index
+                + " step=" + exec.state.executedCount()
                 + " errorCode=" + code
                 + " reason=" + msg
                 + " path=" + (exec.path == null ? "-" : exec.path));
-            bridge.sendChat("[printer-debug] runtime failed step=" + exec.index + " code=" + code + " reason=" + msg);
-            bridge.sendActionBar("print failed at step " + exec.index);
+            bridge.sendChat("[printer-debug] runtime failed step=" + exec.state.executedCount() + " code=" + code + " reason=" + msg);
+            bridge.sendActionBar("print failed at step " + exec.state.executedCount());
             pendingExecution = null;
             return;
         }
-        exec.index++;
+        exec.state.markCurrentDone();
         int delay = settings.getInt("printer.stepDelayMs", 80);
         if (delay < 0) {
             delay = 0;
         }
         exec.nextStepAtMs = nowMs + delay;
-        logger.info("printer-debug", "tick step ok source=" + exec.source + " step=" + exec.index + "/" + exec.ops.size());
+        logger.info("printer-debug", "tick step ok source=" + exec.source + " step=" + exec.state.executedCount() + "/" + exec.state.totalCount());
     }
 
     public RuntimeResult handlePublish(GameBridge bridge) {
@@ -922,21 +932,19 @@ public final class RuntimeCore {
     }
 
     private static final class PendingExecution {
-        final List<PlaceOp> ops;
+        final PlaceRuntimeState state = new PlaceRuntimeState();
         final String source;
         final String postId;
         final String config;
         final String path;
-        int index;
         long nextStepAtMs;
 
-        PendingExecution(List<PlaceOp> ops, String source, String postId, String config, String path) {
-            this.ops = ops == null ? new ArrayList<PlaceOp>() : ops;
+        PendingExecution(List<PlaceEntrySpec> specs, String source, String postId, String config, String path) {
             this.source = source == null ? "unknown" : source;
             this.postId = postId == null ? "-" : postId;
             this.config = config == null ? "default" : config;
             this.path = path;
-            this.index = 0;
+            this.state.loadFromSpecs(specs);
             this.nextStepAtMs = System.currentTimeMillis();
         }
     }

@@ -48,6 +48,9 @@
     - steps are executed on client ticks with configurable delay (`printer.stepDelayMs`, default `80` ms),
     - tick logs: `tick step ok/failed`, completion actionbar.
   - Fabric adapters now register end-tick hook and drive `RuntimeCore.handleClientTick(...)`.
+  - runtime queue state extracted into core place model:
+    - new `PlaceRuntimeEntry` + `PlaceRuntimeState`,
+    - `PendingExecution` now runs through `PlaceRuntimeState` instead of raw list index.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,
