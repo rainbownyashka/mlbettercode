@@ -85,6 +85,8 @@
 - Legacy `1.12.2` persistent sign cache improvements:
   - sign cache now persists both scope-key and `dim:pos` keys in `code_cache.dat`,
   - publish/export row parser (`preferChestCache=true`) now falls back to cached sign lines by `dim:pos` when live sign tile is unavailable.
+  - strict publish/export fail added: if sign block exists but no live text and no cached text, export stops with explicit message:
+    "Облети весь код, чтобы закэшировать таблички, и повтори /module publish."
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:

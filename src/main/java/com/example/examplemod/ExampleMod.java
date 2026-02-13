@@ -340,6 +340,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private long lastCodeSelectorAbortMs = 0L;
     private final Map<Integer, Integer> exportSelectedFloorYByDim = new HashMap<>();
     private File lastExportCodeFile = null;
+    private String lastExportBuildError = null;
     private int tpScrollSteps = 0;
     private int tpScrollQueue = 0;
     private int tpScrollDir = 0;
@@ -2654,6 +2655,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             String json = buildExportCodeJson(mc.world, selection.valid, autoCodeCacheMaxSteps);
             if (json == null || json.isEmpty())
             {
+                if (lastExportBuildError != null && !lastExportBuildError.trim().isEmpty())
+                {
+                    setActionBar(false, "&c" + lastExportBuildError, 4500L);
+                    mc.player.sendMessage(new TextComponentString(TextFormatting.RED + lastExportBuildError));
+                    return;
+                }
                 setActionBar(false, "&cExport failed", 2500L);
                 return;
             }
@@ -2720,6 +2727,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         String json = buildExportCodeJson(mc.world, glasses, autoCodeCacheMaxSteps);
         if (json == null || json.isEmpty())
         {
+            if (lastExportBuildError != null && !lastExportBuildError.trim().isEmpty())
+            {
+                setActionBar(false, "&c" + lastExportBuildError, 4500L);
+                mc.player.sendMessage(new TextComponentString(TextFormatting.RED + lastExportBuildError));
+                return;
+            }
             setActionBar(false, "&cОшибка экспорта", 2500L);
             return;
         }
@@ -3129,6 +3142,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             publishTrace(mc, "publish.abort", "reason=generate_export_failed");
             setActionBar(false, "&c/module publish: ошибка экспорта", 4500L);
+            if (lastExportBuildError != null && !lastExportBuildError.trim().isEmpty())
+            {
+                mc.player.sendMessage(new TextComponentString(TextFormatting.RED + lastExportBuildError));
+            }
             mc.player.sendMessage(new TextComponentString(TextFormatting.RED
                 + "/module publish: не удалось сгенерировать exportcode из текущего выделения/этажа."));
             return;
@@ -4304,6 +4321,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private String buildExportCodeJson(World world, List<BlockPos> glasses, int maxSteps, boolean preferChestCache)
     {
         Minecraft mc = Minecraft.getMinecraft();
+        lastExportBuildError = null;
         exportCodeDbg(mc, "buildExportCodeJson: glasses=" + (glasses == null ? 0 : glasses.size())
             + " maxSteps=" + maxSteps);
         String scope = getCodeGlassScopeKey(world);
@@ -4325,6 +4343,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             String rowJson = buildExportRowJson(world, glassPos, Math.max(32, maxSteps), rowIndex++, preferChestCache);
             if (rowJson == null || rowJson.isEmpty())
             {
+                if (lastExportBuildError != null && !lastExportBuildError.trim().isEmpty())
+                {
+                    exportCodeDbg(mc, "row abort hard-error: " + lastExportBuildError);
+                    return null;
+                }
                 exportCodeDbg(mc, "row skipped: glass=" + glassPos + " rowJson empty");
                 continue;
             }
@@ -4389,6 +4412,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     if (cachedSignPos != null)
                     {
                         return getCachedSignLines(world, cachedSignPos);
+                    }
+                    if (hasSignBlockAtZMinus1(world, entry))
+                    {
+                        lastExportBuildError = "Не найден кэш табличек для строки кода у "
+                            + entry.getX() + "," + entry.getY() + "," + entry.getZ()
+                            + ". Облети весь код, чтобы закэшировать таблички, и повтори /module publish.";
                     }
                 }
                 return null;
@@ -15487,6 +15516,29 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
         }
         return null;
+    }
+
+    private boolean hasSignBlockAtZMinus1(World world, BlockPos basePos)
+    {
+        if (world == null || basePos == null)
+        {
+            return false;
+        }
+        for (int dy = -2; dy <= 0; dy++)
+        {
+            BlockPos checkPos = basePos.add(0, dy, -1);
+            if (!world.isBlockLoaded(checkPos, false))
+            {
+                continue;
+            }
+            IBlockState state = world.getBlockState(checkPos);
+            Block block = state == null ? null : state.getBlock();
+            if (block == Blocks.WALL_SIGN || block == Blocks.STANDING_SIGN)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
