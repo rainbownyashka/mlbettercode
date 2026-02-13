@@ -27,12 +27,12 @@ public final class ModSettingsService implements SettingsProvider {
 
     public static ModSettingsService createDefault(Path runDir) {
         Map<String, SettingDef> defs = new LinkedHashMap<String, SettingDef>();
-        defs.put("hub.baseUrl", new SettingDef(
-            "hub.baseUrl",
-            "Hub Base URL",
-            "Base URL for module loading endpoints",
-            SettingType.STRING,
-            "https://mldsl-hub.vercel.app",
+        defs.put("hub.useMirror", new SettingDef(
+            "hub.useMirror",
+            "Use Mirror Hub",
+            "false = vercel hub, true = duckdns mirror",
+            SettingType.BOOLEAN,
+            Boolean.FALSE,
             null,
             null
         ));

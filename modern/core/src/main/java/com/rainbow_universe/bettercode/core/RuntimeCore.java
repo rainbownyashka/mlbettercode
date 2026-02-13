@@ -27,7 +27,8 @@ import java.util.List;
 public final class RuntimeCore {
     private static final long MAX_DOWNLOAD_BYTES = 800L * 1024L;
     private static final long MAX_TOTAL_DOWNLOAD_BYTES = 2_500L * 1024L;
-    private static final String DEFAULT_BASE_URL = "https://mldsl-hub.vercel.app";
+    private static final String HUB_BASE_URL_PRIMARY = "https://mldsl-hub.vercel.app";
+    private static final String HUB_BASE_URL_MIRROR = "https://mldsl-hub.duckdns.org";
 
     private final CoreLogger logger;
     private final SettingsProvider settings;
@@ -273,7 +274,7 @@ public final class RuntimeCore {
     }
 
     private List<FileItem> fetchFilesList(String postId) throws Exception {
-        String hubBaseUrl = normalizeBaseUrl(settings.getString("hub.baseUrl", DEFAULT_BASE_URL));
+        String hubBaseUrl = resolveHubBaseUrl();
         int connectTimeout = settings.getInt("network.connectTimeoutMs", 8000);
         int readTimeout = settings.getInt("network.readTimeoutMs", 12000);
         String url = hubBaseUrl + "/api/post/" + encodePath(postId) + "/files";
@@ -324,12 +325,12 @@ public final class RuntimeCore {
     }
 
     private String buildDownloadUrl(String postId, String fileName) {
-        String hubBaseUrl = normalizeBaseUrl(settings.getString("hub.baseUrl", DEFAULT_BASE_URL));
+        String hubBaseUrl = resolveHubBaseUrl();
         return hubBaseUrl + "/api/post/" + encodePath(postId) + "/file?name=" + urlEncode(fileName);
     }
 
     private String buildDefaultDownloadUrl(String postId) {
-        String hubBaseUrl = normalizeBaseUrl(settings.getString("hub.baseUrl", DEFAULT_BASE_URL));
+        String hubBaseUrl = resolveHubBaseUrl();
         return hubBaseUrl + "/api/post/" + encodePath(postId) + "/file";
     }
 
@@ -649,7 +650,7 @@ public final class RuntimeCore {
     private static String normalizeBaseUrl(String raw) {
         String value = raw == null ? "" : raw.trim();
         if (value.isEmpty()) {
-            return DEFAULT_BASE_URL;
+            return HUB_BASE_URL_PRIMARY;
         }
         if (!value.startsWith("http://") && !value.startsWith("https://")) {
             value = "https://" + value;
@@ -657,7 +658,12 @@ public final class RuntimeCore {
         while (value.endsWith("/")) {
             value = value.substring(0, value.length() - 1);
         }
-        return value.isEmpty() ? DEFAULT_BASE_URL : value;
+        return value.isEmpty() ? HUB_BASE_URL_PRIMARY : value;
+    }
+
+    private String resolveHubBaseUrl() {
+        boolean mirror = settings.getBoolean("hub.useMirror", false);
+        return mirror ? HUB_BASE_URL_MIRROR : HUB_BASE_URL_PRIMARY;
     }
 
     private static String safePath(String s) {
