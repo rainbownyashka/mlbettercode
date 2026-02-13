@@ -14,6 +14,7 @@ public final class CodeCacheIO
     {
         public final Map<String, String> blocksByKey = new HashMap<>();
         public final Map<String, String[]> signsByKey = new HashMap<>();
+        public final Map<String, String[]> signsByDimPos = new HashMap<>();
         public final Map<String, Long> entryToSignByKey = new HashMap<>();
     }
 
@@ -22,7 +23,7 @@ public final class CodeCacheIO
     }
 
     public static void save(File target, Map<String, String> blocksByKey, Map<String, String[]> signsByKey,
-        Map<String, Long> entryToSignByKey)
+        Map<String, String[]> signsByDimPos, Map<String, Long> entryToSignByKey)
     {
         if (target == null)
         {
@@ -75,6 +76,30 @@ public final class CodeCacheIO
                 }
             }
             root.setTag("Signs", signs);
+
+            // Signs by dim:pos (persistent fallback when scope key isn't available)
+            NBTTagList dimPosSigns = new NBTTagList();
+            if (signsByDimPos != null && !signsByDimPos.isEmpty())
+            {
+                for (Map.Entry<String, String[]> e : signsByDimPos.entrySet())
+                {
+                    String k = e.getKey();
+                    String[] lines = e.getValue();
+                    if (k == null || k.isEmpty() || lines == null)
+                    {
+                        continue;
+                    }
+                    NBTTagCompound tag = new NBTTagCompound();
+                    tag.setString("K", k);
+                    for (int i = 0; i < 4; i++)
+                    {
+                        String v = i < lines.length ? lines[i] : "";
+                        tag.setString("L" + i, v == null ? "" : v);
+                    }
+                    dimPosSigns.appendTag(tag);
+                }
+            }
+            root.setTag("SignsByDimPos", dimPosSigns);
 
             // Entry -> Sign position mapping
             NBTTagList entrySigns = new NBTTagList();
@@ -152,6 +177,27 @@ public final class CodeCacheIO
                         lines[li] = v == null ? "" : v;
                     }
                     out.signsByKey.put(k, lines);
+                }
+            }
+
+            if (root.hasKey("SignsByDimPos", 9))
+            {
+                NBTTagList signs = root.getTagList("SignsByDimPos", 10);
+                for (int i = 0; i < signs.tagCount(); i++)
+                {
+                    NBTTagCompound tag = signs.getCompoundTagAt(i);
+                    String k = tag.getString("K");
+                    if (k == null || k.isEmpty())
+                    {
+                        continue;
+                    }
+                    String[] lines = new String[]{"", "", "", ""};
+                    for (int li = 0; li < 4; li++)
+                    {
+                        String v = tag.getString("L" + li);
+                        lines[li] = v == null ? "" : v;
+                    }
+                    out.signsByDimPos.put(k, lines);
                 }
             }
 

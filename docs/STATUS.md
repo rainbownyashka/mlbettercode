@@ -82,6 +82,9 @@
 - Legacy `1.12.2` no-cache publish warmup anti-stall fix:
   - page-turn retries now advance on `slot_not_found` and click exceptions,
   - warmup no longer hangs forever on `has_next_page`; after retry exhaustion it closes chest with explicit `publish_trace` reason `next_page_retry_exhausted`.
+- Legacy `1.12.2` persistent sign cache improvements:
+  - sign cache now persists both scope-key and `dim:pos` keys in `code_cache.dat`,
+  - publish/export row parser (`preferChestCache=true`) now falls back to cached sign lines by `dim:pos` when live sign tile is unavailable.
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:

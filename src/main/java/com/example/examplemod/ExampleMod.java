@@ -4370,24 +4370,28 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             {
                 BlockPos entry = new BlockPos(entryPos.x, entryPos.y, entryPos.z);
                 BlockPos signPos = findSignAtZMinus1(world, entry);
-                if (signPos == null)
+                String[] live = getLiveSignLines(world, signPos);
+                if (live != null)
                 {
-                    return null;
+                    return live;
                 }
-                TileEntity te = world.getTileEntity(signPos);
-                if (!(te instanceof TileEntitySign))
+                if (preferChestCache)
                 {
-                    return null;
+                    if (signPos != null)
+                    {
+                        String[] cached = getCachedSignLines(world, signPos);
+                        if (cached != null)
+                        {
+                            return cached;
+                        }
+                    }
+                    BlockPos cachedSignPos = findCachedSignAtZMinus1(world, entry);
+                    if (cachedSignPos != null)
+                    {
+                        return getCachedSignLines(world, cachedSignPos);
+                    }
                 }
-                TileEntitySign sign = (TileEntitySign) te;
-                String[] out = new String[]{"", "", "", ""};
-                for (int i = 0; i < 4 && i < sign.signText.length; i++)
-                {
-                    String raw = sign.signText[i] == null ? "" : sign.signText[i].getUnformattedText();
-                    raw = TextFormatting.getTextWithoutFormattingCodes(raw);
-                    out[i] = raw == null ? "" : raw;
-                }
-                return out;
+                return null;
             }
 
             @Override
@@ -10136,13 +10140,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         final File target = codeCacheFile;
         final Map<String, String> blocksSnapshot = new LinkedHashMap<>(placedBlockCacheByScopePos);
         final Map<String, String[]> signsSnapshot = new LinkedHashMap<>(signLinesCache);
+        final Map<String, String[]> signsDimPosSnapshot = new LinkedHashMap<>(signLinesCacheByDimPos);
         final Map<String, Long> entrySignSnapshot = new LinkedHashMap<>(entryToSignPosByScopeEntry);
         codeCacheDirty = false;
         codeCacheSaveQueued.set(true);
         ioExecutor.execute(() -> {
             try
             {
-                saveCodeCacheSnapshot(target, blocksSnapshot, signsSnapshot, entrySignSnapshot);
+                saveCodeCacheSnapshot(target, blocksSnapshot, signsSnapshot, signsDimPosSnapshot, entrySignSnapshot);
             }
             finally
             {
@@ -10726,9 +10731,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     }
 
     private void saveCodeCacheSnapshot(File target, Map<String, String> blocksByKey, Map<String, String[]> signsByKey,
-        Map<String, Long> entryToSignByKey)
+        Map<String, String[]> signsByDimPos, Map<String, Long> entryToSignByKey)
     {
-        CodeCacheIO.save(target, blocksByKey, signsByKey, entryToSignByKey);
+        CodeCacheIO.save(target, blocksByKey, signsByKey, signsByDimPos, entryToSignByKey);
     }
 
     private void loadShulkerHolos()
@@ -10747,12 +10752,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     {
         placedBlockCacheByScopePos.clear();
         entryToSignPosByScopeEntry.clear();
+        signLinesCacheByDimPos.clear();
 
         // signLinesCache already stores scope-keyed sign texts; keep runtime updates and merge loaded snapshot.
         CodeCacheIO.Loaded loaded = CodeCacheIO.load(codeCacheFile);
         placedBlockCacheByScopePos.putAll(loaded.blocksByKey);
         entryToSignPosByScopeEntry.putAll(loaded.entryToSignByKey);
         signLinesCache.putAll(loaded.signsByKey);
+        signLinesCacheByDimPos.putAll(loaded.signsByDimPos);
     }
 
     private void loadMenuCache()
@@ -15439,6 +15446,47 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         String key2 = world.provider.getDimension() + ":" + signPos.toLong();
         return signLinesCacheByDimPos.get(key2);
+    }
+
+    private String[] getLiveSignLines(World world, BlockPos signPos)
+    {
+        if (world == null || signPos == null)
+        {
+            return null;
+        }
+        TileEntity te = world.getTileEntity(signPos);
+        if (!(te instanceof TileEntitySign))
+        {
+            return null;
+        }
+        TileEntitySign sign = (TileEntitySign) te;
+        String[] out = new String[]{"", "", "", ""};
+        for (int i = 0; i < 4 && i < sign.signText.length; i++)
+        {
+            String raw = sign.signText[i] == null ? "" : sign.signText[i].getUnformattedText();
+            raw = TextFormatting.getTextWithoutFormattingCodes(raw);
+            out[i] = raw == null ? "" : raw;
+        }
+        return out;
+    }
+
+    private BlockPos findCachedSignAtZMinus1(World world, BlockPos basePos)
+    {
+        if (world == null || basePos == null)
+        {
+            return null;
+        }
+        int dim = world.provider.getDimension();
+        for (int dy = -2; dy <= 0; dy++)
+        {
+            BlockPos checkPos = basePos.add(0, dy, -1);
+            String key = dim + ":" + checkPos.toLong();
+            if (signLinesCacheByDimPos.containsKey(key))
+            {
+                return checkPos;
+            }
+        }
+        return null;
     }
 
     @Override
