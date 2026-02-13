@@ -5,6 +5,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonParseException;
+import com.rainbow_universe.bettercode.core.place.PlaceArgSpec;
+import com.rainbow_universe.bettercode.core.place.PlaceArgsParser;
 import com.rainbow_universe.bettercode.core.settings.SettingsProvider;
 
 import java.io.ByteArrayOutputStream;
@@ -166,6 +168,7 @@ public final class RuntimeCore {
         try {
             List<PlaceOp> ops = loadPlaceOps(pl.planFile.toPath());
             int entries = ops.size();
+            logPlaceArgsSummary(ops);
             bridge.sendChat("[confirmload-debug] source=" + pl.source
                 + " plan=" + pl.planFile.getName()
                 + " entries=" + entries
@@ -465,6 +468,7 @@ public final class RuntimeCore {
         if (ops == null || ops.isEmpty()) {
             return RuntimeResult.fail(RuntimeErrorCode.PLAN_PARSE_FAILED, "plan has no place entries");
         }
+        logPlaceArgsSummary(ops);
         PlaceExecResult check = bridge.executePlacePlan(ops, true);
         if (!check.ok()) {
             String code = check.errorCode() == null ? "check_failed" : check.errorCode();
@@ -483,6 +487,35 @@ public final class RuntimeCore {
             return RuntimeResult.fail(mapped, "check failedAt=" + check.failedAt() + " code=" + code + " reason=" + msg);
         }
         return RuntimeResult.ok("check ok: " + check.executed() + " place operation(s)");
+    }
+
+    private void logPlaceArgsSummary(List<PlaceOp> ops) {
+        if (ops == null || ops.isEmpty()) {
+            return;
+        }
+        int parsedArgs = 0;
+        int parseFailures = 0;
+        for (PlaceOp op : ops) {
+            if (op == null || op.kind() != PlaceOp.Kind.BLOCK) {
+                continue;
+            }
+            String args = op.args();
+            if (args == null || args.trim().isEmpty() || "no".equalsIgnoreCase(args.trim())) {
+                continue;
+            }
+            try {
+                List<PlaceArgSpec> parsed = PlaceArgsParser.parsePlaceAdvancedArgs(args, new PlaceArgsParser.Normalizer() {
+                    @Override
+                    public String normalizeForMatch(String value) {
+                        return SignLineNormalizer.normalizeForMatch(value == null ? "" : value);
+                    }
+                });
+                parsedArgs += parsed.size();
+            } catch (Exception ex) {
+                parseFailures++;
+            }
+        }
+        logger.info("printer-debug", "place_args_summary parsed=" + parsedArgs + " parseFailures=" + parseFailures + " ops=" + ops.size());
     }
 
     private List<PlaceOp> loadPlaceOps(Path path) throws Exception {

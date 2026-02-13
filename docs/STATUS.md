@@ -33,6 +33,9 @@
   - explicit logs added per step:
     - `[printer-debug] server_command_sent ...`
     - `[printer-debug] server_command_failed ...`
+  - place args parser core port started in modern runtime:
+    - new `modern/core/place/PlaceArgsParser` + `PlaceArgSpec` + `PlaceInputMode`.
+    - `confirmload/check` now logs `place_args_summary` from parsed operation args.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,

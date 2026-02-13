@@ -22,3 +22,4 @@ Format: `id | task | priority | owner | needs_user_test | state | links`
 - MOD-018 | Support `/mldsl run <postId> --config <id>` syntax and explicit local->server command dispatch logs | P0 | agent | yes | done | modern/fabric1165, modern/fabric120, modern/fabric121
 - MOD-019 | Replace local dispatcher dependency with explicit Java command-packet bridge + payload sanitization for place execution | P0 | agent | yes | done | modern/fabric1165, modern/fabric120, modern/fabric121
 - MOD-020 | Port true local placeadvanced runtime (no server command reliance): queue/tick/gui parity with legacy | P0 | agent | yes | open | modern/core, modern/fabric1165, modern/fabric120, modern/fabric121
+- MOD-021 | Port legacy place args/data layer into modern core and wire parser diagnostics before GUI runtime migration | P0 | agent | no | done | modern/core/place, modern/core/RuntimeCore
