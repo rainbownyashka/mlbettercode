@@ -127,12 +127,21 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
                         .then(ClientCommandManager.argument("path", StringArgumentType.greedyString())
                             .executes(ctx -> runLocal(ctx.getSource(), StringArgumentType.getString(ctx, "path")))))
                     .then(ClientCommandManager.argument("postId", StringArgumentType.word())
-                        .executes(ctx -> runMldsl(ctx.getSource(), StringArgumentType.getString(ctx, "postId"), null))
+                        .executes(ctx -> runMldsl(ctx.getSource(), StringArgumentType.getString(ctx, "postId"), null, "default"))
+                        .then(ClientCommandManager.literal("--config")
+                            .then(ClientCommandManager.argument("configFlag", StringArgumentType.word())
+                                .executes(ctx -> runMldsl(
+                                    ctx.getSource(),
+                                    StringArgumentType.getString(ctx, "postId"),
+                                    StringArgumentType.getString(ctx, "configFlag"),
+                                    "flag"
+                                ))))
                         .then(ClientCommandManager.argument("config", StringArgumentType.word())
                             .executes(ctx -> runMldsl(
                                 ctx.getSource(),
                                 StringArgumentType.getString(ctx, "postId"),
-                                StringArgumentType.getString(ctx, "config")
+                                StringArgumentType.getString(ctx, "config"),
+                                "positional"
                             )))))
                 .then(ClientCommandManager.literal("check")
                     .then(ClientCommandManager.literal("local")
@@ -162,7 +171,10 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
         return 0;
     }
 
-    private static int runMldsl(FabricClientCommandSource source, String postId, String config) {
+    private static int runMldsl(FabricClientCommandSource source, String postId, String config, String syntax) {
+        System.out.println("[printer-debug] run args postId=" + postId
+            + " config=" + (config == null ? "default" : config)
+            + " syntax=" + syntax);
         RuntimeResult result = runtime().handleRun(postId, config, new FabricBridge(source));
         if (result.ok()) {
             source.sendFeedback(Text.literal(result.message()));
@@ -501,9 +513,6 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
             if (checkOnly) {
                 return PlaceExecResult.ok(ops.size());
             }
-            if (CLIENT_DISPATCHER == null || CLIENT_DISPATCHER.getRoot().getChild("placeadvanced") == null) {
-                return PlaceExecResult.fail(0, 0, "UNIMPLEMENTED_PLACEADVANCED_COMMAND", "placeadvanced command is not registered in this build");
-            }
             int executed = 0;
             for (int i = 0; i < ops.size(); i++) {
                 PlaceOp op = ops.get(i);
@@ -513,13 +522,14 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
                 } else {
                     cmd = "placeadvanced " + quote(op.blockId()) + " " + quote(op.name()) + " " + quote(op.args());
                 }
-                try {
-                    int result = CLIENT_DISPATCHER.execute(cmd, source);
-                    if (result <= 0) {
-                        return PlaceExecResult.fail(executed, i, "COMMAND_EXECUTION_FAILED", "non-positive result=" + result + " cmd=" + cmd);
+                String localFail = tryLocalDispatch(cmd);
+                if (localFail != null) {
+                    System.err.println("[printer-debug] local_dispatch_failed step=" + i + " cmd=" + cmd + " reason=" + localFail + " switching=server_chat");
+                    String serverFail = tryServerDispatch(cmd);
+                    if (serverFail != null) {
+                        return PlaceExecResult.fail(executed, i, "COMMAND_EXECUTION_EXCEPTION",
+                            "cmd=" + cmd + "\nlocalFail=" + localFail + "\nserverFail=" + serverFail);
                     }
-                } catch (Exception e) {
-                    return PlaceExecResult.fail(executed, i, "COMMAND_EXECUTION_EXCEPTION", "cmd=" + cmd + "\n" + throwableToString(e));
                 }
                 executed++;
             }
@@ -576,6 +586,41 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
                 return "\"" + s + "\"";
             }
             return s;
+        }
+
+        private String tryLocalDispatch(String cmd) {
+            if (CLIENT_DISPATCHER == null) {
+                return "dispatcher_null";
+            }
+            try {
+                int result = CLIENT_DISPATCHER.execute(cmd, source);
+                if (result <= 0) {
+                    return "non_positive_result=" + result;
+                }
+                return null;
+            } catch (Exception e) {
+                return throwableToString(e);
+            }
+        }
+
+        private static String tryServerDispatch(String cmd) {
+            try {
+                MinecraftClient mc = MinecraftClient.getInstance();
+                if (mc == null || mc.player == null || mc.getNetworkHandler() == null) {
+                    return "network_unavailable";
+                }
+                String raw = cmd == null ? "" : cmd.trim();
+                if (raw.startsWith("/")) {
+                    raw = raw.substring(1);
+                }
+                if (raw.isEmpty()) {
+                    return "empty_command";
+                }
+                mc.getNetworkHandler().sendChatCommand(raw);
+                return null;
+            } catch (Throwable t) {
+                return throwableToString(t);
+            }
         }
 
         private static String throwableToString(Throwable err) {

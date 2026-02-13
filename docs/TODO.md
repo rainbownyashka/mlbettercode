@@ -12,10 +12,11 @@ Format: `id | task | priority | owner | needs_user_test | state | links`
 - MOD-008 | Wire real Forge 1.16.5 runtime adapter (commands/events/containers) on top of core | P0 | agent | yes | open | modern/forge1165
 - MOD-009 | Add adapter contract tests (GameBridge invariants + scoreboard parsing + error codes) | P1 | agent | no | open | modern/core
 - MOD-010 | Add packet-skip and slot-desync retry verification in modern smoke tests | P1 | agent | yes | open | modern/*
-- MOD-011 | Modern confirmload calls `placeadvanced` but command is not implemented in modern adapters; wire real place pipeline | P0 | agent | yes | open | modern/core, modern/fabric1165, modern/fabric120, modern/fabric121
+- MOD-011 | Modern confirmload calls `placeadvanced` but command is not implemented in modern adapters; wire real place pipeline | P0 | agent | yes | in_progress | modern/core, modern/fabric1165, modern/fabric120, modern/fabric121
 - MOD-012 | RuntimeCore confirmload maps command execution failures as plan parse failures; split by error code | P1 | agent | no | done | modern/core/src/main/java/com/rainbow_universe/bettercode/core/RuntimeCore.java
 - MOD-013 | `/mldsl run <postId> <config>` accepts config but does not influence loading behavior; implement config-aware fetch | P1 | agent | yes | done | modern/core/src/main/java/com/rainbow_universe/bettercode/core/RuntimeCore.java
 - MOD-014 | Fabric executeClientCommand path currently depends on network send methods; switch to local Brigadier dispatcher execution | P0 | agent | yes | done | modern/fabric1165, modern/fabric120, modern/fabric121
 - MOD-015 | Add `/modsettings` command with clickable controls and persisted JSON config for modern Fabric targets | P1 | agent | yes | done | modern/core/settings, modern/fabric1165, modern/fabric120, modern/fabric121
 - MOD-016 | Fix Fabric 1.16.5 dependency id in `fabric.mod.json` (`fabric` vs `fabric-api`) for loader compatibility | P0 | agent | yes | done | modern/fabric1165/src/main/resources/fabric.mod.json
 - MOD-017 | Add `/mldsl run local <path>` and `/mldsl check local <path>` with typed place-op execution bridge | P0 | agent | yes | done | modern/core, modern/fabric1165, modern/fabric120, modern/fabric121
+- MOD-018 | Support `/mldsl run <postId> --config <id>` syntax and explicit local->server command dispatch logs | P0 | agent | yes | done | modern/fabric1165, modern/fabric120, modern/fabric121

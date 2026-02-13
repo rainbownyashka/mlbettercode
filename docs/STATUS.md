@@ -25,6 +25,12 @@
     - `/mldsl run local <path>`
     - `/mldsl check local <path>`
   - core confirmload now executes typed place operations through `GameBridge.executePlacePlan(...)` (no direct command-string execution inside core).
+  - `/mldsl run` now accepts config in two forms:
+    - positional: `/mldsl run <postId> <config>`
+    - flag: `/mldsl run <postId> --config <config>`
+  - modern place execution now uses dual path with explicit logs:
+    - local dispatcher attempt,
+    - fallback to server chat command send (`local_dispatch_failed ... switching=server_chat`).
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,
