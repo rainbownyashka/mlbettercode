@@ -36,6 +36,10 @@
   - place args parser core port started in modern runtime:
     - new `modern/core/place/PlaceArgsParser` + `PlaceArgSpec` + `PlaceInputMode`.
     - `confirmload/check` now logs `place_args_summary` from parsed operation args.
+  - item-spec parsing (`item(...)`) moved to modern core parser:
+    - new `modern/core/place/ItemSpec`.
+    - `PlaceArgSpec` now carries parsed `itemSpec`.
+    - diagnostics extended with `itemSpecs=` count.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,

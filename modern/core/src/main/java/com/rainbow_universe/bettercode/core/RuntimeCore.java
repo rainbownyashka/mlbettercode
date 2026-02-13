@@ -495,6 +495,7 @@ public final class RuntimeCore {
         }
         int parsedArgs = 0;
         int parseFailures = 0;
+        int parsedItemSpecs = 0;
         for (PlaceOp op : ops) {
             if (op == null || op.kind() != PlaceOp.Kind.BLOCK) {
                 continue;
@@ -511,11 +512,19 @@ public final class RuntimeCore {
                     }
                 });
                 parsedArgs += parsed.size();
+                for (PlaceArgSpec spec : parsed) {
+                    if (spec != null && spec.itemSpec() != null) {
+                        parsedItemSpecs++;
+                    }
+                }
             } catch (Exception ex) {
                 parseFailures++;
             }
         }
-        logger.info("printer-debug", "place_args_summary parsed=" + parsedArgs + " parseFailures=" + parseFailures + " ops=" + ops.size());
+        logger.info("printer-debug", "place_args_summary parsed=" + parsedArgs
+            + " itemSpecs=" + parsedItemSpecs
+            + " parseFailures=" + parseFailures
+            + " ops=" + ops.size());
     }
 
     private List<PlaceOp> loadPlaceOps(Path path) throws Exception {

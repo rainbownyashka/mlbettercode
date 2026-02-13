@@ -11,6 +11,7 @@ public final class PlaceArgSpec {
     private final Integer slotIndex;
     private final boolean clickOnly;
     private final boolean slotGuiIndex;
+    private final ItemSpec itemSpec;
 
     public PlaceArgSpec(
         String keyRaw,
@@ -22,7 +23,8 @@ public final class PlaceArgSpec {
         boolean saveVariable,
         Integer slotIndex,
         boolean clickOnly,
-        boolean slotGuiIndex
+        boolean slotGuiIndex,
+        ItemSpec itemSpec
     ) {
         this.keyRaw = keyRaw;
         this.keyNorm = keyNorm;
@@ -34,6 +36,7 @@ public final class PlaceArgSpec {
         this.slotIndex = slotIndex;
         this.clickOnly = clickOnly;
         this.slotGuiIndex = slotGuiIndex;
+        this.itemSpec = itemSpec;
     }
 
     public String keyRaw() { return keyRaw; }
@@ -46,5 +49,5 @@ public final class PlaceArgSpec {
     public Integer slotIndex() { return slotIndex; }
     public boolean clickOnly() { return clickOnly; }
     public boolean slotGuiIndex() { return slotGuiIndex; }
+    public ItemSpec itemSpec() { return itemSpec; }
 }
-
