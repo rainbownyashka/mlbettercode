@@ -23,6 +23,8 @@
   - `modern/fabric120`,
   - `modern/fabric121`,
   - `modern/forge1165` (bootstrap jar, Forge hooks pending).
+- Fabric 1.16.5 loader compatibility fix applied:
+  - `fabric.mod.json` dependency switched from `fabric-api` to `fabric` for TL/Fabric Loader resolution.
 
 ## Known regressions / risks
 - Ongoing high-risk area: GUI/chest timing races on unstable server latency.
