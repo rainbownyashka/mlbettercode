@@ -21,6 +21,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardObjective;
@@ -159,6 +160,9 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
                 .then(ClientCommandManager.literal("publish")
                     .executes(ctx -> publishModule(ctx.getSource())))
         ));
+
+        ClientTickEvents.END_CLIENT_TICK.register(client ->
+            runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis()));
     }
 
     private static int loadModule(FabricClientCommandSource source, String postId, String file) {
@@ -536,6 +540,10 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
                 System.err.println("[printer-debug] executeClientCommand: empty command");
                 return false;
             }
+            if (source == null) {
+                System.err.println("[printer-debug] executeClientCommand: source is null for cmd=" + raw);
+                return false;
+            }
             if (CLIENT_DISPATCHER == null) {
                 System.err.println("[printer-debug] executeClientCommand: dispatcher is null for cmd=" + raw);
                 return false;
@@ -556,7 +564,16 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
 
         @Override
         public void sendChat(String message) {
-            source.sendFeedback(Text.literal(message));
+            if (source != null) {
+                source.sendFeedback(Text.literal(message));
+                return;
+            }
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.player != null) {
+                mc.player.sendMessage(Text.literal(message), false);
+            } else {
+                System.out.println("[printer-debug] chat(no-player): " + message);
+            }
         }
 
         @Override

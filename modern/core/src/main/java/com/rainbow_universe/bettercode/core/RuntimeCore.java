@@ -40,6 +40,7 @@ public final class RuntimeCore {
     private final CoreLogger logger;
     private final SettingsProvider settings;
     private volatile PendingLoad pendingLoad;
+    private volatile PendingExecution pendingExecution;
 
     public RuntimeCore(CoreLogger logger) {
         this(logger, new SettingsProvider() {
@@ -180,23 +181,9 @@ public final class RuntimeCore {
             if (entries <= 0) {
                 return RuntimeResult.fail(RuntimeErrorCode.PLAN_PARSE_FAILED, "plan has no place entries");
             }
-            PlaceExecResult exec = bridge.executePlacePlan(ops, false);
-            if (!exec.ok()) {
-                String code = exec.errorCode() == null ? "exec_failed" : exec.errorCode();
-                String msg = exec.errorMessage() == null ? "" : exec.errorMessage();
-                logger.error("printer-debug", "confirm exec failed source=" + pl.source
-                    + " failedAt=" + exec.failedAt()
-                    + " executed=" + exec.executed()
-                    + " errorCode=" + code
-                    + " reason=" + msg
-                    + " supportsPlacePlanExecution=" + bridge.supportsPlacePlanExecution());
-                RuntimeErrorCode mapped = code.toUpperCase().contains("UNIMPLEMENTED")
-                    ? RuntimeErrorCode.UNIMPLEMENTED_PLATFORM_OPERATION
-                    : RuntimeErrorCode.COMMAND_EXECUTION_FAILED;
-                return RuntimeResult.fail(mapped, "failedAt=" + exec.failedAt() + " code=" + code + " reason=" + msg);
-            }
-            bridge.sendActionBar("confirmload: queued " + exec.executed() + " place operation(s)");
-            return RuntimeResult.ok("Plan applied: " + exec.executed() + " place operation(s)");
+            pendingExecution = new PendingExecution(ops, pl.source, pl.postId, pl.configKey, pl.localPath);
+            bridge.sendActionBar("confirmload: runtime queued " + entries + " step(s)");
+            return RuntimeResult.ok("Plan queued: " + entries + " place operation(s)");
         } catch (Exception e) {
             String full = stackTraceToString(e);
             logger.error("confirmload-debug", "confirm exception stacktrace:\n" + full);
@@ -206,6 +193,44 @@ public final class RuntimeCore {
             }
             return RuntimeResult.fail(RuntimeErrorCode.PLAN_PARSE_FAILED, "plan parse failed: " + reason + " | " + full);
         }
+    }
+
+    public void handleClientTick(GameBridge bridge, long nowMs) {
+        PendingExecution exec = pendingExecution;
+        if (exec == null || bridge == null) {
+            return;
+        }
+        if (nowMs < exec.nextStepAtMs) {
+            return;
+        }
+        if (exec.index >= exec.ops.size()) {
+            bridge.sendActionBar("print done: " + exec.ops.size() + " step(s)");
+            bridge.sendChat("[printer-debug] runtime done source=" + exec.source + " postId=" + exec.postId + " config=" + exec.config);
+            pendingExecution = null;
+            return;
+        }
+        PlaceOp op = exec.ops.get(exec.index);
+        PlaceExecResult step = bridge.executePlacePlan(singleton(op), false);
+        if (!step.ok()) {
+            String code = step.errorCode() == null ? "exec_failed" : step.errorCode();
+            String msg = step.errorMessage() == null ? "" : step.errorMessage();
+            logger.error("printer-debug", "tick step failed source=" + exec.source
+                + " step=" + exec.index
+                + " errorCode=" + code
+                + " reason=" + msg
+                + " path=" + (exec.path == null ? "-" : exec.path));
+            bridge.sendChat("[printer-debug] runtime failed step=" + exec.index + " code=" + code + " reason=" + msg);
+            bridge.sendActionBar("print failed at step " + exec.index);
+            pendingExecution = null;
+            return;
+        }
+        exec.index++;
+        int delay = settings.getInt("printer.stepDelayMs", 80);
+        if (delay < 0) {
+            delay = 0;
+        }
+        exec.nextStepAtMs = nowMs + delay;
+        logger.info("printer-debug", "tick step ok source=" + exec.source + " step=" + exec.index + "/" + exec.ops.size());
     }
 
     public RuntimeResult handlePublish(GameBridge bridge) {
@@ -804,6 +829,12 @@ public final class RuntimeCore {
         return mirror ? HUB_BASE_URL_MIRROR : HUB_BASE_URL_PRIMARY;
     }
 
+    private static List<PlaceOp> singleton(PlaceOp op) {
+        List<PlaceOp> out = new ArrayList<PlaceOp>();
+        out.add(op);
+        return out;
+    }
+
     private static String safePath(String s) {
         if (s == null) {
             return "x";
@@ -887,6 +918,26 @@ public final class RuntimeCore {
                     actions++;
                 }
             }
+        }
+    }
+
+    private static final class PendingExecution {
+        final List<PlaceOp> ops;
+        final String source;
+        final String postId;
+        final String config;
+        final String path;
+        int index;
+        long nextStepAtMs;
+
+        PendingExecution(List<PlaceOp> ops, String source, String postId, String config, String path) {
+            this.ops = ops == null ? new ArrayList<PlaceOp>() : ops;
+            this.source = source == null ? "unknown" : source;
+            this.postId = postId == null ? "-" : postId;
+            this.config = config == null ? "default" : config;
+            this.path = path;
+            this.index = 0;
+            this.nextStepAtMs = System.currentTimeMillis();
         }
     }
 }

@@ -72,6 +72,15 @@ public final class ModSettingsService implements SettingsProvider {
             Integer.valueOf(0),
             Integer.valueOf(50)
         ));
+        defs.put("printer.stepDelayMs", new SettingDef(
+            "printer.stepDelayMs",
+            "Printer Step Delay (ms)",
+            "Delay between queued place steps in runtime tick executor",
+            SettingType.INTEGER,
+            Integer.valueOf(80),
+            Integer.valueOf(0),
+            Integer.valueOf(2000)
+        ));
 
         ModSettingsService svc = new ModSettingsService(runDir.resolve(FILE_NAME), defs);
         svc.load();

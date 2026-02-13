@@ -43,6 +43,11 @@
   - typed plan layer added for direct runtime migration:
     - new `modern/core/place/PlaceEntrySpec` and `PlacePlanBuilder` (from `List<PlaceOp>`).
     - `RuntimeCore` summaries now operate on typed entries (`entries`, `pauses`, parsed args).
+  - `confirmload` execution switched to queued runtime mode in `RuntimeCore`:
+    - plan is staged as `PendingExecution`,
+    - steps are executed on client ticks with configurable delay (`printer.stepDelayMs`, default `80` ms),
+    - tick logs: `tick step ok/failed`, completion actionbar.
+  - Fabric adapters now register end-tick hook and drive `RuntimeCore.handleClientTick(...)`.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,
