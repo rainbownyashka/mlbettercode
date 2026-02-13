@@ -37,12 +37,18 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           test -f "build/libs/bettercode-${VERSION}.jar"
 
+      - name: Collect release assets (no sources)
+        run: |
+          mkdir -p dist/release
+          find build/libs -maxdepth 1 -type f -name "bettercode-*.jar" ! -name "*-sources.jar" -exec cp {} dist/release/ \;
+          ls -la dist/release
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            build/libs/bettercode-*.jar
+            dist/release/bettercode-*.jar
 
   build-fabric120:
     needs: release-legacy112
@@ -68,12 +74,18 @@ jobs:
           chmod +x ./modern/fabric120/gradlew
           python tools/build_matrix.py fabric120 --task build
 
+      - name: Collect Fabric 1.20.1 assets (no sources)
+        run: |
+          mkdir -p dist/release
+          find modern/fabric120/build/libs -maxdepth 1 -type f -name "bettercode-fabric120-*.jar" ! -name "*-sources.jar" -exec cp {} dist/release/ \;
+          ls -la dist/release
+
       - name: Upload Fabric 1.20.1 assets
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            modern/fabric120/build/libs/bettercode-fabric120-*.jar
+            dist/release/bettercode-fabric120-*.jar
 
   build-fabric121:
     needs: build-fabric120
@@ -99,9 +111,15 @@ jobs:
           chmod +x ./modern/fabric121/gradlew
           python tools/build_matrix.py fabric121 --task build
 
+      - name: Collect Fabric 1.21.1 assets (no sources)
+        run: |
+          mkdir -p dist/release
+          find modern/fabric121/build/libs -maxdepth 1 -type f -name "bettercode-fabric121-*.jar" ! -name "*-sources.jar" -exec cp {} dist/release/ \;
+          ls -la dist/release
+
       - name: Upload Fabric 1.21.1 assets
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            modern/fabric121/build/libs/bettercode-fabric121-*.jar
+            dist/release/bettercode-fabric121-*.jar

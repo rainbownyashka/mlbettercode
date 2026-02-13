@@ -99,6 +99,7 @@
       `publish.sign.invalid` trace + explicit user-facing error.
 - Release CI fix:
   - added explicit JUnit test dependency in legacy `build.gradle` to prevent `:compileTestJava` failure (`org.junit` missing) on GitHub release workflow.
+  - release workflow now collects only runtime jars into `dist/release` and excludes `*-sources.jar` from GitHub release assets.
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:
