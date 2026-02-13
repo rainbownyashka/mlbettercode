@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.rainbow_universe.bettercode.core.CoreLogger;
 import com.rainbow_universe.bettercode.core.GameBridge;
@@ -34,9 +35,12 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Map<String, SelectedBlock> SELECTED = new LinkedHashMap<>();
     private static final RuntimeCore RUNTIME = new RuntimeCore(new FabricCoreLogger());
+    private static volatile CommandDispatcher<FabricClientCommandSource> CLIENT_DISPATCHER;
 
     @Override
     public void onInitializeClient() {
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> CLIENT_DISPATCHER = dispatcher);
+
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
             ClientCommandManager.literal("bc_select")
                 .executes(ctx -> toggleCurrentBlock(ctx.getSource()))
@@ -303,15 +307,19 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
 
         @Override
         public boolean executeClientCommand(String command) {
-            MinecraftClient mc = MinecraftClient.getInstance();
-            if (mc.player == null || mc.player.networkHandler == null) {
-                return false;
-            }
             String raw = command == null ? "" : command.trim();
             if (raw.isEmpty()) {
                 return false;
             }
-            return dispatchCommand(mc.player.networkHandler, raw);
+            if (CLIENT_DISPATCHER == null) {
+                return false;
+            }
+            try {
+                int result = CLIENT_DISPATCHER.execute(raw, source);
+                return result > 0;
+            } catch (Exception e) {
+                return false;
+            }
         }
 
         @Override
@@ -327,23 +335,5 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
             }
         }
 
-        private static boolean dispatchCommand(Object networkHandler, String command) {
-            try {
-                java.lang.reflect.Method m = networkHandler.getClass().getMethod("sendChatCommand", String.class);
-                m.invoke(networkHandler, command);
-                return true;
-            } catch (Exception ignore) { }
-            try {
-                java.lang.reflect.Method m = networkHandler.getClass().getMethod("sendCommand", String.class);
-                m.invoke(networkHandler, command);
-                return true;
-            } catch (Exception ignore) { }
-            try {
-                java.lang.reflect.Method m = networkHandler.getClass().getMethod("sendChatMessage", String.class);
-                m.invoke(networkHandler, "/" + command);
-                return true;
-            } catch (Exception ignore) { }
-            return false;
-        }
     }
 }

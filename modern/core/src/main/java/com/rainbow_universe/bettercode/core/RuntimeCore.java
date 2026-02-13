@@ -61,9 +61,21 @@ public final class RuntimeCore {
             if (!outDir.exists() && !outDir.mkdirs()) {
                 return RuntimeResult.fail(RuntimeErrorCode.DOWNLOAD_FAILED, "cannot create module dir: " + outDir.getPath());
             }
-            PendingLoad pl = (fileName == null || fileName.trim().isEmpty())
-                ? downloadAll(safePostId, outDir)
-                : downloadOne(safePostId, fileName.trim(), outDir);
+            PendingLoad pl;
+            if (fileName == null || fileName.trim().isEmpty()) {
+                try {
+                    pl = downloadAll(safePostId, outDir);
+                } catch (IllegalStateException listErr) {
+                    String msg = listErr.getMessage() == null ? "" : listErr.getMessage();
+                    if (!msg.contains("empty_files_list")) {
+                        throw listErr;
+                    }
+                    logger.warn("publish-debug", "files list empty for postId=" + safePostId + ", fallback to default /file");
+                    pl = downloadDefault(safePostId, outDir);
+                }
+            } else {
+                pl = downloadOne(safePostId, fileName.trim(), outDir);
+            }
             pendingLoad = pl;
             bridge.sendChat("[publish-debug] downloaded files=" + pl.savedFiles.size() + " postId=" + safePostId);
             bridge.sendChat("[publish-debug] events=" + pl.events + " funcs=" + pl.funcs + " loops=" + pl.loops + " actions~=" + pl.actions);
@@ -98,7 +110,11 @@ public final class RuntimeCore {
             bridge.sendActionBar("confirmload: queued " + executed + " placeadvanced command(s)");
             return RuntimeResult.ok("Plan applied via /placeadvanced commands: " + executed);
         } catch (Exception e) {
-            return RuntimeResult.fail(RuntimeErrorCode.PLAN_PARSE_FAILED, "plan parse failed: " + describeDownloadError(e));
+            String reason = describeDownloadError(e);
+            if (isCommandExecutionFailure(reason)) {
+                return RuntimeResult.fail(RuntimeErrorCode.COMMAND_EXECUTION_FAILED, reason);
+            }
+            return RuntimeResult.fail(RuntimeErrorCode.PLAN_PARSE_FAILED, "plan parse failed: " + reason);
         }
     }
 
@@ -217,6 +233,25 @@ public final class RuntimeCore {
         return pl;
     }
 
+    private PendingLoad downloadDefault(String postId, File outDir) throws Exception {
+        byte[] data = httpGet(buildDefaultDownloadUrl(postId));
+        String outName = "module.mldsl";
+        File outFile = new File(outDir, outName);
+        FileOutputStream fos = null;
+        try {
+            fos = new FileOutputStream(outFile);
+            fos.write(data);
+        } finally {
+            if (fos != null) {
+                fos.close();
+            }
+        }
+        PendingLoad pl = new PendingLoad(postId);
+        pl.savedFiles.add(outFile);
+        pl.addStats(new String(data, StandardCharsets.UTF_8));
+        return pl;
+    }
+
     private List<FileItem> fetchFilesList(String postId) throws Exception {
         String url = hubBaseUrl + "/api/post/" + encodePath(postId) + "/files";
         HttpURLConnection conn = null;
@@ -267,6 +302,10 @@ public final class RuntimeCore {
 
     private String buildDownloadUrl(String postId, String fileName) {
         return hubBaseUrl + "/api/post/" + encodePath(postId) + "/file?name=" + urlEncode(fileName);
+    }
+
+    private String buildDefaultDownloadUrl(String postId) {
+        return hubBaseUrl + "/api/post/" + encodePath(postId) + "/file";
     }
 
     private byte[] httpGet(String rawUrl) throws Exception {
@@ -361,27 +400,27 @@ public final class RuntimeCore {
             }
             if ("air".equals(low) || "minecraft:air".equals(low)) {
                 if (!bridge.executeClientCommand("placeadvanced air")) {
-                    throw new IllegalStateException("placeadvanced_air_failed");
+                    throw new IllegalStateException("command_exec:placeadvanced_air_failed");
                 }
                 executed++;
                 i++;
                 continue;
             }
             if (i + 2 >= args.size()) {
-                throw new IllegalStateException("bad_placeadvanced_triplet");
+                throw new IllegalStateException("plan_parse:bad_placeadvanced_triplet");
             }
             String block = args.get(i);
             String name = args.get(i + 1);
             String arg = args.get(i + 2);
             String cmd = "placeadvanced " + quoteIfNeeded(block) + " " + quoteIfNeeded(name) + " " + quoteIfNeeded(arg);
             if (!bridge.executeClientCommand(cmd)) {
-                throw new IllegalStateException("placeadvanced_exec_failed");
+                throw new IllegalStateException("command_exec:placeadvanced_exec_failed");
             }
             executed++;
             i += 3;
         }
         if (executed <= 0) {
-            throw new IllegalStateException("no_commands_executed");
+            throw new IllegalStateException("command_exec:no_commands_executed");
         }
         return executed;
     }
@@ -570,6 +609,14 @@ public final class RuntimeCore {
             msg = msg.substring(0, 120);
         }
         return msg.replace('\n', ' ').replace('\r', ' ');
+    }
+
+    private static boolean isCommandExecutionFailure(String reason) {
+        if (reason == null) {
+            return false;
+        }
+        String low = reason.toLowerCase();
+        return low.contains("command_exec:");
     }
 
     private static String normalizeBaseUrl(String raw) {
