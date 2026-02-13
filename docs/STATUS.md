@@ -100,6 +100,11 @@
 - Release CI fix:
   - added explicit JUnit test dependency in legacy `build.gradle` to prevent `:compileTestJava` failure (`org.junit` missing) on GitHub release workflow.
   - release workflow now collects only runtime jars into `dist/release` and excludes `*-sources.jar` from GitHub release assets.
+- Legacy 1.12 `/mldsl` command UX fixes:
+  - supports quoted local paths with spaces more robustly,
+  - recognizes `postId` as `mldsl_modules/<postId>/plan.json` lookup path,
+  - shows explicit guidance to run `/loadmodule <postId>` when module isn't downloaded,
+  - parse error now includes exception message tail for quicker diagnostics.
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:

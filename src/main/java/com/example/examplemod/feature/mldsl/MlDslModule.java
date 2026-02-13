@@ -35,24 +35,38 @@ public final class MlDslModule
     {
         if (args == null || args.length == 0)
         {
-            host.setActionBar(false, "&cUsage: /mldsl run|check [path] [--start N]", 3500L);
+            host.setActionBar(false, "&cUsage: /mldsl run|check [path|postId] [--config id] [--start N]", 3500L);
             return;
         }
 
         String sub = args[0] == null ? "" : args[0].trim().toLowerCase();
         if (!"run".equals(sub) && !"check".equals(sub))
         {
-            host.setActionBar(false, "&cUsage: /mldsl run|check [path] [--start N]", 3500L);
+            host.setActionBar(false, "&cUsage: /mldsl run|check [path|postId] [--config id] [--start N]", 3500L);
             return;
         }
 
         int start = 1;
         String path = null;
+        String configId = null;
+        StringBuilder quotedPath = null;
+        char quoteChar = 0;
         for (int i = 1; i < args.length; i++)
         {
             String a = args[i];
             if (a == null)
             {
+                continue;
+            }
+            if (quotedPath != null)
+            {
+                quotedPath.append(' ').append(a);
+                if (a.endsWith(String.valueOf(quoteChar)))
+                {
+                    path = stripOuterQuotes(quotedPath.toString());
+                    quotedPath = null;
+                    quoteChar = 0;
+                }
                 continue;
             }
             if ("--start".equalsIgnoreCase(a) && i + 1 < args.length)
@@ -68,10 +82,32 @@ public final class MlDslModule
                 i++;
                 continue;
             }
+            if ("--config".equalsIgnoreCase(a) && i + 1 < args.length)
+            {
+                String rawCfg = args[i + 1];
+                if (rawCfg != null)
+                {
+                    configId = stripOuterQuotes(rawCfg.trim());
+                }
+                i++;
+                continue;
+            }
             if (path == null)
             {
-                path = a;
+                String t = a.trim();
+                if (startsQuote(t) && !endsSameQuote(t))
+                {
+                    quotedPath = new StringBuilder(t);
+                    quoteChar = t.charAt(0);
+                    continue;
+                }
+                path = stripOuterQuotes(t);
             }
+        }
+        if (quotedPath != null && path == null)
+        {
+            // Unclosed quote: still try best-effort.
+            path = stripOuterQuotes(quotedPath.toString());
         }
 
         Minecraft mc = Minecraft.getMinecraft();
@@ -84,8 +120,18 @@ public final class MlDslModule
         File file = resolvePlanPath(mc.mcDataDir, path);
         if (file == null || !file.exists())
         {
+            if (path != null && looksLikePostId(path))
+            {
+                host.setActionBar(false, "&cModule not downloaded. Run /loadmodule " + path + " first.", 4000L);
+                return;
+            }
             host.setActionBar(false, "&cPlan not found: " + (file == null ? "null" : file.getPath()), 3500L);
             return;
+        }
+        if (configId != null && !configId.isEmpty())
+        {
+            // 1.12 flow prints local plan.json; config is selected on Hub download side.
+            host.setActionBar(true, "&e--config ignored in local 1.12 run (download stage decides config)", 2800L);
         }
 
         runPlan(file, start, "check".equals(sub), server, sender);
@@ -106,7 +152,16 @@ public final class MlDslModule
         }
         catch (Exception e)
         {
-            host.setActionBar(false, "&cPlan parse error: " + e.getClass().getSimpleName(), 4000L);
+            String msg = e.getMessage();
+            if (msg == null)
+            {
+                msg = "";
+            }
+            if (msg.length() > 120)
+            {
+                msg = msg.substring(0, 120);
+            }
+            host.setActionBar(false, "&cPlan parse error: " + e.getClass().getSimpleName() + " " + msg, 5000L);
             return false;
         }
 
@@ -148,17 +203,72 @@ public final class MlDslModule
             return new File(gameDir, "plan.json");
         }
         String s = raw.trim();
-        // Minecraft command args may keep quotes; treat "C:\x\y" as a real absolute path.
-        if ((s.startsWith("\"") && s.endsWith("\"")) || (s.startsWith("'") && s.endsWith("'")))
+        s = stripOuterQuotes(s);
+
+        if (looksLikePostId(s))
         {
-            s = s.substring(1, s.length() - 1).trim();
+            return new File(new File(new File(gameDir, "mldsl_modules"), safePath(s)), "plan.json");
         }
+
         File f = new File(s);
         if (f.isAbsolute())
         {
             return f;
         }
         return new File(gameDir, s);
+    }
+
+    private static boolean startsQuote(String s)
+    {
+        return s != null && (s.startsWith("\"") || s.startsWith("'"));
+    }
+
+    private static boolean endsSameQuote(String s)
+    {
+        if (s == null || s.length() < 2)
+        {
+            return false;
+        }
+        char q = s.charAt(0);
+        return (q == '"' || q == '\'') && s.charAt(s.length() - 1) == q;
+    }
+
+    private static String stripOuterQuotes(String s)
+    {
+        if (s == null)
+        {
+            return null;
+        }
+        String t = s.trim();
+        if (t.length() >= 2)
+        {
+            char first = t.charAt(0);
+            char last = t.charAt(t.length() - 1);
+            if ((first == '"' && last == '"') || (first == '\'' && last == '\''))
+            {
+                return t.substring(1, t.length() - 1).trim();
+            }
+        }
+        return t;
+    }
+
+    private static boolean looksLikePostId(String s)
+    {
+        if (s == null)
+        {
+            return false;
+        }
+        String t = s.trim().toLowerCase();
+        return t.matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+    }
+
+    private static String safePath(String s)
+    {
+        if (s == null)
+        {
+            return "x";
+        }
+        return s.replaceAll("[^a-zA-Z0-9._\\-]+", "_");
     }
 
     private static List<String> loadPlaceAdvancedArgs(File file) throws Exception

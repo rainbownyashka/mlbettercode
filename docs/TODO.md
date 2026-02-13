@@ -33,6 +33,7 @@ Format: `id | task | priority | owner | needs_user_test | state | links`
 - MOD-037 | Enforce strict publish abort when chest payload exists but sign lines are missing/invalid (with `publish.sign.invalid` trace) | P1 | agent | yes | done | src/main/java/com/example/examplemod/ExampleMod.java
 - MOD-038 | Fix GitHub release build failure `:compileTestJava` by wiring explicit JUnit dependency for legacy 1.12.2 tests | P0 | agent | no | done | build.gradle
 - MOD-039 | Exclude `*-sources.jar` from GitHub release attachments (upload runtime jars only) | P1 | agent | no | done | .github/workflows/release.yml
+- MOD-040 | Improve legacy 1.12 `/mldsl` path/config parsing (`postId` lookup in `mldsl_modules`, quoted path with spaces, clearer missing-module error) | P1 | agent | yes | done | src/main/java/com/example/examplemod/feature/mldsl/MlDslModule.java
 - MOD-021 | Port legacy place args/data layer into modern core and wire parser diagnostics before GUI runtime migration | P0 | agent | no | done | modern/core/place, modern/core/RuntimeCore
 - MOD-022 | Port legacy item(...) spec parsing to platform-neutral core model and prepare adapter conversion path | P0 | agent | no | done | modern/core/place/ItemSpec, modern/core/place/PlaceArgsParser
 - MOD-023 | Introduce typed place entry plan builder in modern core (pre-step for PlaceState/tick GUI runtime port) | P0 | agent | no | done | modern/core/place/PlaceEntrySpec, modern/core/place/PlacePlanBuilder, modern/core/RuntimeCore
