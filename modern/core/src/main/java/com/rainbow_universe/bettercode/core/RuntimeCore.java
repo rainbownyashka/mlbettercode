@@ -231,6 +231,18 @@ public final class RuntimeCore {
             pendingExecution = null;
             return;
         }
+        if (step.inProgress()) {
+            int delay = settings.getInt("printer.stepDelayMs", 80);
+            if (delay < 0) {
+                delay = 0;
+            }
+            exec.nextStepAtMs = nowMs + delay;
+            logger.info("printer-debug", "tick step in_progress source=" + exec.source
+                + " step=" + exec.state.executedCount()
+                + "/" + exec.state.totalCount()
+                + " reason=" + (step.errorMessage() == null ? "-" : step.errorMessage()));
+            return;
+        }
         exec.state.markCurrentDone();
         int delay = settings.getInt("printer.stepDelayMs", 80);
         if (delay < 0) {

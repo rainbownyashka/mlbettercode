@@ -10,7 +10,6 @@ import com.rainbow_universe.bettercode.core.PlaceExecResult;
 import com.rainbow_universe.bettercode.core.PlaceOp;
 import com.rainbow_universe.bettercode.core.RuntimeCore;
 import com.rainbow_universe.bettercode.core.RuntimeResult;
-import com.rainbow_universe.bettercode.core.place.PlaceCommandBridgeUtil;
 import com.rainbow_universe.bettercode.core.place.PlaceRuntimeEntry;
 import com.rainbow_universe.bettercode.core.settings.ModSettingsService;
 import com.rainbow_universe.bettercode.core.settings.SettingDef;
@@ -431,21 +430,16 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 return PlaceExecResult.ok(1);
             }
             if (entry.isSkip() || entry.moveOnly()) {
-                System.out.println("[printer-debug] move_step_not_implemented mode=direct_java block=" + entry.blockId());
+                System.out.println("[printer-debug] move_step_not_implemented mode=client_runtime block=" + entry.blockId());
                 return PlaceExecResult.fail(0, 0, "UNIMPLEMENTED_MOVE_STEP",
                     "skip/move-only runtime step is not implemented in modern direct executor yet");
             }
-            String cmd = PlaceCommandBridgeUtil.buildPlaceAdvancedCommand(entry);
-            MinecraftClient mc = MinecraftClient.getInstance();
-            Object networkHandler = (mc.player == null) ? null : mc.player.networkHandler;
-            String sendFail = PlaceCommandBridgeUtil.sendServerCommand(networkHandler, cmd);
-            if (sendFail != null) {
-                System.err.println("[printer-debug] server_command_failed step=single cmd=" + cmd + " reason=" + sendFail);
-                return PlaceExecResult.fail(0, 0, "SERVER_COMMAND_FAILED",
-                    "cmd=" + cmd + "\nreason=" + sendFail);
-            }
-            System.out.println("[printer-debug] server_command_sent step=single cmd=" + cmd);
-            return PlaceExecResult.ok(1);
+            String block = entry.blockId() == null ? "" : entry.blockId();
+            String name = entry.name() == null ? "" : entry.name();
+            String args = entry.argsRaw() == null ? "" : entry.argsRaw();
+            System.err.println("[printer-debug] direct_step_unimplemented block=" + block + " name=" + name + " args=" + args);
+            return PlaceExecResult.fail(0, 0, "UNIMPLEMENTED_DIRECT_PLACE_RUNTIME",
+                "client-side direct place runtime for block/action steps is not implemented yet; block=" + block + " name=" + name);
         }
 
         @Override

@@ -59,6 +59,10 @@
     - `GameBridge.executePlaceStep(PlaceRuntimeEntry, checkOnly)` added,
     - `RuntimeCore` tick executor now calls step-level bridge API,
     - Fabric adapters implement step executor and reuse it from batch path.
+  - modern Fabric step executors no longer send `placeadvanced` to server chat:
+    - server-command bridge removed from `executePlaceStep`,
+    - block/action steps now fail explicitly with `UNIMPLEMENTED_DIRECT_PLACE_RUNTIME` until direct GUI/tick runtime is fully ported.
+  - `PlaceExecResult` now supports `inProgress`; runtime tick loop can keep current step without auto-advancing.
   - duplicated Fabric command bridge logic reduced:
     - common `PlaceCommandBridgeUtil` introduced in `modern/core/place`,
     - command build/sanitize/send reflection moved out of adapters.
