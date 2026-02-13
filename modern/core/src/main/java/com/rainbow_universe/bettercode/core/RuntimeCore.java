@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonParseException;
+import com.rainbow_universe.bettercode.core.settings.SettingsProvider;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -29,12 +30,31 @@ public final class RuntimeCore {
     private static final String DEFAULT_BASE_URL = "https://mldsl-hub.vercel.app";
 
     private final CoreLogger logger;
-    private final String hubBaseUrl;
+    private final SettingsProvider settings;
     private volatile PendingLoad pendingLoad;
 
     public RuntimeCore(CoreLogger logger) {
+        this(logger, new SettingsProvider() {
+            @Override
+            public String getString(String key, String fallback) {
+                return fallback;
+            }
+
+            @Override
+            public int getInt(String key, int fallback) {
+                return fallback;
+            }
+
+            @Override
+            public boolean getBoolean(String key, boolean fallback) {
+                return fallback;
+            }
+        });
+    }
+
+    public RuntimeCore(CoreLogger logger, SettingsProvider settings) {
         this.logger = logger;
-        this.hubBaseUrl = normalizeBaseUrl(System.getProperty("bettercode.hub.url"));
+        this.settings = settings;
     }
 
     public RuntimeResult handleRun(String postId, String configKey, GameBridge bridge) {
@@ -253,13 +273,16 @@ public final class RuntimeCore {
     }
 
     private List<FileItem> fetchFilesList(String postId) throws Exception {
+        String hubBaseUrl = normalizeBaseUrl(settings.getString("hub.baseUrl", DEFAULT_BASE_URL));
+        int connectTimeout = settings.getInt("network.connectTimeoutMs", 8000);
+        int readTimeout = settings.getInt("network.readTimeoutMs", 12000);
         String url = hubBaseUrl + "/api/post/" + encodePath(postId) + "/files";
         HttpURLConnection conn = null;
         try {
             conn = (HttpURLConnection) new URL(url).openConnection();
             conn.setRequestMethod("GET");
-            conn.setConnectTimeout(8000);
-            conn.setReadTimeout(12000);
+            conn.setConnectTimeout(connectTimeout);
+            conn.setReadTimeout(readTimeout);
             conn.setRequestProperty("Accept", "application/json");
             int code = conn.getResponseCode();
             if (code != 200) {
@@ -301,20 +324,24 @@ public final class RuntimeCore {
     }
 
     private String buildDownloadUrl(String postId, String fileName) {
+        String hubBaseUrl = normalizeBaseUrl(settings.getString("hub.baseUrl", DEFAULT_BASE_URL));
         return hubBaseUrl + "/api/post/" + encodePath(postId) + "/file?name=" + urlEncode(fileName);
     }
 
     private String buildDefaultDownloadUrl(String postId) {
+        String hubBaseUrl = normalizeBaseUrl(settings.getString("hub.baseUrl", DEFAULT_BASE_URL));
         return hubBaseUrl + "/api/post/" + encodePath(postId) + "/file";
     }
 
     private byte[] httpGet(String rawUrl) throws Exception {
+        int connectTimeout = settings.getInt("network.connectTimeoutMs", 8000);
+        int readTimeout = settings.getInt("network.readTimeoutMs", 15000);
         HttpURLConnection conn = null;
         try {
             conn = (HttpURLConnection) new URL(rawUrl).openConnection();
             conn.setRequestMethod("GET");
-            conn.setConnectTimeout(8000);
-            conn.setReadTimeout(15000);
+            conn.setConnectTimeout(connectTimeout);
+            conn.setReadTimeout(readTimeout);
             conn.setRequestProperty("Accept", "application/octet-stream");
             int code = conn.getResponseCode();
             if (code != 200) {

@@ -44,6 +44,7 @@ Notes:
 - `/loadmodule <postId> [file]`
 - `/confirmload`
 - `/module publish`
+- `/modsettings`
 - `/bc_print_plan [path]`
 
 Current state is explicit bootstrap for runtime parity migration:

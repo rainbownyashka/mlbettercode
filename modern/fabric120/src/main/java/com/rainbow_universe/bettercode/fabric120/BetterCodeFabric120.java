@@ -6,11 +6,15 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.rainbow_universe.bettercode.core.CoreLogger;
 import com.rainbow_universe.bettercode.core.GameBridge;
 import com.rainbow_universe.bettercode.core.RuntimeCore;
 import com.rainbow_universe.bettercode.core.RuntimeResult;
+import com.rainbow_universe.bettercode.core.settings.ModSettingsService;
+import com.rainbow_universe.bettercode.core.settings.SettingDef;
+import com.rainbow_universe.bettercode.core.settings.SettingType;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -18,6 +22,9 @@ import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardObjective;
+import net.minecraft.text.ClickEvent;
+import net.minecraft.text.MutableText;
+import net.minecraft.text.Style;
 import net.minecraft.text.Text;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -34,8 +41,9 @@ import java.util.Map;
 public final class BetterCodeFabric120 implements ClientModInitializer {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Map<String, SelectedBlock> SELECTED = new LinkedHashMap<>();
-    private static final RuntimeCore RUNTIME = new RuntimeCore(new FabricCoreLogger());
     private static volatile CommandDispatcher<FabricClientCommandSource> CLIENT_DISPATCHER;
+    private static volatile ModSettingsService SETTINGS;
+    private static volatile RuntimeCore RUNTIME;
 
     @Override
     public void onInitializeClient() {
@@ -68,6 +76,32 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
                 .executes(ctx -> inspectPlan(ctx.getSource(), defaultPlanPath()))
                 .then(ClientCommandManager.argument("path", StringArgumentType.greedyString())
                     .executes(ctx -> inspectPlan(ctx.getSource(), Path.of(StringArgumentType.getString(ctx, "path")))))
+        ));
+
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
+            ClientCommandManager.literal("modsettings")
+                .executes(ctx -> modSettingsList(ctx.getSource()))
+                .then(ClientCommandManager.literal("toggle")
+                    .then(ClientCommandManager.argument("key", StringArgumentType.word())
+                        .executes(ctx -> modSettingsToggle(ctx.getSource(), StringArgumentType.getString(ctx, "key")))))
+                .then(ClientCommandManager.literal("inc")
+                    .then(ClientCommandManager.argument("key", StringArgumentType.word())
+                        .then(ClientCommandManager.argument("delta", IntegerArgumentType.integer())
+                            .executes(ctx -> modSettingsInc(
+                                ctx.getSource(),
+                                StringArgumentType.getString(ctx, "key"),
+                                IntegerArgumentType.getInteger(ctx, "delta")
+                            )))))
+                .then(ClientCommandManager.literal("set")
+                    .then(ClientCommandManager.argument("key", StringArgumentType.word())
+                        .then(ClientCommandManager.argument("value", StringArgumentType.greedyString())
+                            .executes(ctx -> modSettingsSet(
+                                ctx.getSource(),
+                                StringArgumentType.getString(ctx, "key"),
+                                StringArgumentType.getString(ctx, "value")
+                            )))))
+                .then(ClientCommandManager.argument("key", StringArgumentType.word())
+                    .executes(ctx -> modSettingsShow(ctx.getSource(), StringArgumentType.getString(ctx, "key"))))
         ));
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
@@ -108,7 +142,7 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
     }
 
     private static int loadModule(FabricClientCommandSource source, String postId, String file) {
-        RuntimeResult result = RUNTIME.handleLoadModule(postId, file, null, new FabricBridge(source));
+        RuntimeResult result = runtime().handleLoadModule(postId, file, null, new FabricBridge(source));
         if (result.ok()) {
             source.sendFeedback(Text.literal(result.message()));
             return 1;
@@ -118,7 +152,7 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
     }
 
     private static int runMldsl(FabricClientCommandSource source, String postId, String config) {
-        RuntimeResult result = RUNTIME.handleRun(postId, config, new FabricBridge(source));
+        RuntimeResult result = runtime().handleRun(postId, config, new FabricBridge(source));
         if (result.ok()) {
             source.sendFeedback(Text.literal(result.message()));
             return 1;
@@ -128,7 +162,7 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
     }
 
     private static int confirmLoad(FabricClientCommandSource source) {
-        RuntimeResult result = RUNTIME.handleConfirmLoad(new FabricBridge(source));
+        RuntimeResult result = runtime().handleConfirmLoad(new FabricBridge(source));
         if (result.ok()) {
             source.sendFeedback(Text.literal(result.message()));
             return 1;
@@ -138,7 +172,7 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
     }
 
     private static int publishModule(FabricClientCommandSource source) {
-        RuntimeResult result = RUNTIME.handlePublish(new FabricBridge(source));
+        RuntimeResult result = runtime().handlePublish(new FabricBridge(source));
         if (result.ok()) {
             source.sendFeedback(Text.literal(result.message()));
             return 1;
@@ -247,6 +281,124 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
 
     private static Path defaultPlanPath() {
         return runDir().resolve("plan.json");
+    }
+
+    private static ModSettingsService settings() {
+        ModSettingsService s = SETTINGS;
+        if (s != null) {
+            return s;
+        }
+        synchronized (BetterCodeFabric120.class) {
+            if (SETTINGS == null) {
+                SETTINGS = ModSettingsService.createDefault(runDir());
+            }
+            return SETTINGS;
+        }
+    }
+
+    private static RuntimeCore runtime() {
+        RuntimeCore r = RUNTIME;
+        if (r != null) {
+            return r;
+        }
+        synchronized (BetterCodeFabric120.class) {
+            if (RUNTIME == null) {
+                RUNTIME = new RuntimeCore(new FabricCoreLogger(), settings());
+            }
+            return RUNTIME;
+        }
+    }
+
+    private static int modSettingsList(FabricClientCommandSource source) {
+        source.sendFeedback(Text.literal("§b[modsettings] list"));
+        for (SettingDef d : settings().defs().values()) {
+            source.sendFeedback(settingLine(d));
+        }
+        return 1;
+    }
+
+    private static int modSettingsShow(FabricClientCommandSource source, String key) {
+        SettingDef d = settings().defs().get(key);
+        if (d == null) {
+            source.sendError(Text.literal("[modsettings] unknown key: " + key));
+            return 0;
+        }
+        source.sendFeedback(Text.literal("§b[modsettings] " + d.key() + " = " + formatValue(settings().getRaw(d.key()))));
+        source.sendFeedback(Text.literal("§7" + d.description()));
+        source.sendFeedback(settingControls(d));
+        return 1;
+    }
+
+    private static int modSettingsToggle(FabricClientCommandSource source, String key) {
+        String err = settings().toggle(key);
+        if (err != null) {
+            source.sendError(Text.literal("[modsettings] toggle failed: " + err));
+            return 0;
+        }
+        source.sendFeedback(Text.literal("[modsettings] " + key + " = " + formatValue(settings().getRaw(key))));
+        return 1;
+    }
+
+    private static int modSettingsInc(FabricClientCommandSource source, String key, int delta) {
+        String err = settings().increment(key, delta);
+        if (err != null) {
+            source.sendError(Text.literal("[modsettings] inc failed: " + err));
+            return 0;
+        }
+        source.sendFeedback(Text.literal("[modsettings] " + key + " = " + formatValue(settings().getRaw(key))));
+        return 1;
+    }
+
+    private static int modSettingsSet(FabricClientCommandSource source, String key, String value) {
+        String err = settings().setFromString(key, value);
+        if (err != null) {
+            source.sendError(Text.literal("[modsettings] set failed: " + err));
+            return 0;
+        }
+        source.sendFeedback(Text.literal("[modsettings] " + key + " = " + formatValue(settings().getRaw(key))));
+        return 1;
+    }
+
+    private static MutableText settingLine(SettingDef d) {
+        MutableText line = Text.literal("§e" + d.key() + "§7 = §f" + formatValue(settings().getRaw(d.key())) + " ");
+        line.append(settingControls(d));
+        return line;
+    }
+
+    private static MutableText settingControls(SettingDef d) {
+        if (d.type() == SettingType.BOOLEAN) {
+            MutableText t = Text.literal("");
+            t.append(clickToken("[ON]", "/modsettings set " + d.key() + " true"));
+            t.append(Text.literal(" "));
+            t.append(clickToken("[OFF]", "/modsettings set " + d.key() + " false"));
+            return t;
+        }
+        if (d.type() == SettingType.INTEGER) {
+            MutableText t = Text.literal("");
+            t.append(clickToken("[-10]", "/modsettings inc " + d.key() + " -10"));
+            t.append(Text.literal(" "));
+            t.append(clickToken("[-1]", "/modsettings inc " + d.key() + " -1"));
+            t.append(Text.literal(" "));
+            t.append(clickToken("[+1]", "/modsettings inc " + d.key() + " 1"));
+            t.append(Text.literal(" "));
+            t.append(clickToken("[+10]", "/modsettings inc " + d.key() + " 10"));
+            return t;
+        }
+        MutableText t = Text.literal("");
+        MutableText set = Text.literal("[SET]");
+        set.setStyle(Style.EMPTY.withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/modsettings set " + d.key() + " ")));
+        t.append(set);
+        return t;
+    }
+
+    private static MutableText clickToken(String label, String command) {
+        MutableText t = Text.literal(label);
+        t.setStyle(Style.EMPTY.withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command)));
+        return t;
+    }
+
+    private static String formatValue(Object v) {
+        return v == null ? "<null>" : String.valueOf(v);
     }
 
     private record SelectedBlock(String dimension, int x, int y, int z) { }
