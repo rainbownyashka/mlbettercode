@@ -442,8 +442,10 @@ public final class RuntimeCore {
                 continue;
             }
             if ("air".equals(low) || "minecraft:air".equals(low)) {
+                logger.info("printer-debug", "placeadvanced step=" + executed + " cmd=placeadvanced air");
                 if (!bridge.executeClientCommand("placeadvanced air")) {
-                    throw new IllegalStateException("command_exec:placeadvanced_air_failed");
+                    logger.error("printer-debug", "placeadvanced failed step=" + executed + " cmd=placeadvanced air");
+                    throw new IllegalStateException("command_exec:placeadvanced_air_failed step=" + executed + " cmd=placeadvanced air");
                 }
                 executed++;
                 i++;
@@ -456,8 +458,10 @@ public final class RuntimeCore {
             String name = args.get(i + 1);
             String arg = args.get(i + 2);
             String cmd = "placeadvanced " + quoteIfNeeded(block) + " " + quoteIfNeeded(name) + " " + quoteIfNeeded(arg);
+            logger.info("printer-debug", "placeadvanced step=" + executed + " cmd=" + cmd);
             if (!bridge.executeClientCommand(cmd)) {
-                throw new IllegalStateException("command_exec:placeadvanced_exec_failed");
+                logger.error("printer-debug", "placeadvanced failed step=" + executed + " cmd=" + cmd);
+                throw new IllegalStateException("command_exec:placeadvanced_exec_failed step=" + executed + " cmd=" + cmd);
             }
             executed++;
             i += 3;

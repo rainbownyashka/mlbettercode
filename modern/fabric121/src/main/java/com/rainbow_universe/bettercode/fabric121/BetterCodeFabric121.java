@@ -462,15 +462,23 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
         public boolean executeClientCommand(String command) {
             String raw = command == null ? "" : command.trim();
             if (raw.isEmpty()) {
+                System.err.println("[printer-debug] executeClientCommand: empty command");
                 return false;
             }
             if (CLIENT_DISPATCHER == null) {
+                System.err.println("[printer-debug] executeClientCommand: dispatcher is null for cmd=" + raw);
                 return false;
             }
             try {
                 int result = CLIENT_DISPATCHER.execute(raw, source);
+                if (result <= 0) {
+                    System.err.println("[printer-debug] executeClientCommand: non-positive result=" + result + " cmd=" + raw);
+                }
                 return result > 0;
             } catch (Exception e) {
+                System.err.println("[printer-debug] executeClientCommand: exception cmd=" + raw
+                    + " type=" + e.getClass().getSimpleName()
+                    + " msg=" + String.valueOf(e.getMessage()));
                 return false;
             }
         }
