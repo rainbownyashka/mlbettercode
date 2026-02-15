@@ -14904,55 +14904,67 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         MenuStep step = findMenuStep(gui, placeBlocksCurrent.searchKey);
         if (step == null)
         {
-            MenuStep preferred = findPreferredMenuScopeStep(gui, placeBlocksCurrent);
-            if (preferred != null)
+            boolean scopeRequired = placeBlocksCurrent.preferredMenuKey != null
+                && !placeBlocksCurrent.preferredMenuKey.isEmpty()
+                && !placeBlocksCurrent.preferredMenuResolved;
+            if (scopeRequired)
             {
-                if (debugUi && mc.player != null)
+                MenuStep preferred = findPreferredMenuScopeStep(gui, placeBlocksCurrent);
+                if (preferred != null)
                 {
-                    mc.player.sendMessage(new TextComponentString(
-                        "/place: scope-pick slot=" + preferred.slotNumber + " key=" + placeBlocksCurrent.preferredMenuKey));
-                }
-                try
-                {
-                    Slot s = gui.inventorySlots.getSlot(preferred.slotNumber);
-                    if (s != null)
+                    if (debugUi && mc.player != null)
                     {
-                        ItemStack st = s.getStack();
-                        if (st != null && !st.isEmpty())
-                        {
-                            lastClickedSlotStack = st.copy();
-                            lastClickedSlotNumber = preferred.slotNumber;
-                            lastClickedSlotMs = System.currentTimeMillis();
-                            lastClickedGuiClass = gui.getClass().getSimpleName();
-                            lastClickedGuiTitle = (gui instanceof GuiChest) ? getGuiTitle((GuiChest) gui) : "";
-                        }
+                        mc.player.sendMessage(new TextComponentString(
+                            "/place: scope-pick slot=" + preferred.slotNumber + " key=" + placeBlocksCurrent.preferredMenuKey));
                     }
-                }
-                catch (Exception ignore) { }
-                queuedClicks.add(new ClickAction(preferred.slotNumber, 0, ClickType.PICKUP));
-                placeBlocksCurrent.triedSlots.add(preferred.slotNumber);
-                try
-                {
-                    Slot s = gui.inventorySlots.getSlot(preferred.slotNumber);
-                    if (s != null)
+                    try
                     {
-                        ItemStack st = s.getStack();
-                        if (st != null && !st.isEmpty())
+                        Slot s = gui.inventorySlots.getSlot(preferred.slotNumber);
+                        if (s != null)
                         {
-                            String k = normalizeForMatch(getItemNameKey(st));
-                            if (!k.isEmpty())
+                            ItemStack st = s.getStack();
+                            if (st != null && !st.isEmpty())
                             {
-                                placeBlocksCurrent.triedItemKeys.add(k);
+                                lastClickedSlotStack = st.copy();
+                                lastClickedSlotNumber = preferred.slotNumber;
+                                lastClickedSlotMs = System.currentTimeMillis();
+                                lastClickedGuiClass = gui.getClass().getSimpleName();
+                                lastClickedGuiTitle = (gui instanceof GuiChest) ? getGuiTitle((GuiChest) gui) : "";
                             }
                         }
                     }
+                    catch (Exception ignore) { }
+                    queuedClicks.add(new ClickAction(preferred.slotNumber, 0, ClickType.PICKUP));
+                    placeBlocksCurrent.triedSlots.add(preferred.slotNumber);
+                    try
+                    {
+                        Slot s = gui.inventorySlots.getSlot(preferred.slotNumber);
+                        if (s != null)
+                        {
+                            ItemStack st = s.getStack();
+                            if (st != null && !st.isEmpty())
+                            {
+                                String k = normalizeForMatch(getItemNameKey(st));
+                                if (!k.isEmpty())
+                                {
+                                    placeBlocksCurrent.triedItemKeys.add(k);
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ignore) { }
+                    placeBlocksCurrent.menuClicksSinceOpen++;
+                    placeBlocksCurrent.lastMenuClickMs = nowMs;
+                    placeBlocksCurrent.lastMenuWindowId = windowId;
+                    placeBlocksCurrent.nextMenuActionMs = nowMs + 220L;
+                    placeBlocksCurrent.menuStartMs = nowMs;
+                    placeBlocksCurrent.preferredMenuResolved = true;
+                    return;
                 }
-                catch (Exception ignore) { }
-                placeBlocksCurrent.menuClicksSinceOpen++;
-                placeBlocksCurrent.lastMenuClickMs = nowMs;
-                placeBlocksCurrent.lastMenuWindowId = windowId;
-                placeBlocksCurrent.nextMenuActionMs = nowMs + 220L;
-                placeBlocksCurrent.menuStartMs = nowMs;
+
+                // Do not use random fallback before scope selection for conditional branches.
+                setActionBar(false, "&c/place: scope menu not found: " + placeBlocksCurrent.preferredMenuKey, 3000L);
+                abortPlaceBlocks("scope_menu_not_found");
                 return;
             }
 
