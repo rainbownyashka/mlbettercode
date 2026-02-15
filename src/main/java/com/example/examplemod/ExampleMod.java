@@ -14904,6 +14904,58 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         MenuStep step = findMenuStep(gui, placeBlocksCurrent.searchKey);
         if (step == null)
         {
+            MenuStep preferred = findPreferredMenuScopeStep(gui, placeBlocksCurrent);
+            if (preferred != null)
+            {
+                if (debugUi && mc.player != null)
+                {
+                    mc.player.sendMessage(new TextComponentString(
+                        "/place: scope-pick slot=" + preferred.slotNumber + " key=" + placeBlocksCurrent.preferredMenuKey));
+                }
+                try
+                {
+                    Slot s = gui.inventorySlots.getSlot(preferred.slotNumber);
+                    if (s != null)
+                    {
+                        ItemStack st = s.getStack();
+                        if (st != null && !st.isEmpty())
+                        {
+                            lastClickedSlotStack = st.copy();
+                            lastClickedSlotNumber = preferred.slotNumber;
+                            lastClickedSlotMs = System.currentTimeMillis();
+                            lastClickedGuiClass = gui.getClass().getSimpleName();
+                            lastClickedGuiTitle = (gui instanceof GuiChest) ? getGuiTitle((GuiChest) gui) : "";
+                        }
+                    }
+                }
+                catch (Exception ignore) { }
+                queuedClicks.add(new ClickAction(preferred.slotNumber, 0, ClickType.PICKUP));
+                placeBlocksCurrent.triedSlots.add(preferred.slotNumber);
+                try
+                {
+                    Slot s = gui.inventorySlots.getSlot(preferred.slotNumber);
+                    if (s != null)
+                    {
+                        ItemStack st = s.getStack();
+                        if (st != null && !st.isEmpty())
+                        {
+                            String k = normalizeForMatch(getItemNameKey(st));
+                            if (!k.isEmpty())
+                            {
+                                placeBlocksCurrent.triedItemKeys.add(k);
+                            }
+                        }
+                    }
+                }
+                catch (Exception ignore) { }
+                placeBlocksCurrent.menuClicksSinceOpen++;
+                placeBlocksCurrent.lastMenuClickMs = nowMs;
+                placeBlocksCurrent.lastMenuWindowId = windowId;
+                placeBlocksCurrent.nextMenuActionMs = nowMs + 220L;
+                placeBlocksCurrent.menuStartMs = nowMs;
+                return;
+            }
+
             // Random exploration fallback: click unseen items until the target appears.
             if (placeBlocksCurrent.randomClicks > 250)
             {
@@ -15430,6 +15482,81 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
         }
         return false;
+    }
+
+    private MenuStep findPreferredMenuScopeStep(GuiContainer gui, PlaceEntry entry)
+    {
+        if (gui == null || entry == null || entry.preferredMenuKey == null || entry.preferredMenuKey.isEmpty())
+        {
+            return null;
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null)
+        {
+            return null;
+        }
+        String keyNorm = normalizeForMatch(entry.preferredMenuKey);
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || slot.inventory == mc.player.inventory)
+            {
+                continue;
+            }
+            if (entry.triedSlots.contains(slot.slotNumber))
+            {
+                continue;
+            }
+            ItemStack stack = slot.getStack();
+            if (stack == null || stack.isEmpty())
+            {
+                continue;
+            }
+            String slotName = normalizeForMatch(getItemNameKey(stack));
+            if (!slotName.isEmpty() && slotName.contains(keyNorm))
+            {
+                return new MenuStep(slot.slotNumber, false);
+            }
+        }
+        return null;
+    }
+
+    private static String[] splitSearchPath(String raw)
+    {
+        if (raw == null)
+        {
+            return new String[] { "", "" };
+        }
+        String s = raw.trim();
+        int idx = s.indexOf("||");
+        if (idx < 0)
+        {
+            return new String[] { s, "" };
+        }
+        String left = s.substring(0, idx).trim();
+        String right = s.substring(idx + 2).trim();
+        return new String[] { left, right };
+    }
+
+    private String resolvePreferredScopeMenuKey(String scopeHintRaw)
+    {
+        String scopeHint = normalizeForMatch(scopeHintRaw);
+        if (scopeHint.isEmpty())
+        {
+            return null;
+        }
+        if (scopeHint.contains("игрок по условию"))
+        {
+            return "выбрать игроков по условию";
+        }
+        if (scopeHint.contains("моб по условию"))
+        {
+            return "выбрать мобов по условию";
+        }
+        if (scopeHint.contains("сущность по условию"))
+        {
+            return "выбрать сущности по условию";
+        }
+        return null;
     }
 
     private String parseLogicChain(World world, BlockPos glassPos)
@@ -16059,10 +16186,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
             BlockPos target = glass.add(-2 * p, 1, 0);
             String search = nameTok == null ? "" : nameTok.trim();
-            String norm = normalizeForMatch(search);
+            String[] searchParts = splitSearchPath(search);
+            String primarySearch = searchParts[0];
+            String scopeHint = searchParts[1];
+            String norm = normalizeForMatch(primarySearch.isEmpty() ? search : primarySearch);
 
             PlaceEntry entry = new PlaceEntry(target, b, norm);
             entry.searchKey = norm;
+            entry.preferredMenuKey = resolvePreferredScopeMenuKey(scopeHint);
             entry.desiredSlotIndex = -1;
 
             if (argsTok != null)

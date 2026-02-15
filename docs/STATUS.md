@@ -105,6 +105,11 @@
   - recognizes `postId` as `mldsl_modules/<postId>/plan.json` lookup path,
   - shows explicit guidance to run `/loadmodule <postId>` when module isn't downloaded,
   - parse error now includes exception message tail for quicker diagnostics.
+- Legacy 1.12 place-menu deterministic scope pick (temporary hardcode):
+  - for `...||Игрок по условию` / `...||Моб по условию` / `...||Сущность по условию` names in `placeadvanced`,
+    menu navigation now first clicks corresponding scope items:
+    `Выбрать игроков по условию`, `Выбрать мобов по условию`, `Выбрать сущности по условию`,
+    reducing random fallback misroutes in purple-condition blocks.
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:

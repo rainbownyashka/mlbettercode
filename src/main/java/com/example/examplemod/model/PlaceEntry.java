@@ -17,6 +17,8 @@ public class PlaceEntry
     public BlockPos pos;
     public Block block;
     public String searchKey;
+    // Optional forced scope selector for "X по условию" menus.
+    public String preferredMenuKey;
     public int desiredSlotIndex;
     public boolean placedBlock;
     public boolean awaitingMenu;
@@ -99,6 +101,7 @@ public class PlaceEntry
         this.pos = pos;
         this.block = block;
         this.searchKey = null;
+        this.preferredMenuKey = null;
         this.desiredSlotIndex = -1;
         this.placedBlock = false;
         this.awaitingMenu = false;
@@ -160,6 +163,7 @@ public class PlaceEntry
         this.pos = pos;
         this.block = block;
         this.searchKey = searchKey;
+        this.preferredMenuKey = null;
         this.desiredSlotIndex = -1;
         this.placedBlock = false;
         this.awaitingMenu = false;
