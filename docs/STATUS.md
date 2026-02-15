@@ -110,6 +110,10 @@
     menu navigation now first clicks corresponding scope items:
     `Выбрать игроков по условию`, `Выбрать мобов по условию`, `Выбрать сущности по условию`,
     and aborts explicitly if scope menu item/target action is not found (no random fallback in scope-routed flow).
+  - fixed execution path mismatch: scope-routing is now implemented in active place pipeline
+    (`feature/place/PlaceModule` + `feature/place/PlaceGuiHandler`), not only in legacy host file.
+  - added explicit logs for diagnostics:
+    `PLACE_SCOPE_REQUIRED`, `PLACE_SCOPE_PICK`, `PLACE_SCOPE_ABORT`.
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:

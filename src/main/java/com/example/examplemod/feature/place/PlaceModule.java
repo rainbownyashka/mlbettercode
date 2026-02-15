@@ -154,9 +154,13 @@ public final class PlaceModule
             }
             BlockPos target = glass.add(-2 * p, 1, 0);
             String search = nameTok == null ? "" : nameTok.trim();
-            String norm = host.normalizeForMatch(search);
+            String[] searchParts = splitSearchPath(search);
+            String primarySearch = searchParts[0];
+            String scopeHint = searchParts[1];
+            String norm = host.normalizeForMatch(primarySearch.isEmpty() ? search : primarySearch);
 
             PlaceEntry entry = new PlaceEntry(target, b, norm);
+            entry.preferredMenuKey = resolvePreferredScopeMenuKey(host, scopeHint);
 
             // Special blocks:
             // - lapis_block: Function (name is set by right-clicking its sign with a TEXT item in hand)
@@ -195,6 +199,45 @@ public final class PlaceModule
         state.active = !state.queue.isEmpty();
         state.current = null;
         host.setActionBar(true, "&a/placeadvanced queued=" + state.queue.size(), 2000L);
+    }
+
+    private static String[] splitSearchPath(String raw)
+    {
+        if (raw == null)
+        {
+            return new String[] { "", "" };
+        }
+        String s = raw.trim();
+        int idx = s.indexOf("||");
+        if (idx < 0)
+        {
+            return new String[] { s, "" };
+        }
+        String left = s.substring(0, idx).trim();
+        String right = s.substring(idx + 2).trim();
+        return new String[] { left, right };
+    }
+
+    private static String resolvePreferredScopeMenuKey(PlaceModuleHost host, String scopeHintRaw)
+    {
+        String scopeHint = host.normalizeForMatch(scopeHintRaw);
+        if (scopeHint.isEmpty())
+        {
+            return null;
+        }
+        if (scopeHint.contains("игрок по условию"))
+        {
+            return "выбрать игроков по условию";
+        }
+        if (scopeHint.contains("моб по условию"))
+        {
+            return "выбрать мобов по условию";
+        }
+        if (scopeHint.contains("сущность по условию"))
+        {
+            return "выбрать сущности по условию";
+        }
+        return null;
     }
 
     /**

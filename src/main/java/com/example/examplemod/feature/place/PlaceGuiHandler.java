@@ -188,6 +188,57 @@ final class PlaceGuiHandler
         MenuStep step = findMenuStep(host, gui, entry.searchKey);
         if (step == null)
         {
+            boolean hasScopeRouting = entry.preferredMenuKey != null && !entry.preferredMenuKey.isEmpty();
+            boolean scopeRequired = hasScopeRouting && !entry.preferredMenuResolved;
+            if (scopeRequired)
+            {
+                MenuStep preferred = findPreferredMenuScopeStep(host, gui, entry);
+                LOGGER.info("PLACE_SCOPE_REQUIRED key={} found={}", entry.preferredMenuKey, preferred != null);
+                if (preferred != null)
+                {
+                    host.queueClick(new ClickAction(preferred.slotNumber, 0, ClickType.PICKUP));
+                    entry.triedSlots.add(preferred.slotNumber);
+                    try
+                    {
+                        Slot s = gui.inventorySlots.getSlot(preferred.slotNumber);
+                        if (s != null)
+                        {
+                            ItemStack st = s.getStack();
+                            if (st != null && !st.isEmpty())
+                            {
+                                String k = host.normalizeForMatch(host.getItemNameKey(st));
+                                if (!k.isEmpty())
+                                {
+                                    entry.triedItemKeys.add(k);
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ignore) { }
+                    entry.lastMenuClickMs = nowMs;
+                    entry.lastMenuWindowId = windowId;
+                    entry.nextMenuActionMs = nowMs + host.placeDelayMs(220L);
+                    entry.menuClicksSinceOpen++;
+                    entry.menuStartMs = nowMs;
+                    entry.preferredMenuResolved = true;
+                    LOGGER.info("PLACE_SCOPE_PICK key={} slot={}", entry.preferredMenuKey, preferred.slotNumber);
+                    return;
+                }
+                host.setActionBar(false, "&c/place: scope menu not found: " + entry.preferredMenuKey, 3000L);
+                LOGGER.info("PLACE_SCOPE_ABORT reason=scope_menu_not_found key={}", entry.preferredMenuKey);
+                abort(host, state, "scope_menu_not_found");
+                return;
+            }
+
+            if (hasScopeRouting)
+            {
+                host.setActionBar(false, "&c/place: target not found after scope: " + entry.searchKey, 3200L);
+                LOGGER.info("PLACE_SCOPE_ABORT reason=scope_target_not_found key={} searchKey={}",
+                    entry.preferredMenuKey, entry.searchKey);
+                abort(host, state, "scope_target_not_found");
+                return;
+            }
+
             if (entry.randomClicks > 250)
             {
                 host.setActionBar(false, "&c/place: random search exhausted", 2500L);
@@ -359,6 +410,46 @@ final class PlaceGuiHandler
         }
         Slot chosen = candidates.get((int) (Math.random() * candidates.size()));
         return new MenuStep(chosen.slotNumber, false);
+    }
+
+    private static MenuStep findPreferredMenuScopeStep(PlaceModuleHost host, GuiContainer gui, PlaceEntry entry)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (host == null || gui == null || entry == null || mc == null || mc.player == null)
+        {
+            return null;
+        }
+        if (entry.preferredMenuKey == null || entry.preferredMenuKey.isEmpty())
+        {
+            return null;
+        }
+        String keyNorm = host.normalizeForMatch(entry.preferredMenuKey);
+        if (keyNorm.isEmpty())
+        {
+            return null;
+        }
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || slot.inventory == mc.player.inventory)
+            {
+                continue;
+            }
+            if (entry.triedSlots.contains(slot.slotNumber))
+            {
+                continue;
+            }
+            ItemStack stack = slot.getStack();
+            if (stack == null || stack.isEmpty())
+            {
+                continue;
+            }
+            String slotName = host.normalizeForMatch(host.getItemNameKey(stack));
+            if (!slotName.isEmpty() && slotName.contains(keyNorm))
+            {
+                return new MenuStep(slot.slotNumber, false);
+            }
+        }
+        return null;
     }
 
     private static MenuStep findMenuStep(PlaceModuleHost host, GuiContainer gui, String searchKey)
