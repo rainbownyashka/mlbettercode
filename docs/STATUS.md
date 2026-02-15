@@ -109,7 +109,7 @@
   - for `...||Игрок по условию` / `...||Моб по условию` / `...||Сущность по условию` names in `placeadvanced`,
     menu navigation now first clicks corresponding scope items:
     `Выбрать игроков по условию`, `Выбрать мобов по условию`, `Выбрать сущности по условию`,
-    and aborts explicitly if scope menu item is not present (no random fallback for this step).
+    and aborts explicitly if scope menu item/target action is not found (no random fallback in scope-routed flow).
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:

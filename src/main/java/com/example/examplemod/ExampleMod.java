@@ -14904,9 +14904,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         MenuStep step = findMenuStep(gui, placeBlocksCurrent.searchKey);
         if (step == null)
         {
-            boolean scopeRequired = placeBlocksCurrent.preferredMenuKey != null
-                && !placeBlocksCurrent.preferredMenuKey.isEmpty()
-                && !placeBlocksCurrent.preferredMenuResolved;
+            boolean hasScopeRouting = placeBlocksCurrent.preferredMenuKey != null
+                && !placeBlocksCurrent.preferredMenuKey.isEmpty();
+            boolean scopeRequired = hasScopeRouting && !placeBlocksCurrent.preferredMenuResolved;
             if (scopeRequired)
             {
                 MenuStep preferred = findPreferredMenuScopeStep(gui, placeBlocksCurrent);
@@ -14965,6 +14965,15 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 // Do not use random fallback before scope selection for conditional branches.
                 setActionBar(false, "&c/place: scope menu not found: " + placeBlocksCurrent.preferredMenuKey, 3000L);
                 abortPlaceBlocks("scope_menu_not_found");
+                return;
+            }
+
+            if (hasScopeRouting)
+            {
+                // Deterministic safety: once conditional routing is enabled, never random-click.
+                // If target is not found after scope selection, abort explicitly instead of risking wrong branch.
+                setActionBar(false, "&c/place: target not found after scope: " + placeBlocksCurrent.searchKey, 3200L);
+                abortPlaceBlocks("scope_target_not_found");
                 return;
             }
 
