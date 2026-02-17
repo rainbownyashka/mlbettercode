@@ -154,6 +154,10 @@
 - Legacy 1.12 client lighting debug toggle:
   - added `/disablelighting [on|off|toggle|info]` command to quickly switch ambient occlusion (AO),
   - intended as temporary client-side lag mitigation for heavy block-spam sessions (does not change server light packets).
+- Legacy 1.12 deferred lighting rebuild mode:
+  - `/disablelighting on` now enables deferred rebuild tracking for chunks touched by printer placements,
+  - while enabled, changed chunks are auto-rebuilt every 20 seconds,
+  - `/disablelighting off` flushes tracked changed chunks immediately and forces one renderer reload for visual resync.
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:

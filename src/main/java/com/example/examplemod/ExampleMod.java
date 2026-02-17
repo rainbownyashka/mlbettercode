@@ -231,6 +231,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private static final long CHEST_SNAPSHOT_MIN_INTERVAL_MS = 300L;
     private static final long CHEST_PAGE_LOG_RATE_MS = 1000L;
     private static final long CHEST_SNAPSHOT_METRICS_LOG_MS = 3000L;
+    private static final long DISABLE_LIGHTING_AUTO_REBUILD_MS = 20000L;
     private static final double CHEST_PREVIEW_RANGE = 15.0;
     private static final String EDIT_TEST_MARKER = "edit_test_ok";
     private static final String HOLO_LABEL = "DIRT";
@@ -372,6 +373,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
     private static boolean autoCodeCacheEnabled = false;
     private static int autoCodeCacheMaxSteps = 256;
+    private boolean disableLightingMode = false;
+    private long disableLightingLastAutoRebuildMs = 0L;
+    private final Set<Long> disableLightingDirtyChunks = new HashSet<>();
     private String signSearchQuery = null;
     private int signSearchDim = 0;
     private final List<BlockPos> signSearchMatches = new ArrayList<>();
@@ -2193,6 +2197,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             regAllPagingGraceUntilMs = now + REGALL_PAGING_GRACE_MS;
         }
         handleAutoChestCacheTick(mc, now);
+        handleDisableLightingTick(mc, now);
         checkConfigFileChanges();
         saveEntriesIfNeeded();
         saveMenuCacheIfNeeded();
@@ -2651,23 +2656,32 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         int ao = mc.gameSettings.ambientOcclusion;
         if ("info".equals(mode))
         {
-            setActionBar(true, "&eLighting(AO): " + (ao == 0 ? "OFF" : (ao == 1 ? "MIN" : "MAX")), 2800L);
+            long now = System.currentTimeMillis();
+            long leftMs = disableLightingMode ? Math.max(0L, DISABLE_LIGHTING_AUTO_REBUILD_MS - (now - disableLightingLastAutoRebuildMs)) : 0L;
+            setActionBar(true, "&eDisableLighting: " + (disableLightingMode ? "ON" : "OFF")
+                + " &7(AO=" + (ao == 0 ? "OFF" : (ao == 1 ? "MIN" : "MAX"))
+                + ", dirtyChunks=" + disableLightingDirtyChunks.size()
+                + (disableLightingMode ? ", nextAuto=" + (leftMs / 1000L) + "s" : "") + ")", 3200L);
             return;
         }
 
         int next;
+        boolean nextMode;
         if ("on".equals(mode) || "1".equals(mode) || "true".equals(mode))
         {
             // "on" means "disable lighting effects" for this debug command.
             next = 0;
+            nextMode = true;
         }
         else if ("off".equals(mode) || "0".equals(mode) || "false".equals(mode))
         {
             next = 2;
+            nextMode = false;
         }
         else if ("toggle".equals(mode))
         {
             next = (ao == 0) ? 2 : 0;
+            nextMode = !disableLightingMode;
         }
         else
         {
@@ -2675,15 +2689,101 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             return;
         }
 
+        if (nextMode && !disableLightingMode)
+        {
+            disableLightingLastAutoRebuildMs = System.currentTimeMillis();
+        }
+        disableLightingMode = nextMode;
+
         mc.gameSettings.ambientOcclusion = next;
         mc.gameSettings.saveOptions();
-        setActionBar(true, "&aLighting(AO): " + (next == 0 ? "OFF" : "ON"), 2500L);
+        if (!disableLightingMode)
+        {
+            flushDisableLightingDirtyChunks(mc, true);
+        }
+        setActionBar(true, "&aDisableLighting: " + (disableLightingMode ? "ON" : "OFF")
+            + " &7(AO " + (next == 0 ? "OFF" : "ON")
+            + ", dirtyChunks=" + disableLightingDirtyChunks.size() + ")", 2800L);
         if (mc.player != null)
         {
             mc.player.sendMessage(new TextComponentString(
                 TextFormatting.YELLOW + "disablelighting: "
-                    + (next == 0 ? "AO disabled (lighter client render)." : "AO enabled.")
-                    + TextFormatting.GRAY + " Server light packets are unaffected."));
+                    + (next == 0 ? "AO disabled + deferred chunk rebuild enabled." : "AO enabled.")
+                    + TextFormatting.GRAY + " Auto rebuild every 20s while ON; flush on OFF."));
+        }
+    }
+
+    private void handleDisableLightingTick(Minecraft mc, long now)
+    {
+        if (!disableLightingMode)
+        {
+            return;
+        }
+        if (mc == null || mc.world == null || mc.renderGlobal == null)
+        {
+            return;
+        }
+        if (now - disableLightingLastAutoRebuildMs < DISABLE_LIGHTING_AUTO_REBUILD_MS)
+        {
+            return;
+        }
+        disableLightingLastAutoRebuildMs = now;
+        flushDisableLightingDirtyChunks(mc, false);
+    }
+
+    private void flushDisableLightingDirtyChunks(Minecraft mc, boolean forceRenderReload)
+    {
+        if (mc == null || mc.renderGlobal == null)
+        {
+            disableLightingDirtyChunks.clear();
+            return;
+        }
+        if (disableLightingDirtyChunks.isEmpty())
+        {
+            if (forceRenderReload)
+            {
+                try
+                {
+                    mc.renderGlobal.loadRenderers();
+                }
+                catch (Exception ignore) { }
+            }
+            return;
+        }
+
+        int rebuilt = 0;
+        for (Long key : new ArrayList<>(disableLightingDirtyChunks))
+        {
+            if (key == null)
+            {
+                continue;
+            }
+            int cx = (int) (key.longValue() >> 32);
+            int cz = (int) (long) key.longValue();
+            int x1 = cx << 4;
+            int z1 = cz << 4;
+            try
+            {
+                mc.renderGlobal.markBlockRangeForRenderUpdate(x1, 0, z1, x1 + 15, 255, z1 + 15);
+                rebuilt++;
+            }
+            catch (Exception ignore) { }
+        }
+        disableLightingDirtyChunks.clear();
+
+        if (forceRenderReload)
+        {
+            try
+            {
+                mc.renderGlobal.loadRenderers();
+            }
+            catch (Exception ignore) { }
+        }
+        if (debugUi && mc.player != null)
+        {
+            mc.player.sendMessage(new TextComponentString(TextFormatting.GRAY
+                + "disablelighting: rebuilt changed chunks=" + rebuilt
+                + (forceRenderReload ? " (full reload)" : "")));
         }
     }
 
@@ -15989,7 +16089,18 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             placedBlockCacheByDimPos.put(key, v);
             codeCacheDirty = true;
+            trackDisableLightingDirtyChunk(entryPos);
         }
+    }
+
+    private void trackDisableLightingDirtyChunk(BlockPos pos)
+    {
+        if (!disableLightingMode || pos == null)
+        {
+            return;
+        }
+        long packed = (((long) (pos.getX() >> 4)) << 32) | (((long) (pos.getZ() >> 4)) & 0xFFFFFFFFL);
+        disableLightingDirtyChunks.add(packed);
     }
 
     @Override
