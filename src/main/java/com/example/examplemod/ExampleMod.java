@@ -8,6 +8,9 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelDuplexHandler;
+import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockPistonBase;
 import net.minecraft.block.BlockShulkerBox;
@@ -58,12 +61,16 @@ import net.minecraft.nbt.NBTTagList;
 import net.minecraft.nbt.NBTTagString;
 import net.minecraft.nbt.CompressedStreamTools;
 import net.minecraft.network.PacketBuffer;
+import net.minecraft.network.NetworkManager;
 import net.minecraft.network.play.client.CPacketHeldItemChange;
 import net.minecraft.network.play.client.CPacketPlayer;
 import net.minecraft.network.play.client.CPacketPlayerDigging;
 import net.minecraft.network.play.client.CPacketPlayerTryUseItemOnBlock;
 import net.minecraft.network.play.client.CPacketCreativeInventoryAction;
 import net.minecraft.network.play.client.CPacketCustomPayload;
+import net.minecraft.network.play.server.SPacketBlockChange;
+import net.minecraft.network.play.server.SPacketChunkData;
+import net.minecraft.network.play.server.SPacketMultiBlockChange;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.tileentity.TileEntityChest;
@@ -232,6 +239,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private static final long CHEST_PAGE_LOG_RATE_MS = 1000L;
     private static final long CHEST_SNAPSHOT_METRICS_LOG_MS = 3000L;
     private static final long DISABLE_LIGHTING_AUTO_REBUILD_MS = 20000L;
+    private static final String LIGHTSYNC_HARD_HANDLER = "bettercode_lightsync_hard";
     private static final double CHEST_PREVIEW_RANGE = 15.0;
     private static final String EDIT_TEST_MARKER = "edit_test_ok";
     private static final String HOLO_LABEL = "DIRT";
@@ -376,6 +384,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private boolean disableLightingMode = false;
     private long disableLightingLastAutoRebuildMs = 0L;
     private final Set<Long> disableLightingDirtyChunks = new HashSet<>();
+    private boolean lightSyncHardMode = false;
+    private long lightSyncHardDroppedPackets = 0L;
+    private long lightSyncHardLastWarnMs = 0L;
     private String signSearchQuery = null;
     private int signSearchDim = 0;
     private final List<BlockPos> signSearchMatches = new ArrayList<>();
@@ -2198,6 +2209,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         handleAutoChestCacheTick(mc, now);
         handleDisableLightingTick(mc, now);
+        handleLightSyncHardTick(mc);
         checkConfigFileChanges();
         saveEntriesIfNeeded();
         saveMenuCacheIfNeeded();
@@ -2600,6 +2612,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("disablelighting",
             "/disablelighting [on|off|toggle|info] - toggle client smooth lighting (AO) for heavy block-spam scenes",
             this::runDisableLightingCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("lightsync",
+            "/lightsync [on|off|toggle|info] - hard mode: drop incoming chunk/block sync packets (risky)",
+            this::runLightSyncCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("cacheallchests",
             "/cacheallchests [stop]", this::runCacheAllChestsCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("place",
@@ -2711,6 +2726,166 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     + (next == 0 ? "AO disabled + deferred chunk rebuild enabled." : "AO enabled.")
                     + TextFormatting.GRAY + " Auto rebuild every 20s while ON; flush on OFF."));
         }
+    }
+
+    private void runLightSyncCommand(MinecraftServer server, ICommandSender sender, String[] args)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null)
+        {
+            setActionBar(false, "&cNo client", 2000L);
+            return;
+        }
+
+        String mode = (args != null && args.length > 0 && args[0] != null)
+            ? args[0].trim().toLowerCase(Locale.ROOT)
+            : "toggle";
+        if ("info".equals(mode))
+        {
+            setActionBar(true, "&eLightSyncHard: " + (lightSyncHardMode ? "OFF(sync disabled)" : "ON(sync enabled)")
+                + " &7dropped=" + lightSyncHardDroppedPackets, 3500L);
+            return;
+        }
+
+        boolean next;
+        if ("off".equals(mode) || "0".equals(mode) || "false".equals(mode))
+        {
+            // "off" means sync off (hard mode active).
+            next = true;
+        }
+        else if ("on".equals(mode) || "1".equals(mode) || "true".equals(mode))
+        {
+            next = false;
+        }
+        else if ("toggle".equals(mode))
+        {
+            next = !lightSyncHardMode;
+        }
+        else
+        {
+            setActionBar(false, "&cUsage: /lightsync [on|off|toggle|info]", 3000L);
+            return;
+        }
+
+        lightSyncHardMode = next;
+        handleLightSyncHardTick(mc);
+
+        if (!lightSyncHardMode)
+        {
+            try
+            {
+                if (mc.renderGlobal != null)
+                {
+                    mc.renderGlobal.loadRenderers();
+                }
+            }
+            catch (Exception ignore) { }
+        }
+
+        setActionBar(true, "&aLightSync: " + (lightSyncHardMode ? "HARD-OFF (dropping packets)" : "ON"), 3200L);
+        if (mc.player != null)
+        {
+            mc.player.sendMessage(new TextComponentString(
+                TextFormatting.YELLOW + "lightsync: " + (lightSyncHardMode ? "OFF (hard mode)." : "ON.")
+                    + TextFormatting.RED + (lightSyncHardMode
+                    ? " Risk: chunk/block desync artifacts until server resends updates."
+                    : " Resync requested (renderer reload).")
+                    + TextFormatting.GRAY + " droppedPackets=" + lightSyncHardDroppedPackets));
+        }
+    }
+
+    private void handleLightSyncHardTick(Minecraft mc)
+    {
+        if (mc == null || mc.getConnection() == null)
+        {
+            return;
+        }
+        Channel channel = resolveConnectionChannel(mc);
+        if (channel == null)
+        {
+            return;
+        }
+        try
+        {
+            if (lightSyncHardMode)
+            {
+                if (channel.pipeline().get(LIGHTSYNC_HARD_HANDLER) == null)
+                {
+                    channel.pipeline().addBefore("packet_handler", LIGHTSYNC_HARD_HANDLER, new ChannelDuplexHandler()
+                    {
+                        @Override
+                        public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception
+                        {
+                            if (lightSyncHardMode
+                                && (msg instanceof SPacketChunkData
+                                || msg instanceof SPacketBlockChange
+                                || msg instanceof SPacketMultiBlockChange))
+                            {
+                                lightSyncHardDroppedPackets++;
+                                long now = System.currentTimeMillis();
+                                if (debugUi && mc.player != null && now - lightSyncHardLastWarnMs > 2000L)
+                                {
+                                    lightSyncHardLastWarnMs = now;
+                                    mc.player.sendMessage(new TextComponentString(TextFormatting.RED
+                                        + "lightsync hard: dropped " + msg.getClass().getSimpleName()
+                                        + " total=" + lightSyncHardDroppedPackets));
+                                }
+                                return;
+                            }
+                            super.channelRead(ctx, msg);
+                        }
+                    });
+                }
+            }
+            else
+            {
+                if (channel.pipeline().get(LIGHTSYNC_HARD_HANDLER) != null)
+                {
+                    channel.pipeline().remove(LIGHTSYNC_HARD_HANDLER);
+                }
+            }
+        }
+        catch (Exception ignore) { }
+    }
+
+    private Channel resolveConnectionChannel(Minecraft mc)
+    {
+        if (mc == null || mc.getConnection() == null)
+        {
+            return null;
+        }
+        try
+        {
+            NetworkManager nm = mc.getConnection().getNetworkManager();
+            if (nm == null)
+            {
+                return null;
+            }
+            try
+            {
+                java.lang.reflect.Field f = NetworkManager.class.getDeclaredField("channel");
+                f.setAccessible(true);
+                Object ch = f.get(nm);
+                if (ch instanceof Channel)
+                {
+                    return (Channel) ch;
+                }
+            }
+            catch (Exception ignored) { }
+            try
+            {
+                java.lang.reflect.Field f = NetworkManager.class.getDeclaredField("field_150746_k");
+                f.setAccessible(true);
+                Object ch = f.get(nm);
+                if (ch instanceof Channel)
+                {
+                    return (Channel) ch;
+                }
+            }
+            catch (Exception ignored) { }
+        }
+        catch (Exception ignore) { }
+        return null;
     }
 
     private void handleDisableLightingTick(Minecraft mc, long now)

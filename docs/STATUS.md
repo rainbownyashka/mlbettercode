@@ -158,6 +158,10 @@
   - `/disablelighting on` now enables deferred rebuild tracking for chunks touched by printer placements,
   - while enabled, changed chunks are auto-rebuilt every 20 seconds,
   - `/disablelighting off` flushes tracked changed chunks immediately and forces one renderer reload for visual resync.
+- Legacy 1.12 hard light sync cut-off mode:
+  - added `/lightsync [on|off|toggle|info]` for aggressive client-side packet filtering in heavy light-spam scenes,
+  - `off` enables hard mode and drops incoming `SPacketChunkData`/`SPacketBlockChange`/`SPacketMultiBlockChange`,
+  - `on` disables hard mode and requests renderer reload; this mode is intentionally risky and may cause temporary desync artifacts.
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:
