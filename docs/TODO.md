@@ -36,6 +36,14 @@ Format: `id | task | priority | owner | needs_user_test | state | links`
 - MOD-040 | Improve legacy 1.12 `/mldsl` path/config parsing (`postId` lookup in `mldsl_modules`, quoted path with spaces, clearer missing-module error) | P1 | agent | yes | done | src/main/java/com/example/examplemod/feature/mldsl/MlDslModule.java
 - MOD-041 | Replace temporary hardcoded scope-menu routing for `Игрок/Моб/Сущность по условию` with full deterministic menu-path model (no random fallback dependence) | P0 | agent | yes | in_progress | src/main/java/com/example/examplemod/ExampleMod.java
 - MOD-042 | Ensure scope-routing fixes land in active place pipeline classes (`feature/place/*`) + add persistent scope debug logs | P0 | agent | yes | done | src/main/java/com/example/examplemod/feature/place/PlaceModule.java, src/main/java/com/example/examplemod/feature/place/PlaceGuiHandler.java
+- MOD-043 | VSCode helper: prefer dev `mldsl_cli.py` over installed `mldsl.exe` when present, with explicit compiler source logging | P1 | agent | yes | done | tools/mldsl-vscode/extension.js
+- MOD-044 | VSCode helper: restore status bar shortcuts for compile/plan/publish in `.mldsl` editor | P1 | agent | yes | done | tools/mldsl-vscode/extension.js
+- MOD-045 | VSCode helper: move compile/plan/publish actions to editor title bar and remove bottom status bar duplicates | P1 | agent | yes | done | tools/mldsl-vscode/package.json, tools/mldsl-vscode/extension.js
+- MOD-046 | VSCode helper: fix `select.ifplayer/ifmob/ifentity` autocomplete scope filtering + alias bridges (`переменная_равна`, `держит`) | P1 | agent | yes | done | tools/mldsl-vscode/extension.js
+- MOD-047 | VSCode helper: fix completion crash `moduleAliases is not defined` and restore full select hint set (`ifentity`) | P0 | agent | yes | done | tools/mldsl-vscode/extension.js
+- MOD-048 | VSCode helper: remove `Compile And Copy` from editor title actions (leave `Plan` + `Publish`) | P1 | agent | yes | done | tools/mldsl-vscode/package.json
+- MOD-049 | Normalize legacy `skip/air` triplet tokens in active 1.12 plan parser to prevent block placement on control steps | P0 | agent | yes | done | src/main/java/com/example/examplemod/feature/place/PlaceModule.java
+- MOD-050 | Prevent chest auto-cache from interfering with active place printer (`/placeadvanced`, `/mldsl run`) | P0 | agent | yes | done | src/main/java/com/example/examplemod/ExampleMod.java
 - MOD-021 | Port legacy place args/data layer into modern core and wire parser diagnostics before GUI runtime migration | P0 | agent | no | done | modern/core/place, modern/core/RuntimeCore
 - MOD-022 | Port legacy item(...) spec parsing to platform-neutral core model and prepare adapter conversion path | P0 | agent | no | done | modern/core/place/ItemSpec, modern/core/place/PlaceArgsParser
 - MOD-023 | Introduce typed place entry plan builder in modern core (pre-step for PlaceState/tick GUI runtime port) | P0 | agent | no | done | modern/core/place/PlaceEntrySpec, modern/core/place/PlacePlanBuilder, modern/core/RuntimeCore
@@ -45,3 +53,4 @@ Format: `id | task | priority | owner | needs_user_test | state | links`
 - MOD-027 | De-duplicate Fabric command bridge code into shared core helper before GUI executor port | P1 | agent | no | done | modern/core/place/PlaceCommandBridgeUtil, modern/fabric1165, modern/fabric120, modern/fabric121
 - MOD-028 | Preserve `skip` as typed runtime operation (not command string) in modern core/executor path | P1 | agent | no | done | modern/core/PlaceOp, modern/core/place/PlaceEntrySpec, modern/core/place/PlacePlanBuilder, modern/core/RuntimeCore
 - MOD-029 пофиксить выборку. че та хардкод не помог
+- MOD-030 | Reduce legacy 1.12 tick lag on chest/sign cache scan (avoid dirty/write churn on unchanged cache entries + chest snapshot throttling/log rate-limit) | P0 | agent | yes | in_progress | src/main/java/com/example/examplemod/ExampleMod.java

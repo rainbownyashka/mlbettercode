@@ -77,6 +77,32 @@
   - `modern/fabric120`,
   - `modern/fabric121`,
   - `modern/forge1165` (bootstrap jar, Forge hooks pending).
+- VSCode helper compiler routing updated:
+ - Legacy 1.12 cache tick pressure reduced:
+  - `cachePlacedBlock` no longer marks cache dirty or rewrites maps when block id is unchanged.
+  - `cacheSignLines` no longer rewrites sign caches / marks dirty when sign lines are unchanged.
+  - chest snapshot tick path tuned:
+   - added min interval gate (`CHEST_SNAPSHOT_MIN_INTERVAL_MS`) for container snapshots in `onClientTick`,
+   - page merge now skips unchanged page hash (`chestPageLastMergedHash`),
+   - `CHEST_PAGE_*` logs are now debug-only + rate-limited per tag/key.
+  - prefers dev compiler entrypoint `mldsl_cli.py` (workspace / `Documents\\mlctmodified`) over installed `mldsl.exe` when available,
+  - supports explicit `pycli` run mode (`python mldsl_cli.py compile ...`) for `compile`, `plan`, and `publish`.
+- VSCode helper status bar controls restored for `.mldsl` editor:
+  - `MLDSL: Compile`
+  - `MLDSL: Plan`
+  - `MLDSL: Publish`
+- VSCode helper command placement adjusted:
+  - compile/plan/publish actions are now exposed in editor title bar (`editor/title`) for `.mldsl`,
+  - bottom status bar buttons removed to avoid duplicate/less-convenient placement.
+- VSCode helper select-completion improved:
+  - `select.ifplayer/ifmob/ifentity.*` suggestions are now domain-aware (`Игрок/Моб/Сущность по условию`),
+  - select suggestions include compiler-synced alias bridges (`переменная_равна`, `держит`) for matching `mldsl_compile.py` behavior.
+- VSCode helper completion runtime fix:
+  - fixed `ReferenceError: moduleAliases is not defined` in completion provider by moving alias map to shared module scope (`MODULE_ALIASES`),
+  - added missing `ifentity` hint branch in select completion suggestions.
+- VSCode helper UI adjustment:
+  - removed `Compile And Copy` action from editor title buttons;
+  - editor title now keeps only `Plan` and `Publish`.
 - Fabric 1.16.5 loader compatibility fix applied:
   - `fabric.mod.json` dependency switched from `fabric-api` to `fabric` for TL/Fabric Loader resolution.
 - Legacy `1.12.2` no-cache publish warmup anti-stall fix:
@@ -112,8 +138,16 @@
     and aborts explicitly if scope menu item/target action is not found (no random fallback in scope-routed flow).
   - fixed execution path mismatch: scope-routing is now implemented in active place pipeline
     (`feature/place/PlaceModule` + `feature/place/PlaceGuiHandler`), not only in legacy host file.
+  - `/mldsl run` plan queue now also propagates `expectedSign2` into scope-routing key (for `...||Игрок/Моб/Сущность по условию`).
   - added explicit logs for diagnostics:
     `PLACE_SCOPE_REQUIRED`, `PLACE_SCOPE_PICK`, `PLACE_SCOPE_ABORT`.
+- Legacy 1.12 `/mldsl run` skip-token normalization hardening:
+  - plan parser in active place pipeline now normalizes control tokens (`skip`/`air`/`newline`) before block parsing,
+  - supports legacy control triplet form (`skip "" no`, `air "" no`) without token shift,
+  - prevents accidental block placement attempts on skip steps in hub-run plans.
+- Legacy 1.12 printer/autocache isolation:
+  - chest auto-cache tick now stops immediately while place printer is active (`/placeadvanced`, `/mldsl run`),
+  - prevents autocache from opening unrelated chest GUIs and stealing click flow from runtime printing.
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:

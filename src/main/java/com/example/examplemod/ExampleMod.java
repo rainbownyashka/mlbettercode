@@ -228,6 +228,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private static final long EDITOR_MODE_GRACE_MS = 30000L;
     private static final int CHEST_CACHE_MAX = 256;
     private static final int CHEST_SNAPSHOT_TICK_INTERVAL = 5;
+    private static final long CHEST_SNAPSHOT_MIN_INTERVAL_MS = 300L;
+    private static final long CHEST_PAGE_LOG_RATE_MS = 1000L;
+    private static final long CHEST_SNAPSHOT_METRICS_LOG_MS = 3000L;
     private static final double CHEST_PREVIEW_RANGE = 15.0;
     private static final String EDIT_TEST_MARKER = "edit_test_ok";
     private static final String HOLO_LABEL = "DIRT";
@@ -249,7 +252,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private static boolean hubSwitchToMirror = false;
     // --- Auto chest cache settings (config) ---
     private static boolean chestCacheEnabled = true;
-    private static boolean autoCacheEnabled = false;
+    private static boolean autoCacheEnabled = true;
     private static boolean autoCacheGuiOpenEnabled = true;
     private static int autoCacheRadius = 6;
     private static boolean autoCacheTrappedOnly = true;
@@ -367,7 +370,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private final AtomicBoolean codeCacheSaveQueued = new AtomicBoolean(false);
     private long lastCodeCacheScanMs = 0L;
 
-    private static boolean autoCodeCacheEnabled = true;
+    private static boolean autoCodeCacheEnabled = false;
     private static int autoCodeCacheMaxSteps = 256;
     private String signSearchQuery = null;
     private int signSearchDim = 0;
@@ -465,6 +468,13 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private long allowChestUntilMs = 0L;
     private long lastChestSnapshotMs = 0L;
     private long lastChestSnapshotTick = -1L;
+    private final Map<String, String> chestPageLastMergedHash = new HashMap<>();
+    private final Map<String, Long> chestPageLogAt = new HashMap<>();
+    private long chestSnapshotCalls = 0L;
+    private long chestSnapshotSkips = 0L;
+    private long chestSnapshotHashUnchangedSkips = 0L;
+    private long chestSnapshotPageMergeCount = 0L;
+    private long chestSnapshotMetricsLastLogMs = 0L;
     // Multi-page chest snapshot state (export/publish warmup).
     private String chestPageScanKey = null;
     private int chestPageScanSize = 0;
@@ -1986,9 +1996,16 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 if (worldTick >= 0 && worldTick != lastChestSnapshotTick
                     && (worldTick % CHEST_SNAPSHOT_TICK_INTERVAL == 0))
                 {
-                    snapshotCurrentContainer((GuiContainer) mc.currentScreen);
-                    lastChestSnapshotMs = now;
-                    lastChestSnapshotTick = worldTick;
+                    if (now - lastChestSnapshotMs >= CHEST_SNAPSHOT_MIN_INTERVAL_MS)
+                    {
+                        snapshotCurrentContainer((GuiContainer) mc.currentScreen);
+                        lastChestSnapshotMs = now;
+                        lastChestSnapshotTick = worldTick;
+                    }
+                    else
+                    {
+                        chestSnapshotSkips++;
+                    }
                 }
             }
         }
@@ -2076,11 +2093,19 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 {
                     if (worldTick >= 0 && worldTick != lastChestSnapshotTick)
                     {
-                        GuiContainer screen = (GuiContainer) mc.currentScreen;
-                        if (screen != null)
+                        if (now - lastChestSnapshotMs >= CHEST_SNAPSHOT_MIN_INTERVAL_MS)
                         {
-                            snapshotCurrentContainer(screen);
-                            lastChestSnapshotTick = worldTick;
+                            GuiContainer screen = (GuiContainer) mc.currentScreen;
+                            if (screen != null)
+                            {
+                                snapshotCurrentContainer(screen);
+                                lastChestSnapshotMs = now;
+                                lastChestSnapshotTick = worldTick;
+                            }
+                        }
+                        else
+                        {
+                            chestSnapshotSkips++;
                         }
                     }
                     if (mc.currentScreen != null)
@@ -2095,8 +2120,16 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 {
                     if (worldTick >= 0 && worldTick != lastChestSnapshotTick)
                     {
-                        snapshotOpenContainer(mc.player.openContainer);
-                        lastChestSnapshotTick = worldTick;
+                        if (now - lastChestSnapshotMs >= CHEST_SNAPSHOT_MIN_INTERVAL_MS)
+                        {
+                            snapshotOpenContainer(mc.player.openContainer);
+                            lastChestSnapshotMs = now;
+                            lastChestSnapshotTick = worldTick;
+                        }
+                        else
+                        {
+                            chestSnapshotSkips++;
+                        }
                     }
                     pendingChestSnapshot = false;
                     lastSnapshotInfo = "snap:container=" + mc.player.openContainer.getClass().getSimpleName()
@@ -7261,6 +7294,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
     private void snapshotCurrentMenu(GuiChest chest)
     {
+        chestSnapshotCalls++;
         if (chest == null)
         {
             return;
@@ -7323,7 +7357,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         if (lastClickedChest && allowChestSnapshot && chestPos != null && size > 0)
         {
             String key = chestKey(chestDim, chestPos);
-            if (logger != null)
+            if (chestPageLogEnabled("state.enter", key, now))
             {
                 logger.info("CHEST_PAGE_STATE enter key={} dim={} pos={} size={} hash={} warmup={} autoAllow={} regAllActive={} regAllGrace={} graceMsLeft={} sessionAllowed={} await={} retry={} idx={}",
                     key, chestDim, chestPos, size, hash, modulePublishWarmupActive, autoCachePageTurnAllowed, regAllOwnsPaging,
@@ -7332,7 +7366,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
             if (chestPageScanKey == null || !chestPageScanKey.equals(key) || chestPageScanSize != size)
             {
-                if (logger != null)
+                if (chestPageLogEnabled("state.new_session", key, now))
                 {
                     logger.info("CHEST_PAGE_STATE new_session oldKey={} oldSize={} -> key={} size={} pageTurnAllowed={}",
                         chestPageScanKey, chestPageScanSize, key, size, pageTurnAllowed);
@@ -7347,7 +7381,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 chestPageSessionAllowed = true;
             }
             boolean effectivePageTurnAllowed = pageTurnAllowed || chestPageSessionAllowed;
-            if (logger != null)
+            if (chestPageLogEnabled("state.allow", key, now))
             {
                 logger.info("CHEST_PAGE_STATE allow key={} pageTurnAllowed={} sessionAllowed={} effective={} nextActionMs={} now={}",
                     key, pageTurnAllowed, chestPageSessionAllowed, effectivePageTurnAllowed, chestPageNextActionMs, now);
@@ -7358,7 +7392,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 chestPageAwaitStartMs = 0L;
                 chestPageRetryCount = 0;
                 chestPageNextActionMs = now;
-                if (logger != null)
+                if (chestPageLogEnabled("state.disabled", key, now))
                 {
                     logger.info("CHEST_PAGE_STATE disabled key={} -> reset await/retry/nextAction", key);
                 }
@@ -7380,7 +7414,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 catch (Exception ignore) { }
 
                 boolean changed = chestPageLastHash != null && !chestPageLastHash.equals(hash);
-                if (logger != null)
+                if (chestPageLogEnabled("await", key, now))
                 {
                     logger.info("CHEST_PAGE_AWAIT key={} cursorEmpty={} carried={} changed={} lastHash={} currentHash={} waitedMs={} timeoutMs={}",
                         chestPageScanKey, cursorEmpty, carriedReg, changed, chestPageLastHash, hash,
@@ -7392,35 +7426,53 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     chestPageAwaitCursorClear = false;
                     chestPageAwaitStartMs = 0L;
                     chestPageNextActionMs = now + 150L;
-                    if (logger != null) logger.info("CHEST_PAGE_CLICK switched key={} page={}", chestPageScanKey, chestPageScanIndex + 1);
+                    if (chestPageLogEnabled("click.switched", key, now)) logger.info("CHEST_PAGE_CLICK switched key={} page={}", chestPageScanKey, chestPageScanIndex + 1);
                     exportCodeDbg(mc, "chest-page: switched to page " + (chestPageScanIndex + 1) + " key=" + chestPageScanKey);
                 }
                 else if (now - chestPageAwaitStartMs > CHEST_PAGE_WAIT_TIMEOUT_MS)
                 {
                     chestPageAwaitCursorClear = false;
                     chestPageAwaitStartMs = 0L;
-                    if (logger != null) logger.info("CHEST_PAGE_CLICK wait_timeout key={} retry={}", chestPageScanKey, chestPageRetryCount);
+                    if (chestPageLogEnabled("click.wait_timeout", key, now)) logger.info("CHEST_PAGE_CLICK wait_timeout key={} retry={}", chestPageScanKey, chestPageRetryCount);
                     exportCodeDbg(mc, "chest-page: wait timeout key=" + chestPageScanKey + " retry=" + chestPageRetryCount);
                 }
             }
 
             if (!chestPageAwaitCursorClear)
             {
-                mergeChestPageToCache(chestDim, chestPos, size, chestPageScanIndex, items, chestLabel);
-                if (logger != null)
+                String mergeKey = key + "#" + chestPageScanIndex;
+                String prevHash = chestPageLastMergedHash.get(mergeKey);
+                boolean hashChanged = prevHash == null || !prevHash.equals(hash);
+                ChestCache mergedExisting = chestCaches.get(key);
+                int pageBase = chestPageScanIndex * size;
+                boolean hasMergedPage = mergedExisting != null
+                    && mergedExisting.items != null
+                    && mergedExisting.items.size() >= (pageBase + size);
+                boolean needMerge = hashChanged || !hasMergedPage;
+                if (needMerge)
+                {
+                    mergeChestPageToCache(chestDim, chestPos, size, chestPageScanIndex, items, chestLabel);
+                    chestPageLastMergedHash.put(mergeKey, hash);
+                    chestSnapshotPageMergeCount++;
+                }
+                else
+                {
+                    chestSnapshotHashUnchangedSkips++;
+                }
+                if (chestPageLogEnabled("merge", key, now))
                 {
                     ChestCache mergedCache = chestCaches.get(key);
                     int pageNonEmpty = countNonEmptyItems(items);
                     int mergedNonEmpty = countNonEmptyItems(mergedCache == null ? null : mergedCache.items);
                     int mergedSlots = mergedCache == null || mergedCache.items == null ? 0 : mergedCache.items.size();
                     int mergedPages = size > 0 ? ((mergedSlots + size - 1) / size) : 0;
-                    logger.info("CHEST_PAGE_MERGE key={} page={} size={} items={} pageNonEmpty={} mergedPages={} mergedSlots={} mergedNonEmpty={} label={}",
-                        key, chestPageScanIndex + 1, size, items.size(), pageNonEmpty, mergedPages, mergedSlots, mergedNonEmpty, chestLabel);
+                    logger.info("CHEST_PAGE_MERGE key={} page={} size={} items={} pageNonEmpty={} mergedPages={} mergedSlots={} mergedNonEmpty={} label={} hashChanged={}",
+                        key, chestPageScanIndex + 1, size, items.size(), pageNonEmpty, mergedPages, mergedSlots, mergedNonEmpty, chestLabel, hashChanged);
                 }
 
                 ItemStack lastSlot = items.isEmpty() ? ItemStack.EMPTY : items.get(size - 1);
                 boolean hasNextPage = isNextPageArrow(lastSlot);
-                if (logger != null)
+                if (chestPageLogEnabled("state.detect", key, now))
                 {
                     String reg = "null";
                     String disp = "";
@@ -7437,7 +7489,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     logger.info("CHEST_PAGE_STATE detect key={} page={} hasNext={} lastSlotReg={} lastSlotName={} effectiveAllow={} nextActionMs={} now={}",
                         key, chestPageScanIndex + 1, hasNextPage, reg, disp, effectivePageTurnAllowed, chestPageNextActionMs, now);
                 }
-                if (modulePublishWarmupActive && logger != null)
+                if (modulePublishWarmupActive && chestPageLogEnabled("detect.warmup", key, now))
                 {
                     String reg = "null";
                     String disp = "";
@@ -7459,7 +7511,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     if (now - chestPageLastSkipLogMs > 1000L)
                     {
                         chestPageLastSkipLogMs = now;
-                        if (logger != null)
+                        if (chestPageLogEnabled("click.skip", key, now))
                         {
                             String reason = regAllOwnsPaging
                                 ? "owned_by_regallactions"
@@ -7472,7 +7524,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 }
                 if (hasNextPage && effectivePageTurnAllowed && now >= chestPageNextActionMs)
                 {
-                    if (logger != null)
+                    if (chestPageLogEnabled("action", key, now))
                     {
                         logger.info("CHEST_PAGE_ACTION key={} page={} retry={} maxRetry={} canClick={} controller={} player={} now={} nextActionMs={}",
                             key, chestPageScanIndex + 1, chestPageRetryCount, CHEST_PAGE_MAX_RETRIES,
@@ -7484,7 +7536,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     if (chestPageRetryCount < CHEST_PAGE_MAX_RETRIES && mc != null && mc.player != null && mc.playerController != null)
                     {
                         int slotNumber = findNonPlayerSlotNumber(chest, size - 1);
-                        if (logger != null)
+                        if (chestPageLogEnabled("action.slot_lookup", key, now))
                         {
                             logger.info("CHEST_PAGE_ACTION slot_lookup key={} page={} nonPlayerLastIdx={} slotNumber={}",
                                 key, chestPageScanIndex + 1, size - 1, slotNumber);
@@ -7500,7 +7552,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                                 chestPageRetryCount++;
                                 chestPageNextActionMs = now + 250L;
                                 pageTurnRequested = true;
-                                if (logger != null) logger.info("CHEST_PAGE_CLICK click_next key={} page={} try={} windowSlot={}",
+                                if (chestPageLogEnabled("click.next", key, now)) logger.info("CHEST_PAGE_CLICK click_next key={} page={} try={} windowSlot={}",
                                     chestPageScanKey, chestPageScanIndex + 1, chestPageRetryCount, slotNumber);
                                 exportCodeDbg(mc, "chest-page: click next page key=" + chestPageScanKey
                                     + " page=" + (chestPageScanIndex + 1) + " try=" + chestPageRetryCount);
@@ -7509,7 +7561,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                             {
                                 chestPageRetryCount++;
                                 chestPageNextActionMs = now + 300L;
-                                if (logger != null) logger.info("CHEST_PAGE_CLICK click_failed key={} err={}", chestPageScanKey, e.getClass().getSimpleName());
+                                if (chestPageLogEnabled("click.failed", key, now)) logger.info("CHEST_PAGE_CLICK click_failed key={} err={}", chestPageScanKey, e.getClass().getSimpleName());
                                 exportCodeDbg(mc, "chest-page: click failed key=" + chestPageScanKey + " err=" + e.getClass().getSimpleName());
                             }
                         }
@@ -7517,7 +7569,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                         {
                             chestPageRetryCount++;
                             chestPageNextActionMs = now + 300L;
-                            if (logger != null)
+                            if (chestPageLogEnabled("action.skip_click", key, now))
                             {
                                 logger.info("CHEST_PAGE_ACTION skip_click key={} reason=slot_not_found page={} size={}",
                                     key, chestPageScanIndex + 1, size);
@@ -7526,15 +7578,16 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     }
                     else if (chestPageRetryCount >= CHEST_PAGE_MAX_RETRIES)
                     {
-                        if (logger != null) logger.info("CHEST_PAGE_CLICK retries_exhausted key={} pages={}", chestPageScanKey, chestPageScanIndex + 1);
+                        if (logger != null) logger.warn("CHEST_PAGE_CLICK retries_exhausted key={} pages={}", chestPageScanKey, chestPageScanIndex + 1);
                         exportCodeDbg(mc, "chest-page: retries exhausted key=" + chestPageScanKey + " pages=" + (chestPageScanIndex + 1));
                     }
                 }
+
             }
         }
         else
         {
-            if (logger != null)
+            if (chestPageLogEnabled("state.reset", chestPageScanKey, now))
             {
                 logger.info("CHEST_PAGE_RESET reason=preconditions key={} lastClickedChest={} allowChestSnapshot={} chestPos={} size={}",
                     chestPageScanKey, lastClickedChest, allowChestSnapshot, chestPos, size);
@@ -7738,6 +7791,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             fakeMenuActive = false;
             fakeMenuKey = null;
         }
+        maybeLogChestSnapshotMetrics(now);
     }
 
     private void snapshotCurrentContainer(GuiContainer gui)
@@ -7940,6 +7994,40 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
     }
 
+    private boolean chestPageLogEnabled(String tag, String key, long nowMs)
+    {
+        if (logger == null || !debugUi)
+        {
+            return false;
+        }
+        String t = tag == null ? "-" : tag;
+        String k = key == null ? "-" : key;
+        String rk = t + "|" + k;
+        Long last = chestPageLogAt.get(rk);
+        if (last != null && nowMs - last.longValue() < CHEST_PAGE_LOG_RATE_MS)
+        {
+            return false;
+        }
+        chestPageLogAt.put(rk, nowMs);
+        return true;
+    }
+
+    private void maybeLogChestSnapshotMetrics(long nowMs)
+    {
+        if (logger == null || !debugUi)
+        {
+            return;
+        }
+        if (nowMs - chestSnapshotMetricsLastLogMs < CHEST_SNAPSHOT_METRICS_LOG_MS)
+        {
+            return;
+        }
+        chestSnapshotMetricsLastLogMs = nowMs;
+        logger.info("CHEST_SNAPSHOT_METRICS calls={} skips={} hashUnchangedSkips={} pageMerges={} allow={} pending={} lastClickedChest={} pos={}",
+            chestSnapshotCalls, chestSnapshotSkips, chestSnapshotHashUnchangedSkips, chestSnapshotPageMergeCount,
+            allowChestSnapshot, pendingChestSnapshot, lastClickedChest, lastClickedPos);
+    }
+
     private void resetChestPageScanState()
     {
         chestPageScanKey = null;
@@ -7952,6 +8040,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         chestPageAwaitStartMs = 0L;
         chestPageNextActionMs = 0L;
         chestPageRetryCount = 0;
+        chestPageLogAt.clear();
+        chestPageLastMergedHash.clear();
     }
 
     private static boolean isNextPageArrow(ItemStack st)
@@ -8182,10 +8272,6 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
     private void cacheChestInventory(TileEntityChest te, List<ItemStack> items)
     {
-        if (!chestCacheEnabled)
-        {
-            return;
-        }
         if (te == null || te.getPos() == null || te.getWorld() == null)
         {
             return;
@@ -8204,15 +8290,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             setActionBar(true, "&aChest cached " + pos.getX() + "," + pos.getY() + "," + pos.getZ(), 1500L);
         }
-        updateChestIdCache(dim, pos, copy, label);
+        if (chestCacheEnabled)
+        {
+            updateChestIdCache(dim, pos, copy, label);
+        }
     }
 
     private void cacheChestInventoryAt(int dim, BlockPos pos, List<ItemStack> items, String labelOverride)
     {
-        if (!chestCacheEnabled)
-        {
-            return;
-        }
         if (pos == null)
         {
             return;
@@ -8235,7 +8320,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             setActionBar(true, "&aChest cached " + pos.getX() + "," + pos.getY() + "," + pos.getZ(), 1500L);
         }
-        updateChestIdCache(dim, pos, copy, label);
+        if (chestCacheEnabled)
+        {
+            updateChestIdCache(dim, pos, copy, label);
+        }
     }
 
     private void updateChestIdCache(int dim, BlockPos pos, List<ItemStack> items, String label)
@@ -13684,13 +13772,13 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             enableSecondHotbar = config.getBoolean("enableSecondHotbar", "hotbar", true,
                 "Enable the second hotbar swap feature.");
 
-            autoCodeCacheEnabled = config.getBoolean("autoCodeCacheEnabled", "code", true,
+            autoCodeCacheEnabled = config.getBoolean("autoCodeCacheEnabled", "code", false,
                 "CODE CACHE: Continuously scan loaded blue-glass rows and cache placed blocks/signs.\n"
                     + "This makes /mldsl skip-check work even after chunks unload (as long as you flew by at least once).");
             autoCodeCacheMaxSteps = config.getInt("autoCodeCacheMaxSteps", "code", 256, 32, 1024,
                 "CODE CACHE: Max blocks to scan per row (x step = -2). Stops earlier on 2 empty slots.");
 
-            autoCacheEnabled = config.getBoolean("autoCacheEnabled", "chest", false,
+            autoCacheEnabled = config.getBoolean("autoCacheEnabled", "chest", true,
                 "AUTO-CACHE CHESTS: Automatically open and cache nearby trapped chests in DEV mode.\n"
                     + "Only works in creative mode with special scoreboard. Check with /autocache command.\n"
                     + "Blocked while holding IRON_INGOT or GOLD_INGOT.");
@@ -13967,6 +14055,16 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         if (mc == null || mc.world == null || mc.player == null)
         {
+            return;
+        }
+        // Auto chest-cache must never compete with active place printer (/placeadvanced, /mldsl run).
+        // Otherwise it can open unrelated GUIs and steal click flow from the runtime printer.
+        if ((placeModule != null && placeModule.isActive()) || placeBlocksActive)
+        {
+            if (autoCacheInProgress)
+            {
+                resetAutoCacheRuntimeState();
+            }
             return;
         }
         if (isHoldingIronOrGoldIngot(mc))
@@ -15505,6 +15603,17 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         return false;
     }
 
+    private void resetAutoCacheRuntimeState()
+    {
+        autoCacheInProgress = false;
+        autoCachePageTurnAllowed = false;
+        autoCacheTargetPos = null;
+        autoCacheStartMs = 0L;
+        autoCacheLastMenuHash = "";
+        autoCacheLastMenuHashChangeMs = 0L;
+        autoCacheStableNoNextTicks = 0;
+    }
+
     private MenuStep findPreferredMenuScopeStep(GuiContainer gui, PlaceEntry entry)
     {
         if (gui == null || entry == null || entry.preferredMenuKey == null || entry.preferredMenuKey.isEmpty())
@@ -15803,8 +15912,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 String v = id == null ? "" : id.toString();
                 if (!v.isEmpty())
                 {
-                    placedBlockCacheByScopePos.put(k, v);
-                    codeCacheDirty = true;
+                    String prev = placedBlockCacheByScopePos.get(k);
+                    if (!v.equals(prev))
+                    {
+                        placedBlockCacheByScopePos.put(k, v);
+                        codeCacheDirty = true;
+                    }
                 }
             }
         }
@@ -15818,7 +15931,13 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
         String key = world.provider.getDimension() + ":" + entryPos.toLong();
         ResourceLocation id = block.getRegistryName();
-        placedBlockCacheByDimPos.put(key, id == null ? "" : id.toString());
+        String v = id == null ? "" : id.toString();
+        String prev = placedBlockCacheByDimPos.get(key);
+        if (!v.equals(prev))
+        {
+            placedBlockCacheByDimPos.put(key, v);
+            codeCacheDirty = true;
+        }
     }
 
     @Override
@@ -15887,14 +16006,18 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         boolean newDim = prevDim == null;
         boolean changedScope = !newScope && !isSameSignLines(prevScope, lines);
         boolean changedDim = !newDim && !isSameSignLines(prevDim, lines);
-        signLinesCache.put(key1, lines);
-        signLinesCacheByDimPos.put(key2, lines);
+        boolean changedAny = newScope || newDim || changedScope || changedDim;
+        if (changedAny)
+        {
+            signLinesCache.put(key1, lines);
+            signLinesCacheByDimPos.put(key2, lines);
+            codeCacheDirty = true;
+        }
         if (logger != null && (newScope || newDim || changedScope || changedDim))
         {
             logger.info("SIGN_CACHE_STORE scopeKey={} dimKey={} newScope={} changedScope={} newDim={} changedDim={} lines={}",
                 key1, key2, newScope, changedScope, newDim, changedDim, formatSignLinesForLog(lines));
         }
-        codeCacheDirty = true;
     }
 
     private boolean isAllSignLinesEmpty(String[] lines)
