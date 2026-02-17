@@ -51,6 +51,7 @@ Format: `id | task | priority | owner | needs_user_test | state | links`
 - MOD-055 | Extend `/lightsync` with `batch` mode (queue chunk/block packets and apply every 10s) | P1 | agent | yes | done | src/main/java/com/example/examplemod/ExampleMod.java
 - MOD-056 | Add configurable `/lightsync batch <sec>` interval (1..120s) for packet batch apply timing | P1 | agent | yes | done | src/main/java/com/example/examplemod/ExampleMod.java
 - MOD-057 | Align `placeadvanced item(...)` insertion semantics with Ctrl+C/Ctrl+V helper (temp slot restore parity) | P0 | agent | yes | done | src/main/java/com/example/examplemod/feature/place/PlaceGuiHandler.java
+- MOD-058 | Add debug trace logs for `placeadvanced item(...)` sync path (`PLACE_ITEM_TRACE`) to inspect name/NBT loss between slots | P1 | agent | yes | done | src/main/java/com/example/examplemod/feature/place/PlaceGuiHandler.java
 - MOD-021 | Port legacy place args/data layer into modern core and wire parser diagnostics before GUI runtime migration | P0 | agent | no | done | modern/core/place, modern/core/RuntimeCore
 - MOD-022 | Port legacy item(...) spec parsing to platform-neutral core model and prepare adapter conversion path | P0 | agent | no | done | modern/core/place/ItemSpec, modern/core/place/PlaceArgsParser
 - MOD-023 | Introduce typed place entry plan builder in modern core (pre-step for PlaceState/tick GUI runtime port) | P0 | agent | no | done | modern/core/place/PlaceEntrySpec, modern/core/place/PlacePlanBuilder, modern/core/RuntimeCore

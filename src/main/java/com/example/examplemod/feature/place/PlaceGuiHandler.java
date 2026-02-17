@@ -856,12 +856,26 @@ final class PlaceGuiHandler
             {
                 // Use the same slot-injection semantics as manual Ctrl+V helper:
                 // pick a temp hotbar slot, inject stack, click temp->target, then restore original temp slot.
+                ItemStack targetBefore = safeSlotStackCopy(target);
+                ItemStack cursorBefore = safeCursorStackCopy(mc);
                 Integer hotbar = findEmptyHotbarSlot(mc);
                 if (hotbar == null)
                 {
                     hotbar = mc.player.inventory.currentItem;
                 }
                 ItemStack original = mc.player.inventory.getStackInSlot(hotbar);
+                if (host.isDebugUi())
+                {
+                    LOGGER.info(
+                        "PLACE_ITEM_TRACE step=begin key={} targetSlot={} targetBefore={} parsed={} hotbar={} hotbarOriginal={} cursorBefore={}",
+                        arg.keyRaw,
+                        target.slotNumber,
+                        formatStackForTrace(targetBefore),
+                        formatStackForTrace(stack),
+                        hotbar,
+                        formatStackForTrace(original),
+                        formatStackForTrace(cursorBefore));
+                }
 
                 mc.player.inventory.setInventorySlotContents(hotbar.intValue(), stack);
                 if (mc.player.connection != null)
@@ -880,9 +894,22 @@ final class PlaceGuiHandler
                 // Exactly like Ctrl+V flow: temp slot -> target -> back to temp if cursor is still occupied.
                 mc.playerController.windowClick(gui.inventorySlots.windowId, hotbarContainerSlot.intValue(), 0, ClickType.PICKUP, mc.player);
                 mc.playerController.windowClick(gui.inventorySlots.windowId, target.slotNumber, 0, ClickType.PICKUP, mc.player);
-                if (!mc.player.inventory.getItemStack().isEmpty())
+                ItemStack cursorAfterTarget = safeCursorStackCopy(mc);
+                if (!cursorAfterTarget.isEmpty())
                 {
                     mc.playerController.windowClick(gui.inventorySlots.windowId, hotbarContainerSlot.intValue(), 0, ClickType.PICKUP, mc.player);
+                }
+                if (host.isDebugUi())
+                {
+                    ItemStack targetAfter = safeSlotStackCopy(target);
+                    ItemStack cursorAfter = safeCursorStackCopy(mc);
+                    LOGGER.info(
+                        "PLACE_ITEM_TRACE step=after_click key={} targetSlot={} targetAfter={} cursorAfterTarget={} cursorAfter={}",
+                        arg.keyRaw,
+                        target.slotNumber,
+                        formatStackForTrace(targetAfter),
+                        formatStackForTrace(cursorAfterTarget),
+                        formatStackForTrace(cursorAfter));
                 }
 
                 // Restore original temp slot stack exactly like helper paste logic.
@@ -891,6 +918,15 @@ final class PlaceGuiHandler
                 {
                     ItemStack restore = (original == null) ? ItemStack.EMPTY : original;
                     mc.player.connection.sendPacket(new CPacketCreativeInventoryAction(36 + hotbar.intValue(), restore));
+                }
+                if (host.isDebugUi())
+                {
+                    LOGGER.info(
+                        "PLACE_ITEM_TRACE step=restore key={} targetSlot={} restoredHotbar={} hotbarSlot={}",
+                        arg.keyRaw,
+                        target.slotNumber,
+                        formatStackForTrace(original),
+                        hotbar);
                 }
 
                 entry.usedArgSlots.add(target.slotNumber);
@@ -1090,6 +1126,62 @@ final class PlaceGuiHandler
             }
         }
         return null;
+    }
+
+    private static ItemStack safeSlotStackCopy(Slot slot)
+    {
+        if (slot == null || !slot.getHasStack())
+        {
+            return ItemStack.EMPTY;
+        }
+        try
+        {
+            ItemStack st = slot.getStack();
+            return st == null || st.isEmpty() ? ItemStack.EMPTY : st.copy();
+        }
+        catch (Exception ignore)
+        {
+            return ItemStack.EMPTY;
+        }
+    }
+
+    private static ItemStack safeCursorStackCopy(Minecraft mc)
+    {
+        if (mc == null || mc.player == null || mc.player.inventory == null)
+        {
+            return ItemStack.EMPTY;
+        }
+        try
+        {
+            ItemStack st = mc.player.inventory.getItemStack();
+            return st == null || st.isEmpty() ? ItemStack.EMPTY : st.copy();
+        }
+        catch (Exception ignore)
+        {
+            return ItemStack.EMPTY;
+        }
+    }
+
+    private static String formatStackForTrace(ItemStack stack)
+    {
+        if (stack == null || stack.isEmpty())
+        {
+            return "empty";
+        }
+        String id = stack.getItem() == null || stack.getItem().getRegistryName() == null
+            ? "unknown"
+            : stack.getItem().getRegistryName().toString();
+        String name = stack.hasDisplayName() ? TextFormatting.getTextWithoutFormattingCodes(stack.getDisplayName()) : "";
+        String nbt = "";
+        try
+        {
+            nbt = stack.hasTagCompound() && stack.getTagCompound() != null
+                ? stack.getTagCompound().toString()
+                : "";
+        }
+        catch (Exception ignore) { }
+        return id + ":" + stack.getMetadata() + "x" + stack.getCount()
+            + " name='" + (name == null ? "" : name) + "' nbt='" + nbt + "'";
     }
 
     private static Slot findCandidateSlotForArg(PlaceModuleHost host, GuiContainer gui, Slot base)

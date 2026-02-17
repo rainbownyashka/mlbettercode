@@ -154,6 +154,9 @@
 - Legacy 1.12 item(...) sync parity with Ctrl+V helper:
   - `placeadvanced item(...)` path now uses the same temp-slot/restore semantics as the working Ctrl+C/Ctrl+V paste helper,
   - after target click, temp hotbar slot is restored to original stack (instead of forced empty) to reduce server-side item normalization races in strict condition slots.
+- Legacy 1.12 item(...) trace diagnostics:
+  - added debug-gated `PLACE_ITEM_TRACE` logs in `placeadvanced item(...)` flow (`begin/after_click/restore`),
+  - trace includes target slot id, stack display/nbt snapshot, cursor state, and temp hotbar slot state for per-step sync debugging.
 - Legacy 1.12 client lighting debug toggle:
   - added `/disablelighting [on|off|toggle|info]` command to quickly switch ambient occlusion (AO),
   - intended as temporary client-side lag mitigation for heavy block-spam sessions (does not change server light packets).
