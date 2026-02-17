@@ -2592,6 +2592,9 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }));
         ClientCommandHandler.instance.registerCommand(
             new com.example.examplemod.cmd.DelegatingCommand("autocache", "/autocache [info]", this::runAutoCacheCommand));
+        ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("disablelighting",
+            "/disablelighting [on|off|toggle|info] - toggle client smooth lighting (AO) for heavy block-spam scenes",
+            this::runDisableLightingCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("cacheallchests",
             "/cacheallchests [stop]", this::runCacheAllChestsCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("place",
@@ -2633,6 +2636,55 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private void runCopyCodeCommand(MinecraftServer server, ICommandSender sender, String[] args)
     {
         copyCodeModule.runCopyCommand(sender, args);
+    }
+
+    private void runDisableLightingCommand(MinecraftServer server, ICommandSender sender, String[] args)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.gameSettings == null)
+        {
+            setActionBar(false, "&cNo game settings", 2000L);
+            return;
+        }
+
+        String mode = (args != null && args.length > 0 && args[0] != null) ? args[0].trim().toLowerCase(Locale.ROOT) : "toggle";
+        int ao = mc.gameSettings.ambientOcclusion;
+        if ("info".equals(mode))
+        {
+            setActionBar(true, "&eLighting(AO): " + (ao == 0 ? "OFF" : (ao == 1 ? "MIN" : "MAX")), 2800L);
+            return;
+        }
+
+        int next;
+        if ("on".equals(mode) || "1".equals(mode) || "true".equals(mode))
+        {
+            // "on" means "disable lighting effects" for this debug command.
+            next = 0;
+        }
+        else if ("off".equals(mode) || "0".equals(mode) || "false".equals(mode))
+        {
+            next = 2;
+        }
+        else if ("toggle".equals(mode))
+        {
+            next = (ao == 0) ? 2 : 0;
+        }
+        else
+        {
+            setActionBar(false, "&cUsage: /disablelighting [on|off|toggle|info]", 3000L);
+            return;
+        }
+
+        mc.gameSettings.ambientOcclusion = next;
+        mc.gameSettings.saveOptions();
+        setActionBar(true, "&aLighting(AO): " + (next == 0 ? "OFF" : "ON"), 2500L);
+        if (mc.player != null)
+        {
+            mc.player.sendMessage(new TextComponentString(
+                TextFormatting.YELLOW + "disablelighting: "
+                    + (next == 0 ? "AO disabled (lighter client render)." : "AO enabled.")
+                    + TextFormatting.GRAY + " Server light packets are unaffected."));
+        }
     }
 
     private void runCancelCopyCommand(MinecraftServer server, ICommandSender sender, String[] args)

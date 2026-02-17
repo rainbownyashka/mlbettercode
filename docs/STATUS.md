@@ -151,6 +151,9 @@
 - Legacy 1.12 item(...) paste flow simplification:
   - place args handler now uses a compact two-click item insert path (temp hotbar slot -> target slot) in one tick,
   - old three-stage restore-click sequence is removed from active item injection path to reduce slot desync/name-loss races.
+- Legacy 1.12 client lighting debug toggle:
+  - added `/disablelighting [on|off|toggle|info]` command to quickly switch ambient occlusion (AO),
+  - intended as temporary client-side lag mitigation for heavy block-spam sessions (does not change server light packets).
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:
