@@ -241,7 +241,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private static final long CHEST_PAGE_LOG_RATE_MS = 1000L;
     private static final long CHEST_SNAPSHOT_METRICS_LOG_MS = 3000L;
     private static final long DISABLE_LIGHTING_AUTO_REBUILD_MS = 20000L;
-    private static final long LIGHTSYNC_BATCH_FLUSH_MS = 10000L;
+    private static final long LIGHTSYNC_BATCH_FLUSH_MS_DEFAULT = 10000L;
     private static final String LIGHTSYNC_HARD_HANDLER = "bettercode_lightsync_hard";
     private static final int LIGHTSYNC_MODE_ON = 0;
     private static final int LIGHTSYNC_MODE_HARD_OFF = 1;
@@ -394,6 +394,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private long lightSyncHardDroppedPackets = 0L;
     private long lightSyncHardLastWarnMs = 0L;
     private long lightSyncBatchLastFlushMs = 0L;
+    private long lightSyncBatchFlushMs = LIGHTSYNC_BATCH_FLUSH_MS_DEFAULT;
     private final ConcurrentLinkedQueue<Packet<?>> lightSyncBatchQueue = new ConcurrentLinkedQueue<>();
     private String signSearchQuery = null;
     private int signSearchDim = 0;
@@ -2621,7 +2622,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             "/disablelighting [on|off|toggle|info] - toggle client smooth lighting (AO) for heavy block-spam scenes",
             this::runDisableLightingCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("lightsync",
-            "/lightsync [on|off|batch|toggle|info] - sync control (hard drop or 10s batch)",
+            "/lightsync [on|off|batch [sec]|toggle|info] - sync control (hard drop or batched apply)",
             this::runLightSyncCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("cacheallchests",
             "/cacheallchests [stop]", this::runCacheAllChestsCommand));
@@ -2752,12 +2753,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             long now = System.currentTimeMillis();
             long leftMs = (lightSyncMode == LIGHTSYNC_MODE_BATCH)
-                ? Math.max(0L, LIGHTSYNC_BATCH_FLUSH_MS - (now - lightSyncBatchLastFlushMs))
+                ? Math.max(0L, lightSyncBatchFlushMs - (now - lightSyncBatchLastFlushMs))
                 : 0L;
             setActionBar(true, "&eLightSync: " + lightSyncModeName(lightSyncMode)
                 + " &7dropped=" + lightSyncHardDroppedPackets
                 + " queued=" + lightSyncBatchQueue.size()
-                + (lightSyncMode == LIGHTSYNC_MODE_BATCH ? " nextFlush=" + (leftMs / 1000L) + "s" : ""), 4200L);
+                + (lightSyncMode == LIGHTSYNC_MODE_BATCH
+                ? " nextFlush=" + (leftMs / 1000L) + "s interval=" + (lightSyncBatchFlushMs / 1000L) + "s"
+                : ""), 4200L);
             return;
         }
 
@@ -2774,6 +2777,27 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         else if ("batch".equals(mode) || "batched".equals(mode))
         {
             nextMode = LIGHTSYNC_MODE_BATCH;
+            if (args != null && args.length > 1 && args[1] != null && !args[1].trim().isEmpty())
+            {
+                try
+                {
+                    int sec = Integer.parseInt(args[1].trim());
+                    if (sec < 1)
+                    {
+                        sec = 1;
+                    }
+                    if (sec > 120)
+                    {
+                        sec = 120;
+                    }
+                    lightSyncBatchFlushMs = sec * 1000L;
+                }
+                catch (Exception e)
+                {
+                    setActionBar(false, "&cUsage: /lightsync batch <sec 1..120>", 3000L);
+                    return;
+                }
+            }
         }
         else if ("toggle".equals(mode))
         {
@@ -2781,7 +2805,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         else
         {
-            setActionBar(false, "&cUsage: /lightsync [on|off|batch|toggle|info]", 3000L);
+            setActionBar(false, "&cUsage: /lightsync [on|off|batch [sec]|toggle|info]", 3000L);
             return;
         }
 
@@ -2824,7 +2848,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     + TextFormatting.RED + (lightSyncMode == LIGHTSYNC_MODE_HARD_OFF
                     ? " Hard drop mode may cause desync artifacts."
                     : (lightSyncMode == LIGHTSYNC_MODE_BATCH
-                    ? " Batch mode stores chunk/block packets and applies them every 10s."
+                    ? " Batch mode stores chunk/block packets and applies them every " + (lightSyncBatchFlushMs / 1000L) + "s."
                     : " Resync requested (renderer reload)."))
                     + TextFormatting.GRAY + " droppedPackets=" + lightSyncHardDroppedPackets));
         }
@@ -2904,10 +2928,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         catch (Exception ignore) { }
 
         if (lightSyncMode == LIGHTSYNC_MODE_BATCH
-            && nowMs - lightSyncBatchLastFlushMs >= LIGHTSYNC_BATCH_FLUSH_MS)
+            && nowMs - lightSyncBatchLastFlushMs >= lightSyncBatchFlushMs)
         {
             lightSyncBatchLastFlushMs = nowMs;
-            flushLightSyncBatchPackets(mc, "auto-10s");
+            flushLightSyncBatchPackets(mc, "auto-batch");
         }
     }
 

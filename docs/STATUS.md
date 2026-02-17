@@ -159,9 +159,9 @@
   - while enabled, changed chunks are auto-rebuilt every 20 seconds,
   - `/disablelighting off` flushes tracked changed chunks immediately and forces one renderer reload for visual resync.
 - Legacy 1.12 light sync control mode:
-  - added `/lightsync [on|off|batch|toggle|info]` for aggressive light-spam control on client,
+  - added `/lightsync [on|off|batch [sec]|toggle|info]` for aggressive light-spam control on client,
   - `off` enables hard mode and drops incoming `SPacketChunkData`/`SPacketBlockChange`/`SPacketMultiBlockChange`,
-  - `batch` stores these packets and applies them every 10 seconds,
+  - `batch` stores these packets and applies them on configurable interval (`/lightsync batch 5` = every 5 seconds),
   - `on` restores normal sync and forces renderer reload.
 
 ## Migration checkpoint (where port currently stops)
