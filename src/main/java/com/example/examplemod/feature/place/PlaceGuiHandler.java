@@ -854,8 +854,8 @@ final class PlaceGuiHandler
             }
             try
             {
-                // Many servers reject "sendSlotPacket" for custom GUIs; simulate normal click placement:
-                // put stack into a temp hotbar slot (creative inventory action), pick it up, click target slot.
+                // Use a compact two-click flow (hotbar slot -> target slot) to mimic manual fast GUI paste behavior.
+                // This avoids the old extra "restore click" sequence that often caused race/desync on custom servers.
                 int hotbar = -1;
                 for (int h = 0; h < 9; h++)
                 {
@@ -868,16 +868,10 @@ final class PlaceGuiHandler
                 }
                 if (hotbar < 0)
                 {
-                    // Fallback: reuse current hotbar slot and restore after injection.
-                    hotbar = mc.player.inventory.currentItem;
+                    host.setActionBar(false, "&c/placeadvanced: no empty hotbar slot for item()", 2500L);
+                    abort(host, state, "no_empty_hotbar_for_item");
+                    return;
                 }
-
-                entry.tempHotbarSlot = hotbar;
-                try
-                {
-                    entry.tempHotbarOriginal = mc.player.inventory.getStackInSlot(hotbar).copy();
-                }
-                catch (Exception ignore) { entry.tempHotbarOriginal = ItemStack.EMPTY; }
 
                 mc.player.inventory.setInventorySlotContents(hotbar, stack);
                 if (mc.player.connection != null)
@@ -902,13 +896,34 @@ final class PlaceGuiHandler
                     return;
                 }
 
-                entry.tempItemSeqStage = 0;
-                entry.tempItemSeqSlot0 = hotbarContainerSlot;
-                entry.tempItemSeqSlot1 = target.slotNumber;
-                entry.tempItemSeqSlot2 = hotbarContainerSlot;
-                entry.tempItemTargetSlot = target.slotNumber;
-                entry.tempItemExtraClicks = arg.clicks > 0 ? arg.clicks : 0;
-                entry.pendingArgNextMs = nowMs + host.placeDelayMs(500L);
+                // Perform both clicks immediately in this tick: pick from hotbar, place into target.
+                mc.playerController.windowClick(gui.inventorySlots.windowId, hotbarContainerSlot, 0, ClickType.PICKUP, mc.player);
+                mc.playerController.windowClick(gui.inventorySlots.windowId, target.slotNumber, 0, ClickType.PICKUP, mc.player);
+
+                // If any stack stayed on cursor, try to clear it into player inventory.
+                ItemStack postCarried = mc.player.inventory.getItemStack();
+                if (postCarried != null && !postCarried.isEmpty() && !tryClearCarriedToInventory(gui, mc))
+                {
+                    host.setActionBar(false, "&c/placeadvanced: item paste desync (cursor busy)", 2500L);
+                    abort(host, state, "item_paste_cursor_busy");
+                    return;
+                }
+
+                // Clear temp hotbar slot after the insert so no temporary item remains there.
+                mc.player.inventory.setInventorySlotContents(hotbar, ItemStack.EMPTY);
+                if (mc.player.connection != null)
+                {
+                    mc.player.connection.sendPacket(new CPacketCreativeInventoryAction(36 + hotbar, ItemStack.EMPTY));
+                }
+
+                entry.usedArgSlots.add(target.slotNumber);
+                entry.advancedArgIndex++;
+                if (arg.clicks > 0)
+                {
+                    entry.pendingArgClickSlot = target.slotNumber;
+                    entry.pendingArgClicks = arg.clicks;
+                    entry.pendingArgNextMs = nowMs + host.placeDelayMs(500L);
+                }
                 entry.lastArgsActionMs = nowMs;
                 entry.argsMisses = 0;
                 return;

@@ -148,6 +148,9 @@
 - Legacy 1.12 printer/autocache isolation:
   - chest auto-cache tick now stops immediately while place printer is active (`/placeadvanced`, `/mldsl run`),
   - prevents autocache from opening unrelated chest GUIs and stealing click flow from runtime printing.
+- Legacy 1.12 item(...) paste flow simplification:
+  - place args handler now uses a compact two-click item insert path (temp hotbar slot -> target slot) in one tick,
+  - old three-stage restore-click sequence is removed from active item injection path to reduce slot desync/name-loss races.
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:
