@@ -151,6 +151,9 @@
 - Legacy 1.12 item(...) paste flow simplification:
   - place args handler now uses a compact two-click item insert path (temp hotbar slot -> target slot) in one tick,
   - old three-stage restore-click sequence is removed from active item injection path to reduce slot desync/name-loss races.
+- Legacy 1.12 item(...) sync parity with Ctrl+V helper:
+  - `placeadvanced item(...)` path now uses the same temp-slot/restore semantics as the working Ctrl+C/Ctrl+V paste helper,
+  - after target click, temp hotbar slot is restored to original stack (instead of forced empty) to reduce server-side item normalization races in strict condition slots.
 - Legacy 1.12 client lighting debug toggle:
   - added `/disablelighting [on|off|toggle|info]` command to quickly switch ambient occlusion (AO),
   - intended as temporary client-side lag mitigation for heavy block-spam sessions (does not change server light packets).

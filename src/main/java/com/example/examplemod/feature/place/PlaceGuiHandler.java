@@ -854,66 +854,43 @@ final class PlaceGuiHandler
             }
             try
             {
-                // Use a compact two-click flow (hotbar slot -> target slot) to mimic manual fast GUI paste behavior.
-                // This avoids the old extra "restore click" sequence that often caused race/desync on custom servers.
-                int hotbar = -1;
-                for (int h = 0; h < 9; h++)
+                // Use the same slot-injection semantics as manual Ctrl+V helper:
+                // pick a temp hotbar slot, inject stack, click temp->target, then restore original temp slot.
+                Integer hotbar = findEmptyHotbarSlot(mc);
+                if (hotbar == null)
                 {
-                    ItemStack hs = mc.player.inventory.getStackInSlot(h);
-                    if (hs == null || hs.isEmpty())
-                    {
-                        hotbar = h;
-                        break;
-                    }
+                    hotbar = mc.player.inventory.currentItem;
                 }
-                if (hotbar < 0)
-                {
-                    host.setActionBar(false, "&c/placeadvanced: no empty hotbar slot for item()", 2500L);
-                    abort(host, state, "no_empty_hotbar_for_item");
-                    return;
-                }
+                ItemStack original = mc.player.inventory.getStackInSlot(hotbar);
 
-                mc.player.inventory.setInventorySlotContents(hotbar, stack);
+                mc.player.inventory.setInventorySlotContents(hotbar.intValue(), stack);
                 if (mc.player.connection != null)
                 {
-                    mc.player.connection.sendPacket(new CPacketCreativeInventoryAction(36 + hotbar, stack));
+                    mc.player.connection.sendPacket(new CPacketCreativeInventoryAction(36 + hotbar.intValue(), stack));
                 }
 
-                int hotbarContainerSlot = -1;
-                for (int i = 0; i < gui.inventorySlots.inventorySlots.size(); i++)
-                {
-                    Slot s = gui.inventorySlots.inventorySlots.get(i);
-                    if (s != null && s.inventory == mc.player.inventory && s.getSlotIndex() == hotbar)
-                    {
-                        hotbarContainerSlot = i;
-                        break;
-                    }
-                }
-                if (hotbarContainerSlot < 0)
+                Integer hotbarContainerSlot = findContainerSlotForHotbar(gui.inventorySlots, hotbar.intValue());
+                if (hotbarContainerSlot == null)
                 {
                     host.setActionBar(false, "&c/placeadvanced: hotbar slot not found in container", 2500L);
                     abort(host, state, "no_hotbar_container_slot");
                     return;
                 }
 
-                // Perform both clicks immediately in this tick: pick from hotbar, place into target.
-                mc.playerController.windowClick(gui.inventorySlots.windowId, hotbarContainerSlot, 0, ClickType.PICKUP, mc.player);
+                // Exactly like Ctrl+V flow: temp slot -> target -> back to temp if cursor is still occupied.
+                mc.playerController.windowClick(gui.inventorySlots.windowId, hotbarContainerSlot.intValue(), 0, ClickType.PICKUP, mc.player);
                 mc.playerController.windowClick(gui.inventorySlots.windowId, target.slotNumber, 0, ClickType.PICKUP, mc.player);
-
-                // If any stack stayed on cursor, try to clear it into player inventory.
-                ItemStack postCarried = mc.player.inventory.getItemStack();
-                if (postCarried != null && !postCarried.isEmpty() && !tryClearCarriedToInventory(gui, mc))
+                if (!mc.player.inventory.getItemStack().isEmpty())
                 {
-                    host.setActionBar(false, "&c/placeadvanced: item paste desync (cursor busy)", 2500L);
-                    abort(host, state, "item_paste_cursor_busy");
-                    return;
+                    mc.playerController.windowClick(gui.inventorySlots.windowId, hotbarContainerSlot.intValue(), 0, ClickType.PICKUP, mc.player);
                 }
 
-                // Clear temp hotbar slot after the insert so no temporary item remains there.
-                mc.player.inventory.setInventorySlotContents(hotbar, ItemStack.EMPTY);
+                // Restore original temp slot stack exactly like helper paste logic.
+                mc.player.inventory.setInventorySlotContents(hotbar.intValue(), original);
                 if (mc.player.connection != null)
                 {
-                    mc.player.connection.sendPacket(new CPacketCreativeInventoryAction(36 + hotbar, ItemStack.EMPTY));
+                    ItemStack restore = (original == null) ? ItemStack.EMPTY : original;
+                    mc.player.connection.sendPacket(new CPacketCreativeInventoryAction(36 + hotbar.intValue(), restore));
                 }
 
                 entry.usedArgSlots.add(target.slotNumber);
@@ -1046,6 +1023,23 @@ final class PlaceGuiHandler
         return null;
     }
 
+    private static Integer findEmptyHotbarSlot(Minecraft mc)
+    {
+        if (mc == null || mc.player == null)
+        {
+            return null;
+        }
+        for (int i = 0; i < 9; i++)
+        {
+            ItemStack stack = mc.player.inventory.getStackInSlot(i);
+            if (stack == null || stack.isEmpty())
+            {
+                return i;
+            }
+        }
+        return null;
+    }
+
     private static boolean tryClearCarriedToInventory(GuiContainer gui, Minecraft mc)
     {
         if (gui == null || mc == null || mc.player == null || mc.playerController == null)
@@ -1074,6 +1068,28 @@ final class PlaceGuiHandler
         }
         catch (Exception ignore) { }
         return false;
+    }
+
+    private static Integer findContainerSlotForHotbar(net.minecraft.inventory.Container container, int hotbarSlot)
+    {
+        if (container == null)
+        {
+            return null;
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null)
+        {
+            return null;
+        }
+        for (int i = 0; i < container.inventorySlots.size(); i++)
+        {
+            Slot s = container.inventorySlots.get(i);
+            if (s != null && s.inventory == mc.player.inventory && s.getSlotIndex() == hotbarSlot)
+            {
+                return i;
+            }
+        }
+        return null;
     }
 
     private static Slot findCandidateSlotForArg(PlaceModuleHost host, GuiContainer gui, Slot base)
