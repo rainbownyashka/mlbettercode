@@ -62,6 +62,7 @@ import net.minecraft.nbt.NBTTagString;
 import net.minecraft.nbt.CompressedStreamTools;
 import net.minecraft.network.PacketBuffer;
 import net.minecraft.network.NetworkManager;
+import net.minecraft.network.Packet;
 import net.minecraft.network.play.client.CPacketHeldItemChange;
 import net.minecraft.network.play.client.CPacketPlayer;
 import net.minecraft.network.play.client.CPacketPlayerDigging;
@@ -189,6 +190,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -239,7 +241,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private static final long CHEST_PAGE_LOG_RATE_MS = 1000L;
     private static final long CHEST_SNAPSHOT_METRICS_LOG_MS = 3000L;
     private static final long DISABLE_LIGHTING_AUTO_REBUILD_MS = 20000L;
+    private static final long LIGHTSYNC_BATCH_FLUSH_MS = 10000L;
     private static final String LIGHTSYNC_HARD_HANDLER = "bettercode_lightsync_hard";
+    private static final int LIGHTSYNC_MODE_ON = 0;
+    private static final int LIGHTSYNC_MODE_HARD_OFF = 1;
+    private static final int LIGHTSYNC_MODE_BATCH = 2;
     private static final double CHEST_PREVIEW_RANGE = 15.0;
     private static final String EDIT_TEST_MARKER = "edit_test_ok";
     private static final String HOLO_LABEL = "DIRT";
@@ -384,9 +390,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private boolean disableLightingMode = false;
     private long disableLightingLastAutoRebuildMs = 0L;
     private final Set<Long> disableLightingDirtyChunks = new HashSet<>();
-    private boolean lightSyncHardMode = false;
+    private int lightSyncMode = LIGHTSYNC_MODE_ON;
     private long lightSyncHardDroppedPackets = 0L;
     private long lightSyncHardLastWarnMs = 0L;
+    private long lightSyncBatchLastFlushMs = 0L;
+    private final ConcurrentLinkedQueue<Packet<?>> lightSyncBatchQueue = new ConcurrentLinkedQueue<>();
     private String signSearchQuery = null;
     private int signSearchDim = 0;
     private final List<BlockPos> signSearchMatches = new ArrayList<>();
@@ -2209,7 +2217,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         handleAutoChestCacheTick(mc, now);
         handleDisableLightingTick(mc, now);
-        handleLightSyncHardTick(mc);
+        handleLightSyncTick(mc, now);
         checkConfigFileChanges();
         saveEntriesIfNeeded();
         saveMenuCacheIfNeeded();
@@ -2613,7 +2621,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             "/disablelighting [on|off|toggle|info] - toggle client smooth lighting (AO) for heavy block-spam scenes",
             this::runDisableLightingCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("lightsync",
-            "/lightsync [on|off|toggle|info] - hard mode: drop incoming chunk/block sync packets (risky)",
+            "/lightsync [on|off|batch|toggle|info] - sync control (hard drop or 10s batch)",
             this::runLightSyncCommand));
         ClientCommandHandler.instance.registerCommand(new com.example.examplemod.cmd.DelegatingCommand("cacheallchests",
             "/cacheallchests [stop]", this::runCacheAllChestsCommand));
@@ -2742,35 +2750,60 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             : "toggle";
         if ("info".equals(mode))
         {
-            setActionBar(true, "&eLightSyncHard: " + (lightSyncHardMode ? "OFF(sync disabled)" : "ON(sync enabled)")
-                + " &7dropped=" + lightSyncHardDroppedPackets, 3500L);
+            long now = System.currentTimeMillis();
+            long leftMs = (lightSyncMode == LIGHTSYNC_MODE_BATCH)
+                ? Math.max(0L, LIGHTSYNC_BATCH_FLUSH_MS - (now - lightSyncBatchLastFlushMs))
+                : 0L;
+            setActionBar(true, "&eLightSync: " + lightSyncModeName(lightSyncMode)
+                + " &7dropped=" + lightSyncHardDroppedPackets
+                + " queued=" + lightSyncBatchQueue.size()
+                + (lightSyncMode == LIGHTSYNC_MODE_BATCH ? " nextFlush=" + (leftMs / 1000L) + "s" : ""), 4200L);
             return;
         }
 
-        boolean next;
+        int nextMode = lightSyncMode;
         if ("off".equals(mode) || "0".equals(mode) || "false".equals(mode))
         {
             // "off" means sync off (hard mode active).
-            next = true;
+            nextMode = LIGHTSYNC_MODE_HARD_OFF;
         }
         else if ("on".equals(mode) || "1".equals(mode) || "true".equals(mode))
         {
-            next = false;
+            nextMode = LIGHTSYNC_MODE_ON;
+        }
+        else if ("batch".equals(mode) || "batched".equals(mode))
+        {
+            nextMode = LIGHTSYNC_MODE_BATCH;
         }
         else if ("toggle".equals(mode))
         {
-            next = !lightSyncHardMode;
+            nextMode = (lightSyncMode == LIGHTSYNC_MODE_ON) ? LIGHTSYNC_MODE_HARD_OFF : LIGHTSYNC_MODE_ON;
         }
         else
         {
-            setActionBar(false, "&cUsage: /lightsync [on|off|toggle|info]", 3000L);
+            setActionBar(false, "&cUsage: /lightsync [on|off|batch|toggle|info]", 3000L);
             return;
         }
 
-        lightSyncHardMode = next;
-        handleLightSyncHardTick(mc);
+        int prevMode = lightSyncMode;
+        lightSyncMode = nextMode;
 
-        if (!lightSyncHardMode)
+        if (lightSyncMode == LIGHTSYNC_MODE_BATCH && prevMode != LIGHTSYNC_MODE_BATCH)
+        {
+            lightSyncBatchLastFlushMs = System.currentTimeMillis();
+        }
+        if (prevMode == LIGHTSYNC_MODE_BATCH && lightSyncMode == LIGHTSYNC_MODE_ON)
+        {
+            flushLightSyncBatchPackets(mc, "manual-on");
+        }
+        if (lightSyncMode == LIGHTSYNC_MODE_HARD_OFF)
+        {
+            // In hard mode we intentionally forget queued batch packets.
+            lightSyncBatchQueue.clear();
+        }
+        handleLightSyncTick(mc, System.currentTimeMillis());
+
+        if (lightSyncMode == LIGHTSYNC_MODE_ON)
         {
             try
             {
@@ -2782,19 +2815,35 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             catch (Exception ignore) { }
         }
 
-        setActionBar(true, "&aLightSync: " + (lightSyncHardMode ? "HARD-OFF (dropping packets)" : "ON"), 3200L);
+        setActionBar(true, "&aLightSync: " + lightSyncModeName(lightSyncMode)
+            + " &7(dropped=" + lightSyncHardDroppedPackets + ", queued=" + lightSyncBatchQueue.size() + ")", 3800L);
         if (mc.player != null)
         {
             mc.player.sendMessage(new TextComponentString(
-                TextFormatting.YELLOW + "lightsync: " + (lightSyncHardMode ? "OFF (hard mode)." : "ON.")
-                    + TextFormatting.RED + (lightSyncHardMode
-                    ? " Risk: chunk/block desync artifacts until server resends updates."
-                    : " Resync requested (renderer reload).")
+                TextFormatting.YELLOW + "lightsync: " + lightSyncModeName(lightSyncMode) + "."
+                    + TextFormatting.RED + (lightSyncMode == LIGHTSYNC_MODE_HARD_OFF
+                    ? " Hard drop mode may cause desync artifacts."
+                    : (lightSyncMode == LIGHTSYNC_MODE_BATCH
+                    ? " Batch mode stores chunk/block packets and applies them every 10s."
+                    : " Resync requested (renderer reload)."))
                     + TextFormatting.GRAY + " droppedPackets=" + lightSyncHardDroppedPackets));
         }
     }
 
-    private void handleLightSyncHardTick(Minecraft mc)
+    private String lightSyncModeName(int mode)
+    {
+        if (mode == LIGHTSYNC_MODE_HARD_OFF)
+        {
+            return "HARD-OFF";
+        }
+        if (mode == LIGHTSYNC_MODE_BATCH)
+        {
+            return "BATCH-10S";
+        }
+        return "ON";
+    }
+
+    private void handleLightSyncTick(Minecraft mc, long nowMs)
     {
         if (mc == null || mc.getConnection() == null)
         {
@@ -2807,7 +2856,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         try
         {
-            if (lightSyncHardMode)
+            if (lightSyncMode != LIGHTSYNC_MODE_ON)
             {
                 if (channel.pipeline().get(LIGHTSYNC_HARD_HANDLER) == null)
                 {
@@ -2816,18 +2865,25 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                         @Override
                         public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception
                         {
-                            if (lightSyncHardMode
+                            if (lightSyncMode != LIGHTSYNC_MODE_ON
                                 && (msg instanceof SPacketChunkData
                                 || msg instanceof SPacketBlockChange
                                 || msg instanceof SPacketMultiBlockChange))
                             {
                                 lightSyncHardDroppedPackets++;
+                                if (lightSyncMode == LIGHTSYNC_MODE_BATCH && msg instanceof Packet)
+                                {
+                                    @SuppressWarnings("unchecked")
+                                    Packet<?> packet = (Packet<?>) msg;
+                                    lightSyncBatchQueue.offer(packet);
+                                }
                                 long now = System.currentTimeMillis();
                                 if (debugUi && mc.player != null && now - lightSyncHardLastWarnMs > 2000L)
                                 {
                                     lightSyncHardLastWarnMs = now;
                                     mc.player.sendMessage(new TextComponentString(TextFormatting.RED
-                                        + "lightsync hard: dropped " + msg.getClass().getSimpleName()
+                                        + "lightsync " + lightSyncModeName(lightSyncMode) + ": blocked "
+                                        + msg.getClass().getSimpleName()
                                         + " total=" + lightSyncHardDroppedPackets));
                                 }
                                 return;
@@ -2846,6 +2902,41 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
         }
         catch (Exception ignore) { }
+
+        if (lightSyncMode == LIGHTSYNC_MODE_BATCH
+            && nowMs - lightSyncBatchLastFlushMs >= LIGHTSYNC_BATCH_FLUSH_MS)
+        {
+            lightSyncBatchLastFlushMs = nowMs;
+            flushLightSyncBatchPackets(mc, "auto-10s");
+        }
+    }
+
+    private void flushLightSyncBatchPackets(Minecraft mc, String reason)
+    {
+        if (mc == null || mc.getConnection() == null)
+        {
+            lightSyncBatchQueue.clear();
+            return;
+        }
+        int applied = 0;
+        Packet<?> packet;
+        while ((packet = lightSyncBatchQueue.poll()) != null)
+        {
+            try
+            {
+                @SuppressWarnings("unchecked")
+                Packet<net.minecraft.network.play.INetHandlerPlayClient> p =
+                    (Packet<net.minecraft.network.play.INetHandlerPlayClient>) packet;
+                p.processPacket(mc.getConnection());
+                applied++;
+            }
+            catch (Exception ignore) { }
+        }
+        if (applied > 0 && debugUi && mc.player != null)
+        {
+            mc.player.sendMessage(new TextComponentString(TextFormatting.GRAY
+                + "lightsync batch flush(" + reason + "): applied=" + applied));
+        }
     }
 
     private Channel resolveConnectionChannel(Minecraft mc)
