@@ -82,6 +82,9 @@
    - core params-open now tries legacy-equivalent `sign+(0,1,1)` candidates using sign Y-offset scan (`dy=-2..0`) before fallback.
 7. Sign block detection parity hardening:
    - adapter `isSignAt(...)` no longer relies only on block-entity class name; now also checks block registry id containing `sign` (obf-safe).
+8. GUI route normalization parity hardening:
+   - core `norm()` now strips MC formatting/punctuation and normalizes spaces (closer to legacy normalize-for-match semantics),
+   - menu slot lookup now has additional fallback by tokenized NBT text, reducing false `NO_PATH_GUI` when display names differ.
 
 ### Verified Now
 1. Compile gates passed:

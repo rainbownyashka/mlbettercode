@@ -909,6 +909,10 @@ public final class PlaceRuntimeStepExecutor {
             if (slot >= 0) {
                 return slot;
             }
+            slot = findSlotByNbtTokenMatch(view, candidate, skipPlayer);
+            if (slot >= 0) {
+                return slot;
+            }
         }
         return -1;
     }
@@ -958,6 +962,43 @@ public final class PlaceRuntimeStepExecutor {
                     continue;
                 }
                 if (!slotText.contains(t)) {
+                    all = false;
+                    break;
+                }
+            }
+            if (all) {
+                return s.slotNumber();
+            }
+        }
+        return -1;
+    }
+
+    private static int findSlotByNbtTokenMatch(ContainerView view, String key, boolean skipPlayer) {
+        if (view == null) {
+            return -1;
+        }
+        String normKey = norm(key);
+        if (normKey.isEmpty()) {
+            return -1;
+        }
+        String[] wanted = normKey.split(" ");
+        for (SlotView s : view.slots()) {
+            if (s == null) {
+                continue;
+            }
+            if (skipPlayer && s.playerInventory()) {
+                continue;
+            }
+            String hay = norm(s.nbt());
+            if (hay.isEmpty()) {
+                continue;
+            }
+            boolean all = true;
+            for (String t : wanted) {
+                if (t == null || t.isEmpty()) {
+                    continue;
+                }
+                if (!hay.contains(t)) {
                     all = false;
                     break;
                 }
@@ -1025,8 +1066,12 @@ public final class PlaceRuntimeStepExecutor {
         if (raw == null) {
             return "";
         }
-        String s = raw.toLowerCase();
+        String s = raw.replaceAll("(?i)§.", " ");
+        s = s.toLowerCase();
         s = s.replace('ё', 'е');
+        s = s.replace('\u00A0', ' ');
+        s = s.replaceAll("[^\\p{L}\\p{N}\\s]+", " ");
+        s = s.replaceAll("\\s+", " ");
         return s.trim();
     }
 
