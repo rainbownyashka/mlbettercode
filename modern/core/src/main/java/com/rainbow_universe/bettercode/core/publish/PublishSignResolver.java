@@ -35,14 +35,18 @@ public final class PublishSignResolver {
         if (row == null || cacheView == null || bridge == null) {
             return Result.fail("null_context");
         }
+        PublishRowContext ctx = PublishRowContext.fromSelectedRow(row);
+        if (ctx == null) {
+            return Result.fail("null_context");
+        }
         String dim = normalizeDim(bridge.dimensionId(), row.dimension(), bridge.currentDimension());
-        int entryX = row.entryX();
-        int entryY = row.entryY();
-        int entryZ = row.entryZ();
+        int entryX = ctx.entryX();
+        int entryY = ctx.entryY();
+        int entryZ = ctx.entryZ();
 
-        int signX = row.signX();
-        int signY = row.signY();
-        int signZ = row.signZ();
+        int signX = ctx.signX();
+        int signY = ctx.signY();
+        int signZ = ctx.signZ();
 
         String[] liveLines = null;
         boolean signPresent = false;

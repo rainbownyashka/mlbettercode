@@ -73,3 +73,5 @@ Purpose: lock behavior-critical trace scenarios before and during multi-version 
 - Modern publish now emits explicit sign-stage traces (`publish.sign.cache_hit`, `publish.sign.invalid`) and returns mapped runtime codes (`PUBLISH_WARMUP_TIMEOUT`, `PUBLISH_TP_UNAVAILABLE`, `PUBLISH_CONTEXT_BLOCKED`, `PUBLISH_NEXT_PAGE_RETRY_EXHAUSTED`, `PUBLISH_SIGN_INVALID`).
 - Modern core now uses adapter-backed sign resolver (`isSignAt`/`readSignLinesAt`) with cache source mapping (`live|scope|dim`); remaining gap is live-server trace alignment for sign/page timing (`MOD-077`, `MOD-078`, `MOD-079`).
 - Run block-revert handling now emits `runtime_state=BLOCK_RECHECK miss=<n> elapsed=<ms>` before replace/fail to separate transient desync from true revert.
+- Modern publish row normalization now traces `publish.row.resolve glass=<...> entry=<...> sign=<...>` and validates signs against entry-based legacy coordinates (`entry.y+1`, `sign z-1`).
+- Modern runtime menu open path now uses strict entry-anchor open semantics in adapters (sign first, then entry) without crosshair fallback; parity validation remains live-smoke gated (`MOD-081`).

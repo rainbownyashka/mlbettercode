@@ -11,6 +11,7 @@ import com.rainbow_universe.bettercode.core.PlaceOp;
 import com.rainbow_universe.bettercode.core.RuntimeCore;
 import com.rainbow_universe.bettercode.core.RuntimeResult;
 import com.rainbow_universe.bettercode.core.bridge.AckState;
+import com.rainbow_universe.bettercode.core.bridge.BlockPosView;
 import com.rainbow_universe.bettercode.core.bridge.ClickResult;
 import com.rainbow_universe.bettercode.core.bridge.ContainerView;
 import com.rainbow_universe.bettercode.core.bridge.CursorState;
@@ -980,17 +981,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             if (mc.currentScreen instanceof HandledScreen) {
                 return true;
             }
-            if (useBlockAtOffset(0, 0, -1, "menu_open_sign")) {
-                return true;
-            }
-            if (useBlockAtOffset(0, 0, 0, "menu_open_block")) {
-                return true;
-            }
-            if (mc.crosshairTarget instanceof BlockHitResult) {
-                ActionResult result = mc.interactionManager.interactBlock(mc.player, mc.world, Hand.MAIN_HAND, (BlockHitResult) mc.crosshairTarget);
-                return result != null && result.isAccepted();
-            }
-            return false;
+            return openMenuAtEntryAnchor();
         }
 
         @Override
@@ -1237,6 +1228,18 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
 
         @Override
+        public ClickResult clickBlockLegacy(int x, int y, int z, String purpose, boolean spoofLook) {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.player == null || mc.interactionManager == null || mc.world == null) {
+                return ClickResult.rejected("client_context_missing", AckState.REJECTED);
+            }
+            if (spoofLook) {
+                aimAtBlock(mc, x, y, z);
+            }
+            return sendUseItemOnBlock(x, y, z);
+        }
+
+        @Override
         public long nowMs() {
             return System.currentTimeMillis();
         }
@@ -1350,6 +1353,34 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
 
         @Override
+        public boolean supportsLegacyLookSpoof() {
+            return true;
+        }
+
+        @Override
+        public BlockPosView getRuntimeEntryAnchor() {
+            BlockPos pos = resolveLastPlacedTarget();
+            if (pos == null) {
+                return null;
+            }
+            return new BlockPosView(pos.getX(), pos.getY(), pos.getZ());
+        }
+
+        @Override
+        public boolean openMenuAtEntryAnchor() {
+            BlockPos entry = resolveLastPlacedTarget();
+            if (entry == null) {
+                return false;
+            }
+            ClickResult sign = clickBlockLegacy(entry.getX(), entry.getY(), entry.getZ() - 1, "menu_open_sign", true);
+            if (sign != null && sign.accepted()) {
+                return true;
+            }
+            ClickResult base = clickBlockLegacy(entry.getX(), entry.getY(), entry.getZ(), "menu_open_entry", true);
+            return base != null && base.accepted();
+        }
+
+        @Override
         public boolean canTeleportWarmup() {
             return true;
         }
@@ -1452,6 +1483,31 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 } catch (Exception ignore) {
                 }
                 st.getClass().getMethod("setTag", parsed.getClass()).invoke(st, parsed);
+            } catch (Exception ignore) {
+            }
+        }
+
+        private static void aimAtBlock(MinecraftClient mc, int x, int y, int z) {
+            if (mc == null || mc.player == null) {
+                return;
+            }
+            double eyeX = mc.player.getX();
+            double eyeY = mc.player.getY() + mc.player.getEyeHeight(mc.player.getPose());
+            double eyeZ = mc.player.getZ();
+            double tx = x + 0.5;
+            double ty = y + 0.5;
+            double tz = z + 0.5;
+            double dx = tx - eyeX;
+            double dy = ty - eyeY;
+            double dz = tz - eyeZ;
+            double horiz = Math.sqrt(dx * dx + dz * dz);
+            float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
+            float pitch = (float) (-Math.toDegrees(Math.atan2(dy, horiz)));
+            try {
+                java.lang.reflect.Field fy = mc.player.getClass().getField("yaw");
+                fy.setFloat(mc.player, yaw);
+                java.lang.reflect.Field fp = mc.player.getClass().getField("pitch");
+                fp.setFloat(mc.player, pitch);
             } catch (Exception ignore) {
             }
         }

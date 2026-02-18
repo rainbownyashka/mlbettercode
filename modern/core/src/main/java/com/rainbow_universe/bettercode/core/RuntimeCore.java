@@ -8,6 +8,7 @@ import com.google.gson.JsonParseException;
 import com.rainbow_universe.bettercode.core.bridge.SelectedRow;
 import com.rainbow_universe.bettercode.core.publish.PublishExportExecutor;
 import com.rainbow_universe.bettercode.core.publish.PublishCacheView;
+import com.rainbow_universe.bettercode.core.publish.PublishRowContext;
 import com.rainbow_universe.bettercode.core.publish.PublishSignResolver;
 import com.rainbow_universe.bettercode.core.publish.PublishSessionState;
 import com.rainbow_universe.bettercode.core.publish.PublishWarmupExecutor;
@@ -351,6 +352,13 @@ public final class RuntimeCore {
         for (SelectedRow row : session.selectedRows) {
             if (row == null) {
                 continue;
+            }
+            PublishRowContext rowCtx = PublishRowContext.fromSelectedRow(row);
+            if (rowCtx != null) {
+                publishTrace(bridge, "publish.row.resolve",
+                    "glass=" + rowCtx.glassX() + "," + rowCtx.glassY() + "," + rowCtx.glassZ()
+                        + " entry=" + rowCtx.entryX() + "," + rowCtx.entryY() + "," + rowCtx.entryZ()
+                        + " sign=" + rowCtx.signX() + "," + rowCtx.signY() + "," + rowCtx.signZ());
             }
             PublishSignResolver.Result resolved = PublishSignResolver.resolve(row, session.cacheView, bridge);
             if (!resolved.ok) {

@@ -1,6 +1,7 @@
 package com.rainbow_universe.bettercode.core;
 
 import com.rainbow_universe.bettercode.core.bridge.AckState;
+import com.rainbow_universe.bettercode.core.bridge.BlockPosView;
 import com.rainbow_universe.bettercode.core.bridge.ClickResult;
 import com.rainbow_universe.bettercode.core.bridge.ContainerView;
 import com.rainbow_universe.bettercode.core.bridge.CursorState;
@@ -43,6 +44,7 @@ public interface GameBridge {
     boolean injectCreativeSlot(int slot, String itemId, String nbt, String displayName);
     ClickResult interactBlock(int x, int y, int z);
     ClickResult sendUseItemOnBlock(int x, int y, int z);
+    ClickResult clickBlockLegacy(int x, int y, int z, String purpose, boolean spoofLook);
     long nowMs();
 
     default List<SelectedRow> selectedRows() {
@@ -58,6 +60,9 @@ public interface GameBridge {
     boolean isSignAt(int x, int y, int z);
     String[] readSignLinesAt(int x, int y, int z);
     String dimensionId();
+    boolean supportsLegacyLookSpoof();
+    BlockPosView getRuntimeEntryAnchor();
+    boolean openMenuAtEntryAnchor();
     boolean canTeleportWarmup();
     double distanceSqTo(int x, int y, int z);
 }

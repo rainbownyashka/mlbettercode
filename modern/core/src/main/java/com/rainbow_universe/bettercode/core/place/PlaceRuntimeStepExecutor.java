@@ -4,6 +4,7 @@ import com.rainbow_universe.bettercode.core.CoreLogger;
 import com.rainbow_universe.bettercode.core.GameBridge;
 import com.rainbow_universe.bettercode.core.PlaceExecResult;
 import com.rainbow_universe.bettercode.core.bridge.AckState;
+import com.rainbow_universe.bettercode.core.bridge.BlockPosView;
 import com.rainbow_universe.bettercode.core.bridge.ClickResult;
 import com.rainbow_universe.bettercode.core.bridge.ContainerView;
 import com.rainbow_universe.bettercode.core.bridge.CursorState;
@@ -287,7 +288,7 @@ public final class PlaceRuntimeStepExecutor {
             }
 
             String routeKey = route.baseKey;
-            int slot = findSlotByKey(view, routeKey, false);
+            int slot = findSlotByAnyKey(view, routeKey, false);
             if (slot < 0) {
                 if (!route.scopeKey.isEmpty()) {
                     return fail(logger, "SCOPE_TARGET_NOT_FOUND", "menu key not found: " + routeKey);
@@ -566,6 +567,9 @@ public final class PlaceRuntimeStepExecutor {
         if (bridge == null) {
             return false;
         }
+        if (bridge.openMenuAtEntryAnchor()) {
+            return true;
+        }
         if (bridge.openContainerIfNeeded()) {
             return true;
         }
@@ -579,6 +583,13 @@ public final class PlaceRuntimeStepExecutor {
     private static boolean tryOpenParamsTarget(GameBridge bridge) {
         if (bridge == null) {
             return false;
+        }
+        BlockPosView anchor = bridge.getRuntimeEntryAnchor();
+        if (anchor != null) {
+            ClickResult legacy = bridge.clickBlockLegacy(anchor.x(), anchor.y() + 1, anchor.z(), "params_open_sign_offset", true);
+            if (legacy != null && legacy.accepted()) {
+                return true;
+            }
         }
         // Legacy sign+offset resolves to entry.up in this grid.
         if (bridge.useBlockAtOffset(0, 1, 0, "params_open")) {
@@ -886,6 +897,33 @@ public final class PlaceRuntimeStepExecutor {
             }
         }
         return -1;
+    }
+
+    private static int findSlotByAnyKey(ContainerView view, String key, boolean skipPlayer) {
+        for (String candidate : alternateMenuKeys(key)) {
+            int slot = findSlotByKey(view, candidate, skipPlayer);
+            if (slot >= 0) {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    private static List<String> alternateMenuKeys(String key) {
+        ArrayList<String> out = new ArrayList<String>();
+        String base = norm(key);
+        if (!base.isEmpty()) {
+            out.add(base);
+            if (base.contains("вход игрока")) {
+                out.add("событие входа");
+                out.add("вход");
+            }
+            if (base.contains("событие входа")) {
+                out.add("вход игрока");
+                out.add("вход");
+            }
+        }
+        return out;
     }
 
     private static int findPlayerSlotByIndex(ContainerView view, int index) {

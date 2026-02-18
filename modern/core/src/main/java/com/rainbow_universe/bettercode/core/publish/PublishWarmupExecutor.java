@@ -85,17 +85,23 @@ public final class PublishWarmupExecutor {
             }
 
             SelectedRow row = state.currentChest;
-            int targetX = row.x();
-            int targetY = row.y();
-            int targetZ = row.z() - 2;
+            PublishRowContext ctx = PublishRowContext.fromSelectedRow(row);
+            if (ctx == null) {
+                state.warmupActive = false;
+                trace.trace("warmup.stop", "reason=row_context_invalid");
+                return Result.fail("PUBLISH_CONTEXT_BLOCKED", "row context invalid");
+            }
+            int targetX = ctx.entryX();
+            int targetY = ctx.entryY();
+            int targetZ = ctx.entryZ() - 2;
             boolean tpQueued = bridge.enqueueTpPath(targetX, targetY, targetZ);
             trace.trace("warmup.tp", "target=" + targetX + "," + targetY + "," + targetZ + " queued=" + tpQueued);
             if (!tpQueued) {
-                double distSq = bridge.distanceSqTo(row.x(), row.y(), row.z());
+                double distSq = bridge.distanceSqTo(ctx.entryX(), ctx.entryY(), ctx.entryZ());
                 if (distSq > 9.0d || !bridge.canTeleportWarmup()) {
                     state.warmupActive = false;
                     state.blockedReason = "tp_unavailable";
-                    trace.trace("warmup.stop", "reason=tp_unavailable pos=" + row.x() + "," + row.y() + "," + row.z()
+                    trace.trace("warmup.stop", "reason=tp_unavailable entry=" + ctx.entryX() + "," + ctx.entryY() + "," + ctx.entryZ()
                         + " distSq=" + distSq + " canTeleport=" + bridge.canTeleportWarmup());
                     return Result.fail("PUBLISH_TP_UNAVAILABLE", "tp unavailable for warmup target");
                 }
@@ -103,9 +109,9 @@ public final class PublishWarmupExecutor {
             }
             ContainerView beforeOpen = bridge.getContainerSnapshot();
             String beforeHash = hashNonPlayer(beforeOpen);
-            boolean opened = bridge.useBlockAt(row.x(), row.y(), row.z(), "publish_warmup_open");
+            boolean opened = bridge.useBlockAt(ctx.entryX(), ctx.entryY(), ctx.entryZ(), "publish_warmup_open");
             if (!opened) {
-                opened = bridge.useBlockAt(row.x(), row.y() + 1, row.z(), "publish_warmup_open_fallback");
+                opened = bridge.useBlockAt(ctx.paramsX(), ctx.paramsY(), ctx.paramsZ(), "publish_warmup_open_fallback");
             }
             boolean progressed = false;
             if (opened) {
@@ -114,7 +120,7 @@ public final class PublishWarmupExecutor {
                 String afterHash = hashNonPlayer(afterOpen);
                 progressed = isOpenProgress(beforeOpen, afterOpen, beforeHash, afterHash);
             }
-            trace.trace("warmup.open", "pos=" + row.x() + "," + row.y() + "," + row.z()
+            trace.trace("warmup.open", "entry=" + ctx.entryX() + "," + ctx.entryY() + "," + ctx.entryZ()
                 + " opened=" + opened + " progressed=" + progressed);
             if (!opened || !progressed) {
                 if (state.warmupPass == 0) {

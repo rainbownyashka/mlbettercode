@@ -335,6 +335,12 @@
 - Modern run false-revert guard refinement:
   - `PlaceRuntimeStepExecutor` now treats already-opened/opening menu context as progress during block recheck,
   - if container window is visible (or menu-open attempt is already in flight), runtime no longer escalates to `FORCE_REPLACE reason=block_reverted` for that step.
+- Modern 1:1 parity hardening (latest-log slice):
+  - publish row context is now normalized as `glass -> entry(y+1) -> sign(z-1)` for sign checks (`publish.row.resolve` trace added),
+  - warmup open/tp now use entry-based coordinates instead of raw glass anchor,
+  - strict runtime menu open now uses entry-anchor path (sign `z-1` then entry) with no crosshair fallback in Fabric 1.16.5/1.20/1.21,
+  - adapters expose legacy click primitive (`clickBlockLegacy` + look spoof) and runtime entry anchor bridge methods,
+  - menu key search in core now includes event alias fallback (`вход игрока` <-> `событие входа`) before failing `NO_PATH_GUI`.
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:
