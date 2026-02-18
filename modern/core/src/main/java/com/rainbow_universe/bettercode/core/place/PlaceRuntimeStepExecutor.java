@@ -567,17 +567,8 @@ public final class PlaceRuntimeStepExecutor {
         if (bridge == null) {
             return false;
         }
-        if (bridge.openMenuAtEntryAnchor()) {
-            return true;
-        }
-        if (bridge.openContainerIfNeeded()) {
-            return true;
-        }
-        // Legacy parity: prefer sign at Z-1, then fallback to event block itself.
-        if (bridge.useBlockAtOffset(0, 0, -1, "menu_open_sign")) {
-            return true;
-        }
-        return bridge.useBlockAtOffset(0, 0, 0, "menu_open_block");
+        // Strict legacy path: sign (z-1 from entry) -> entry block; no generic fallback.
+        return bridge.openMenuAtEntryAnchor();
     }
 
     private static boolean tryOpenParamsTarget(GameBridge bridge) {
@@ -595,7 +586,7 @@ public final class PlaceRuntimeStepExecutor {
         if (bridge.useBlockAtOffset(0, 1, 0, "params_open")) {
             return true;
         }
-        return bridge.openContainerIfNeeded();
+        return false;
     }
 
     private static boolean startMenuForceReplace(
@@ -905,6 +896,10 @@ public final class PlaceRuntimeStepExecutor {
             if (slot >= 0) {
                 return slot;
             }
+            slot = findSlotByTokenMatch(view, candidate, skipPlayer);
+            if (slot >= 0) {
+                return slot;
+            }
         }
         return -1;
     }
@@ -916,14 +911,53 @@ public final class PlaceRuntimeStepExecutor {
             out.add(base);
             if (base.contains("вход игрока")) {
                 out.add("событие входа");
+                out.add("событие входа игрока");
                 out.add("вход");
             }
             if (base.contains("событие входа")) {
                 out.add("вход игрока");
+                out.add("входа игрока");
                 out.add("вход");
             }
         }
         return out;
+    }
+
+    private static int findSlotByTokenMatch(ContainerView view, String key, boolean skipPlayer) {
+        if (view == null) {
+            return -1;
+        }
+        String normKey = norm(key);
+        if (normKey.isEmpty()) {
+            return -1;
+        }
+        String[] wanted = normKey.split(" ");
+        for (SlotView s : view.slots()) {
+            if (s == null) {
+                continue;
+            }
+            if (skipPlayer && s.playerInventory()) {
+                continue;
+            }
+            String slotText = norm(s.displayName());
+            if (slotText.isEmpty()) {
+                continue;
+            }
+            boolean all = true;
+            for (String t : wanted) {
+                if (t == null || t.isEmpty()) {
+                    continue;
+                }
+                if (!slotText.contains(t)) {
+                    all = false;
+                    break;
+                }
+            }
+            if (all) {
+                return s.slotNumber();
+            }
+        }
+        return -1;
     }
 
     private static int findPlayerSlotByIndex(ContainerView view, int index) {

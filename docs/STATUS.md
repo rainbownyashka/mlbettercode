@@ -196,6 +196,10 @@
   - duplicated Fabric command bridge logic reduced:
     - common `PlaceCommandBridgeUtil` introduced in `modern/core/place`,
     - command build/sanitize/send reflection moved out of adapters.
+  - latest log-driven parity hardening slice:
+    - removed non-legacy menu/params generic fallbacks in core (`tryOpenMenuTarget`/`tryOpenParamsTarget`) to keep strict entry-anchor path only,
+    - strengthened GUI route lookup with alias + token-set matching for event names (`вход игрока` vs `событие входа`),
+    - legacy click primitive now does two-stage interaction (`sendUseItemOnBlock` + direct `interactBlock`) in all Fabric adapters to reduce false `WAIT_MENU_ACK`.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,

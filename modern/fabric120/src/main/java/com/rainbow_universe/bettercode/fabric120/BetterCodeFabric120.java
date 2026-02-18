@@ -1292,7 +1292,14 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
             if (spoofLook) {
                 aimAtBlock(mc, x, y, z);
             }
-            return sendUseItemOnBlock(x, y, z);
+            ClickResult packetLike = sendUseItemOnBlock(x, y, z);
+            boolean accepted = packetLike != null && packetLike.accepted();
+            boolean interactAccepted = useBlockAt(x, y, z, purpose == null ? "legacy_click_interact" : purpose + "_interact");
+            if (accepted || interactAccepted) {
+                return ClickResult.accepted(AckState.PENDING);
+            }
+            String reason = packetLike == null ? "legacy_click_rejected" : packetLike.reason();
+            return ClickResult.rejected(reason, AckState.REJECTED);
         }
 
         @Override
