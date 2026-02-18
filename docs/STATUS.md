@@ -332,6 +332,9 @@
   - warmup no longer silently finishes with unresolved retry queue (`warmup.stop reason=unresolved_queue`),
   - run block-revert detection now uses bounded recheck window (`BLOCK_RECHECK miss=<n>`) before triggering force re-place, reducing false early `BLOCK_REVERTED_TOO_MANY_TIMES`,
   - seed selection for direct runtime in Fabric 1.16.5/1.20/1.21 now picks nearest valid selected row (block above `light_blue_stained_glass`) in current dimension first.
+- Modern run false-revert guard refinement:
+  - `PlaceRuntimeStepExecutor` now treats already-opened/opening menu context as progress during block recheck,
+  - if container window is visible (or menu-open attempt is already in flight), runtime no longer escalates to `FORCE_REPLACE reason=block_reverted` for that step.
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:

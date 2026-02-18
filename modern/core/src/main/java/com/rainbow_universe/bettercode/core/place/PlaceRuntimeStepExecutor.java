@@ -88,7 +88,13 @@ public final class PlaceRuntimeStepExecutor {
                 entry.setBlockRecheckMisses(0);
                 entry.setBlockRecheckStartMs(0L);
             } else {
-                boolean menuProgressed = entry.lastMenuWindowId() >= 0 || entry.awaitingParamsChest() || entry.awaitingArgs();
+                ContainerView currentView = bridge.getContainerSnapshot();
+                boolean menuWindowVisible = currentView != null && currentView.windowId() >= 0;
+                boolean menuProgressed = menuWindowVisible
+                    || entry.lastMenuWindowId() >= 0
+                    || entry.awaitingParamsChest()
+                    || entry.awaitingArgs()
+                    || (entry.awaitingMenu() && entry.menuOpenAttempts() > 0 && entry.lastOpenAttemptMs() > 0L);
                 if (!menuProgressed) {
                     long elapsed = now - entry.placedConfirmedMs();
                     if (elapsed >= BLOCK_RECHECK_MIN_ELAPSED_MS) {
