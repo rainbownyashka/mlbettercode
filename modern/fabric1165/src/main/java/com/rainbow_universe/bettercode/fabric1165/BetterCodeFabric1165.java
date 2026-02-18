@@ -821,10 +821,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             if (nearestAny != null) {
                 return nearestAny;
             }
-            HitResult target = mc.crosshairTarget;
-            if (target instanceof BlockHitResult) {
-                return ((BlockHitResult) target).getBlockPos();
-            }
+            // Strict legacy parity: do not use look-direction fallback when no valid row is resolved.
             return null;
         }
 
@@ -841,7 +838,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 if (sameDimOnly && !dim.equals(s.dimension)) {
                     continue;
                 }
-                BlockPos entry = new BlockPos(s.x, s.y, s.z);
+                BlockPos entry = new BlockPos(s.x, s.y + 1, s.z);
                 if (!isValidSelectedEntry(mc, entry)) {
                     continue;
                 }
@@ -1379,9 +1376,11 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             if (entry == null) {
                 return false;
             }
-            ClickResult sign = clickBlockLegacy(entry.getX(), entry.getY(), entry.getZ() - 1, "menu_open_sign", true);
-            if (sign != null && sign.accepted()) {
-                return true;
+            for (int dy = -2; dy <= 0; dy++) {
+                ClickResult sign = clickBlockLegacy(entry.getX(), entry.getY() + dy, entry.getZ() - 1, "menu_open_sign", true);
+                if (sign != null && sign.accepted()) {
+                    return true;
+                }
             }
             ClickResult base = clickBlockLegacy(entry.getX(), entry.getY(), entry.getZ(), "menu_open_entry", true);
             return base != null && base.accepted();

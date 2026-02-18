@@ -48,16 +48,15 @@ public final class PublishSignResolver {
         int signY = ctx.signY();
         int signZ = ctx.signZ();
 
+        // Legacy parity: find sign at z-1 from entry across y offsets [-2..0].
+        int[] signPos = findLegacySignPos(bridge, entryX, entryY, entryZ);
         String[] liveLines = null;
         boolean signPresent = false;
-        if (bridge.isSignAt(signX, signY, signZ)) {
+        if (signPos != null) {
+            signX = signPos[0];
+            signY = signPos[1];
+            signZ = signPos[2];
             signPresent = true;
-            liveLines = bridge.readSignLinesAt(signX, signY, signZ);
-        } else if (bridge.isSignAt(entryX, entryY + 1, entryZ)) {
-            signPresent = true;
-            signX = entryX;
-            signY = entryY + 1;
-            signZ = entryZ;
             liveLines = bridge.readSignLinesAt(signX, signY, signZ);
         }
 
@@ -74,6 +73,21 @@ public final class PublishSignResolver {
             return Result.fail("cache_miss");
         }
         return Result.ok(resolved.source, resolved.key, resolved.lines);
+    }
+
+    private static int[] findLegacySignPos(GameBridge bridge, int entryX, int entryY, int entryZ) {
+        if (bridge == null) {
+            return null;
+        }
+        for (int dy = -2; dy <= 0; dy++) {
+            int sx = entryX;
+            int sy = entryY + dy;
+            int sz = entryZ - 1;
+            if (bridge.isSignAt(sx, sy, sz)) {
+                return new int[]{sx, sy, sz};
+            }
+        }
+        return null;
     }
 
     private static String normalizeDim(String preferred, String rowDim, String fallback) {

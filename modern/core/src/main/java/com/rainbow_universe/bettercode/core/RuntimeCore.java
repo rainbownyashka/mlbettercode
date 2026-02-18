@@ -362,15 +362,21 @@ public final class RuntimeCore {
             }
             PublishSignResolver.Result resolved = PublishSignResolver.resolve(row, session.cacheView, bridge);
             if (!resolved.ok) {
+                int ex = rowCtx == null ? row.entryX() : rowCtx.entryX();
+                int ey = rowCtx == null ? row.entryY() : rowCtx.entryY();
+                int ez = rowCtx == null ? row.entryZ() : rowCtx.entryZ();
                 publishTrace(bridge, "publish.sign.invalid",
-                    "entry=" + row.entryX() + "," + row.entryY() + "," + row.entryZ()
+                    "entry=" + ex + "," + ey + "," + ez
                         + " reason=" + resolved.reason);
                 return RuntimeResult.fail(RuntimeErrorCode.PUBLISH_SIGN_INVALID,
-                    "invalid sign context at " + row.entryX() + "," + row.entryY() + "," + row.entryZ()
+                    "invalid sign context at " + ex + "," + ey + "," + ez
                         + " reason=" + resolved.reason);
             }
+            int ex = rowCtx == null ? row.entryX() : rowCtx.entryX();
+            int ey = rowCtx == null ? row.entryY() : rowCtx.entryY();
+            int ez = rowCtx == null ? row.entryZ() : rowCtx.entryZ();
             publishTrace(bridge, "publish.sign.cache_hit",
-                "entry=" + row.entryX() + "," + row.entryY() + "," + row.entryZ()
+                "entry=" + ex + "," + ey + "," + ez
                     + " source=" + resolved.source + " key=" + resolved.key);
         }
         return RuntimeResult.ok("sign validation ok");
