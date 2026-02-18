@@ -837,8 +837,8 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                     mc.player.getInventory().selectedSlot = slot;
                 }
 
-                BlockPos target = DIRECT_PLACE_STATE.seed.add(-2 * DIRECT_PLACE_STATE.cursor, 1, 0);
-                BlockPos support = target.down();
+                BlockPos entryPos = DIRECT_PLACE_STATE.seed.add(-2 * DIRECT_PLACE_STATE.cursor, 1, 0);
+                BlockPos target = entryPos.down();
                 String expectedBlockId = String.valueOf(Registries.BLOCK.getId(block));
                 long now = System.currentTimeMillis();
 
@@ -867,9 +867,9 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                 }
 
                 BlockHitResult hit = new BlockHitResult(
-                    new Vec3d(support.getX() + 0.5, support.getY() + 1.0, support.getZ() + 0.5),
+                    new Vec3d(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5),
                     Direction.UP,
-                    support,
+                    target,
                     false
                 );
                 ActionResult result = mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
@@ -878,7 +878,7 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                 if (result == null || !result.isAccepted()) {
                     if (DIRECT_PLACE_STATE.pendingSinceMs > 0L && now - DIRECT_PLACE_STATE.pendingSinceMs > 6000L) {
                         return PlaceExecResult.fail(0, 0, "PLACE_INTERACT_REJECTED",
-                            "interactBlock rejected too long at target=" + target + " support=" + support
+                            "interactBlock rejected too long at target=" + target
                                 + " result=" + String.valueOf(result) + " attempts=" + DIRECT_PLACE_STATE.placeAttempts);
                     }
                     return PlaceExecResult.inProgress(0, "PLACE_RETRY_INTERACT");
@@ -914,7 +914,7 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                 if (sameDimOnly && !dim.equals(s.dimension())) {
                     continue;
                 }
-                BlockPos entry = new BlockPos(s.x(), s.y() + 1, s.z());
+                BlockPos entry = new BlockPos(s.x(), s.y(), s.z());
                 if (!isValidSelectedEntry(mc, entry)) {
                     continue;
                 }
@@ -931,7 +931,7 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             if (mc == null || mc.world == null || entry == null) {
                 return false;
             }
-            return mc.world.getBlockState(entry.down()).getBlock() == Blocks.LIGHT_BLUE_STAINED_GLASS;
+            return mc.world.getBlockState(entry).getBlock() == Blocks.LIGHT_BLUE_STAINED_GLASS;
         }
 
         private static int findHotbarSlot(MinecraftClient mc, Item item) {

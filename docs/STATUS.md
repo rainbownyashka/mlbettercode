@@ -10,7 +10,8 @@
 - Current parity closure progress (code-level, pending runtime gate):
   - strict run seed resolver now excludes crosshair fallback and resolves nearest row as `glass.up` entry in all Fabric adapters,
   - menu open sign target now scans legacy y-offsets (`entry.z-1`, `dy=-2..0`) in all Fabric adapters,
-  - publish sign resolver now uses same legacy y-offset scan before cache/live resolution.
+  - publish sign resolver now uses same legacy y-offset scan before cache/live resolution,
+  - direct run placement target aligned to legacy plane (`entry.down`) in all Fabric adapters.
 - `/mldsl run` plan execution path wired to place pipeline.
 - Chest page merge logic stores and reuses merged snapshot across pages.
 - `/loadmodule` supports explicit error reasons (timeout/http/ssl/etc.).

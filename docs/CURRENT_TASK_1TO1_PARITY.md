@@ -75,6 +75,9 @@
 
 4. Publish trace/error coordinate clarity:
    - `RuntimeCore.validatePublishSigns(...)` now reports entry coordinates from normalized `PublishRowContext` in trace/error payloads.
+5. Run placement plane parity:
+   - direct placement target corrected to legacy-equivalent `entry.down` (blue-glass plane), not shifted target,
+   - run seed remains strict (no crosshair fallback), and selected rows are treated as glass anchors.
 
 ### Verified Now
 1. Compile gates passed:
