@@ -11,7 +11,9 @@
   - strict run seed resolver now excludes crosshair fallback and resolves nearest row as `glass.up` entry in all Fabric adapters,
   - menu open sign target now scans legacy y-offsets (`entry.z-1`, `dy=-2..0`) in all Fabric adapters,
   - publish sign resolver now uses same legacy y-offset scan before cache/live resolution,
-  - direct run placement target aligned to legacy plane (`entry.down`) in all Fabric adapters.
+  - direct run placement target aligned to legacy plane (`entry.down`) in all Fabric adapters,
+  - params-open click target aligned toward legacy `sign+(0,1,1)` path with Y-offset scan in core executor,
+  - sign detection in adapters hardened to registry-id based check (obfuscation-safe), not class-name only.
 - `/mldsl run` plan execution path wired to place pipeline.
 - Chest page merge logic stores and reuses merged snapshot across pages.
 - `/loadmodule` supports explicit error reasons (timeout/http/ssl/etc.).

@@ -78,6 +78,10 @@
 5. Run placement plane parity:
    - direct placement target corrected to legacy-equivalent `entry.down` (blue-glass plane), not shifted target,
    - run seed remains strict (no crosshair fallback), and selected rows are treated as glass anchors.
+6. Params open target parity:
+   - core params-open now tries legacy-equivalent `sign+(0,1,1)` candidates using sign Y-offset scan (`dy=-2..0`) before fallback.
+7. Sign block detection parity hardening:
+   - adapter `isSignAt(...)` no longer relies only on block-entity class name; now also checks block registry id containing `sign` (obf-safe).
 
 ### Verified Now
 1. Compile gates passed:

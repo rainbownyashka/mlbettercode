@@ -577,12 +577,21 @@ public final class PlaceRuntimeStepExecutor {
         }
         BlockPosView anchor = bridge.getRuntimeEntryAnchor();
         if (anchor != null) {
-            ClickResult legacy = bridge.clickBlockLegacy(anchor.x(), anchor.y() + 1, anchor.z(), "params_open_sign_offset", true);
-            if (legacy != null && legacy.accepted()) {
-                return true;
+            // Legacy parity: params click prefers sign(z-1) + (0,1,1), where sign Y may vary in [-2..0] from entry.
+            for (int dy = -2; dy <= 0; dy++) {
+                ClickResult legacy = bridge.clickBlockLegacy(
+                    anchor.x(),
+                    anchor.y() + dy + 1,
+                    anchor.z(),
+                    "params_open_sign_offset",
+                    true
+                );
+                if (legacy != null && legacy.accepted()) {
+                    return true;
+                }
             }
         }
-        // Legacy sign+offset resolves to entry.up in this grid.
+        // Final fallback matches legacy when sign target can't be resolved.
         if (bridge.useBlockAtOffset(0, 1, 0, "params_open")) {
             return true;
         }

@@ -1368,6 +1368,13 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                 return false;
             }
             try {
+                String blockId = String.valueOf(Registries.BLOCK.getId(mc.world.getBlockState(new BlockPos(x, y, z)).getBlock()));
+                if (blockId != null && blockId.toLowerCase().contains("sign")) {
+                    return true;
+                }
+            } catch (Exception ignore) {
+            }
+            try {
                 Object be = mc.world.getBlockEntity(new BlockPos(x, y, z));
                 return be != null && be.getClass().getSimpleName().toLowerCase().contains("sign");
             } catch (Exception ignore) {
