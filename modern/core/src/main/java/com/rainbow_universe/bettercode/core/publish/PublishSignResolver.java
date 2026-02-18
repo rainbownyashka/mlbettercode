@@ -45,9 +45,12 @@ public final class PublishSignResolver {
         int signZ = row.signZ();
 
         String[] liveLines = null;
+        boolean signPresent = false;
         if (bridge.isSignAt(signX, signY, signZ)) {
+            signPresent = true;
             liveLines = bridge.readSignLinesAt(signX, signY, signZ);
         } else if (bridge.isSignAt(entryX, entryY + 1, entryZ)) {
+            signPresent = true;
             signX = entryX;
             signY = entryY + 1;
             signZ = entryZ;
@@ -58,7 +61,13 @@ public final class PublishSignResolver {
         String dimPosKey = dim + ":" + signX + ":" + signY + ":" + signZ;
         PublishCacheView.ResolvedSign resolved = cacheView.resolve(scopeKey, dimPosKey, liveLines);
         if (resolved == null || PublishCacheView.isInvalid(resolved.lines)) {
-            return Result.fail("no_live_or_cache");
+            if (!signPresent) {
+                return Result.fail("sign_missing");
+            }
+            if (PublishCacheView.isInvalid(liveLines)) {
+                return Result.fail("sign_empty");
+            }
+            return Result.fail("cache_miss");
         }
         return Result.ok(resolved.source, resolved.key, resolved.lines);
     }
@@ -82,4 +91,3 @@ public final class PublishSignResolver {
         return out;
     }
 }
-

@@ -69,6 +69,11 @@ public final class PublishWarmupExecutor {
                         trace.trace("warmup.retry_pass", "count=" + state.warmupQueue.size());
                         continue;
                     }
+                    if (!state.warmupRetryQueue.isEmpty()) {
+                        state.warmupActive = false;
+                        trace.trace("warmup.stop", "reason=unresolved_queue remaining=" + state.warmupRetryQueue.size());
+                        return Result.fail("PUBLISH_CONTEXT_BLOCKED", "warmup unresolved queue");
+                    }
                     if (now < state.settleUntilMs) {
                         trace.trace("warmup.wait", "reason=settling now=" + now + " settleUntil=" + state.settleUntilMs);
                         continue;
@@ -86,11 +91,15 @@ public final class PublishWarmupExecutor {
             boolean tpQueued = bridge.enqueueTpPath(targetX, targetY, targetZ);
             trace.trace("warmup.tp", "target=" + targetX + "," + targetY + "," + targetZ + " queued=" + tpQueued);
             if (!tpQueued) {
-                state.blockedReason = "tp_path_busy";
-                trace.trace("warmup.wait", "reason=tp_path_busy");
-                state.warmupRetryQueue.addLast(row);
-                state.currentChest = null;
-                continue;
+                double distSq = bridge.distanceSqTo(row.x(), row.y(), row.z());
+                if (distSq > 9.0d || !bridge.canTeleportWarmup()) {
+                    state.warmupActive = false;
+                    state.blockedReason = "tp_unavailable";
+                    trace.trace("warmup.stop", "reason=tp_unavailable pos=" + row.x() + "," + row.y() + "," + row.z()
+                        + " distSq=" + distSq + " canTeleport=" + bridge.canTeleportWarmup());
+                    return Result.fail("PUBLISH_TP_UNAVAILABLE", "tp unavailable for warmup target");
+                }
+                trace.trace("warmup.wait", "reason=tp_unavailable_but_near distSq=" + distSq);
             }
             ContainerView beforeOpen = bridge.getContainerSnapshot();
             String beforeHash = hashNonPlayer(beforeOpen);
@@ -125,7 +134,11 @@ public final class PublishWarmupExecutor {
     }
 
     private static Result checkBlocked(PublishSessionState state, GameBridge bridge, Trace trace) {
-        if (!bridge.canUseEditorContext()) {
+        boolean editorContext = bridge.canUseEditorContext();
+        boolean holdingBlocker = bridge.isHoldingBlockerItem();
+        boolean screenOpen = bridge.isScreenOpen();
+        boolean tpBusy = bridge.isTpPathBusy();
+        if (!editorContext) {
             state.blockedReason = "not_dev_creative";
             trace.trace("warmup.wait", "reason=not_dev_creative");
             return Result.fail("PUBLISH_CONTEXT_BLOCKED", "editor/dev context is not active");
@@ -137,16 +150,16 @@ public final class PublishWarmupExecutor {
             trace.trace("warmup.wait", "reason=dimension_mismatch current=" + currentDim + " expected=" + expectedDim);
             return Result.fail("PUBLISH_CONTEXT_BLOCKED", "dimension mismatch");
         }
-        if (bridge.isHoldingBlockerItem() || bridge.isScreenOpen()) {
-            boolean closed = !bridge.isScreenOpen() || bridge.closeScreenIfOpen();
-            state.blockedReason = "blocked heldIngot=" + bridge.isHoldingBlockerItem() + " screen=" + bridge.isScreenOpen();
-            trace.trace("warmup.wait", "reason=blocked heldIngot=" + bridge.isHoldingBlockerItem()
-                + " autoCache=false screen=" + bridge.isScreenOpen() + " closed=" + closed);
-            if (bridge.isHoldingBlockerItem() || !closed) {
+        if (holdingBlocker || screenOpen) {
+            boolean closed = !screenOpen || bridge.closeScreenIfOpen();
+            state.blockedReason = "blocked";
+            trace.trace("warmup.wait", "reason=blocked heldIngot=" + holdingBlocker
+                + " autoCache=false screen=" + screenOpen + " closed=" + closed);
+            if (holdingBlocker || !closed) {
                 return Result.fail("PUBLISH_CONTEXT_BLOCKED", "blocked by held item/screen");
             }
         }
-        if (bridge.isTpPathBusy()) {
+        if (tpBusy) {
             state.blockedReason = "tp_path_busy";
             trace.trace("warmup.wait", "reason=tp_path_busy");
             return Result.fail("PUBLISH_CONTEXT_BLOCKED", "tp path is busy");

@@ -58,4 +58,6 @@ public interface GameBridge {
     boolean isSignAt(int x, int y, int z);
     String[] readSignLinesAt(int x, int y, int z);
     String dimensionId();
+    boolean canTeleportWarmup();
+    double distanceSqTo(int x, int y, int z);
 }

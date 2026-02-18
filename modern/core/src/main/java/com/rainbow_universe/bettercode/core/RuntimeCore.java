@@ -375,6 +375,9 @@ public final class RuntimeCore {
         if ("PUBLISH_WARMUP_TIMEOUT".equalsIgnoreCase(raw)) {
             return RuntimeErrorCode.PUBLISH_WARMUP_TIMEOUT;
         }
+        if ("PUBLISH_TP_UNAVAILABLE".equalsIgnoreCase(raw)) {
+            return RuntimeErrorCode.PUBLISH_TP_UNAVAILABLE;
+        }
         if ("PUBLISH_NEXT_PAGE_RETRY_EXHAUSTED".equalsIgnoreCase(raw)) {
             return RuntimeErrorCode.PUBLISH_NEXT_PAGE_RETRY_EXHAUSTED;
         }

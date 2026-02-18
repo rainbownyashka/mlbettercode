@@ -888,24 +888,52 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
 
         private static BlockPos resolveSeed(MinecraftClient mc) {
             String dim = mc.world == null ? "" : mc.world.getRegistryKey().getValue().toString();
-            for (SelectedBlock s : SELECTED.values()) {
-                if (s == null) {
-                    continue;
-                }
-                if (dim.equals(s.dimension())) {
-                    return new BlockPos(s.x(), s.y(), s.z());
-                }
+            BlockPos nearestSameDim = nearestSelectedEntry(mc, dim, true);
+            if (nearestSameDim != null) {
+                return nearestSameDim;
             }
-            for (SelectedBlock s : SELECTED.values()) {
-                if (s != null) {
-                    return new BlockPos(s.x(), s.y(), s.z());
-                }
+            BlockPos nearestAny = nearestSelectedEntry(mc, dim, false);
+            if (nearestAny != null) {
+                return nearestAny;
             }
             HitResult target = mc.crosshairTarget;
             if (target instanceof BlockHitResult bhr) {
                 return bhr.getBlockPos();
             }
             return null;
+        }
+
+        private static BlockPos nearestSelectedEntry(MinecraftClient mc, String dim, boolean sameDimOnly) {
+            if (mc == null || mc.player == null || mc.world == null) {
+                return null;
+            }
+            BlockPos best = null;
+            double bestDist = Double.MAX_VALUE;
+            for (SelectedBlock s : SELECTED.values()) {
+                if (s == null) {
+                    continue;
+                }
+                if (sameDimOnly && !dim.equals(s.dimension())) {
+                    continue;
+                }
+                BlockPos entry = new BlockPos(s.x(), s.y(), s.z());
+                if (!isValidSelectedEntry(mc, entry)) {
+                    continue;
+                }
+                double dist = mc.player.squaredDistanceTo(entry.getX() + 0.5, entry.getY() + 0.5, entry.getZ() + 0.5);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = entry;
+                }
+            }
+            return best;
+        }
+
+        private static boolean isValidSelectedEntry(MinecraftClient mc, BlockPos entry) {
+            if (mc == null || mc.world == null || entry == null) {
+                return false;
+            }
+            return mc.world.getBlockState(entry.down()).getBlock() == Blocks.LIGHT_BLUE_STAINED_GLASS;
         }
 
         private static int findHotbarSlot(MinecraftClient mc, Item item) {
@@ -1374,6 +1402,20 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             } catch (Exception ignore) {
             }
             return currentDimension();
+        }
+
+        @Override
+        public boolean canTeleportWarmup() {
+            return true;
+        }
+
+        @Override
+        public double distanceSqTo(int x, int y, int z) {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc == null || mc.player == null) {
+                return Double.POSITIVE_INFINITY;
+            }
+            return mc.player.squaredDistanceTo(x + 0.5, y + 0.5, z + 0.5);
         }
 
         private static int readIntField(Object target, String field, int fallback) {

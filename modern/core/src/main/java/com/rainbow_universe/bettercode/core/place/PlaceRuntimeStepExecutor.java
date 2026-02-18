@@ -28,6 +28,8 @@ public final class PlaceRuntimeStepExecutor {
     private static final int MAX_MENU_OPEN_ATTEMPTS = 8;
     private static final int MAX_MENU_REPLACE_CYCLES = 2;
     private static final int MAX_PLACED_LOST_COUNT = 6;
+    private static final long BLOCK_RECHECK_MIN_ELAPSED_MS = 1200L;
+    private static final int BLOCK_RECHECK_MISS_REQUIRED = 3;
     private static final long PAGE_TURN_TIMEOUT_MS = 1500L;
     private static final int PAGE_TURN_MAX_RETRIES = 5;
 
@@ -80,19 +82,36 @@ public final class PlaceRuntimeStepExecutor {
             return PlaceExecResult.inProgress(0, "OPEN_MENU");
         }
 
-        if (entry.placedBlock()
-            && entry.placedConfirmedMs() > 0L
-            && now - entry.placedConfirmedMs() > Math.max(250L, delay)
-            && !bridge.isBlockAtOffset(0, 0, 0, entry.blockId())) {
-            int lost = entry.placedLostCount() + 1;
-            entry.setPlacedLostCount(lost);
-            if (lost > MAX_PLACED_LOST_COUNT) {
-                return fail(logger, "BLOCK_REVERTED_TOO_MANY_TIMES", "lost=" + lost);
+        if (entry.placedBlock() && entry.placedConfirmedMs() > 0L) {
+            boolean blockStillPlaced = bridge.isBlockAtOffset(0, 0, 0, entry.blockId());
+            if (blockStillPlaced) {
+                entry.setBlockRecheckMisses(0);
+                entry.setBlockRecheckStartMs(0L);
+            } else {
+                boolean menuProgressed = entry.lastMenuWindowId() >= 0 || entry.awaitingParamsChest() || entry.awaitingArgs();
+                if (!menuProgressed) {
+                    long elapsed = now - entry.placedConfirmedMs();
+                    if (elapsed >= BLOCK_RECHECK_MIN_ELAPSED_MS) {
+                        if (entry.blockRecheckStartMs() <= 0L) {
+                            entry.setBlockRecheckStartMs(now);
+                        }
+                        int misses = entry.blockRecheckMisses() + 1;
+                        entry.setBlockRecheckMisses(misses);
+                        logger.info("printer-debug", "runtime_state=BLOCK_RECHECK miss=" + misses + " elapsed=" + elapsed);
+                        if (misses >= BLOCK_RECHECK_MISS_REQUIRED) {
+                            int lost = entry.placedLostCount() + 1;
+                            entry.setPlacedLostCount(lost);
+                            if (lost > MAX_PLACED_LOST_COUNT) {
+                                return fail(logger, "BLOCK_REVERTED_TOO_MANY_TIMES", "lost=" + lost);
+                            }
+                            entry.setMenuReplaceCount(0);
+                            resetToRePlace(entry, now, delay);
+                            logger.info("printer-debug", "runtime_state=FORCE_REPLACE reason=block_reverted lost=" + lost);
+                            return PlaceExecResult.inProgress(0, "FORCE_REPLACE");
+                        }
+                    }
+                }
             }
-            entry.setMenuReplaceCount(0);
-            resetToRePlace(entry, now, delay);
-            logger.info("printer-debug", "runtime_state=FORCE_REPLACE reason=block_reverted lost=" + lost);
-            return PlaceExecResult.inProgress(0, "FORCE_REPLACE");
         }
 
         if (entry.placedBlock()
@@ -591,6 +610,8 @@ public final class PlaceRuntimeStepExecutor {
         }
         entry.setPlacedBlock(false);
         entry.setPlacedConfirmedMs(0L);
+        entry.setBlockRecheckMisses(0);
+        entry.setBlockRecheckStartMs(0L);
         entry.setAwaitingMenu(false);
         entry.setNeedOpenMenu(false);
         entry.setMenuStartMs(now);

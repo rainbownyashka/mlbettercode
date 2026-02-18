@@ -72,6 +72,8 @@ public final class PlaceRuntimeEntry {
     private long firstPlaceAttemptMs;
     private long placedConfirmedMs;
     private int placedLostCount;
+    private int blockRecheckMisses;
+    private long blockRecheckStartMs;
     private long cursorNotEmptySinceMs;
 
     public PlaceRuntimeEntry(boolean pause, boolean skip, String blockId, String name, String argsRaw, List<PlaceArgSpec> args) {
@@ -130,6 +132,8 @@ public final class PlaceRuntimeEntry {
         this.firstPlaceAttemptMs = 0L;
         this.placedConfirmedMs = 0L;
         this.placedLostCount = 0;
+        this.blockRecheckMisses = 0;
+        this.blockRecheckStartMs = 0L;
         this.cursorNotEmptySinceMs = 0L;
     }
 
@@ -264,6 +268,10 @@ public final class PlaceRuntimeEntry {
     public void setPlacedConfirmedMs(long placedConfirmedMs) { this.placedConfirmedMs = placedConfirmedMs; }
     public int placedLostCount() { return placedLostCount; }
     public void setPlacedLostCount(int placedLostCount) { this.placedLostCount = placedLostCount; }
+    public int blockRecheckMisses() { return blockRecheckMisses; }
+    public void setBlockRecheckMisses(int blockRecheckMisses) { this.blockRecheckMisses = blockRecheckMisses; }
+    public long blockRecheckStartMs() { return blockRecheckStartMs; }
+    public void setBlockRecheckStartMs(long blockRecheckStartMs) { this.blockRecheckStartMs = blockRecheckStartMs; }
     public long cursorNotEmptySinceMs() { return cursorNotEmptySinceMs; }
     public void setCursorNotEmptySinceMs(long cursorNotEmptySinceMs) { this.cursorNotEmptySinceMs = cursorNotEmptySinceMs; }
 }
