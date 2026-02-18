@@ -67,8 +67,132 @@
     - runtime start/stop hooks reset adapter execution state (`seed`, `cursor`),
     - `skip` is handled locally by cursor advance,
     - block-only steps with empty `name/args` place by local `interactBlock` using selected/crosshair seed and hotbar item.
-  - explicit unsupported branch (transparent, no fallback):
-    - steps with non-empty `name/args` now fail as `UNIMPLEMENTED_MENU_ARGS` (GUI/menu arg pipeline not ported yet).
+  - `GameBridge` contract tightened to required adapter-boundary operations:
+    - container snapshot/click/cursor/ack abstractions (`ContainerView`, `SlotView`, `CursorState`, `ClickResult`, `AckState`),
+    - no-op defaults removed for critical runtime operations.
+  - core direct menu runtime executor added (`PlaceRuntimeStepExecutor` + `DefaultMenuRouteResolver`):
+    - `name/args` flow is now owned by core state machine (`PLACE_BLOCK -> OPEN_MENU -> ROUTE_MENU -> APPLY_ARGS`),
+    - temporary adapter-side server-command bridge for `name/args` removed from Fabric 1.16.5/1.20/1.21.
+  - direct quick-input parity slice added in core executor:
+    - non-item arg modes now use legacy-compatible template mapping (`BOOK/SLIME_BALL/MAGMA_CREAM/ITEM_FRAME/PAPER/APPLE`) via adapter `injectCreativeSlot`,
+    - cursor-not-empty is now explicit timeout fail (`CURSOR_NOT_EMPTY`) in direct args path.
+  - direct args paging + tag semantics slice:
+    - `slotGuiIndex` arguments now use core page-routing with bounded retries/hash-change detection and next-arrow click path,
+    - quick-input tags now include legacy-compatible `display.LocName` for saved-variable (`save`) and apple/location values.
+    - page-routing no longer silently skips unresolved targets: failures are explicit (`ARGS_PAGE_ROUTE_FAILED`) with reason.
+  - direct item/input temp-hotbar parity slice:
+    - temp injection now prefers empty hotbar slot and restores original non-empty stack after target click,
+    - `PLACE_ITEM_TRACE` now emits staged logs (`begin`, `after_click`, `restore`) in modern core executor,
+    - page-turn retry limit aligned with legacy baseline (`5`) and next-page arrow detection first checks legacy last-slot position, then bounded fallback scan.
+  - direct menu/ack parity slice:
+    - scope submenu click now uses adapter ack signal (`waitForWindowChange`) before timeout fail (`SCOPE_MENU_ACK_TIMEOUT`),
+    - non-scope menu routing now has bounded random fallback path with explicit fail reasons (`NO_PATH_GUI` / `RANDOM_EXHAUSTED`) closer to legacy behavior.
+  - params-chest transition parity slice:
+    - after target menu click, runtime now enters explicit `awaitingParamsChest` state instead of jumping directly to args apply,
+    - args pipeline starts only after window-change ack/snapshot switch; timeout is explicit (`PARAMS_CHEST_TIMEOUT`).
+  - params/args race-hardening parity slice:
+    - if params chest does not auto-open after menu click, runtime now does bounded `close -> reopen` attempts before timeout,
+    - args apply now enforces legacy-like minimal action gap (`lastArgsActionMs`) to reduce click desync on laggy GUI.
+  - failure trace parity slice:
+    - all direct runtime fail exits in `PlaceRuntimeStepExecutor` now go through unified fail helper,
+    - each fail emits `printer-debug` marker `runtime_state=FAILED reason=<code> detail=<...>` for baseline diffing.
+  - menu click race-hardening slice:
+    - menu flow now enforces minimal click gap per window (`MENU_ACTION_GAP`) using `lastMenuClickMs`,
+    - random fallback is now deterministic/iterative by slot order and prioritizes non-arrow slots to reduce accidental page navigation loops.
+  - menu target resolution parity slice:
+    - direct menu lookup now follows `exact match -> contains` order (legacy-style ambiguity reduction),
+    - `name||scope` route now falls back to resolver base key when explicit base part is empty.
+  - click-only args parity slice:
+    - `clickOnly/clicks(...)` now queues exact click count (default `1`) without extra immediate click,
+    - removes overclick risk for slot-only actions in direct args runtime.
+  - arg-slot glass/meta parity slice:
+    - direct args slot resolver now supports legacy `glassMetaFilter` (`key#meta`) matching for stained glass panes,
+    - for glass-base argument slots, target slot is resolved through neighbor search order (`down,left,right,up`) with empty-slot fallback.
+  - used-arg-slot parity slice:
+    - runtime now tracks used argument target slots per step (`usedArgSlots`) and avoids reusing them in subsequent arg resolution,
+    - used-slot tracking is reset when args chest opens for a new step.
+  - menu non-empty stabilization parity slice:
+    - before routing menu clicks, runtime now waits for non-player slots to become non-empty and stable for a short window,
+    - prevents early route attempts on half-open/empty GUI snapshots under latency.
+  - args window lock parity slice:
+    - args pipeline now binds to a specific container window id (`argsWindowId`) after params chest open,
+    - if window changes during arg apply/pending clicks, runtime fails explicitly (`ARGS_WINDOW_CHANGED`) instead of clicking in a new GUI accidentally.
+  - args window-id edge-case fix:
+    - fixed sentinel handling so valid `windowId=0` is no longer treated as "uninitialized",
+    - ensured `argsWindowId` resets on step transition/completion to avoid stale window carry-over.
+  - pending-click slot validity guard:
+    - before each queued arg click, runtime now validates that pending target slot still exists in current non-player container view,
+    - stale pending slot now fails explicitly (`ARGS_PENDING_SLOT_MISSING`) instead of misclicking.
+  - runtime replacement stale-state guard:
+    - `/confirmload` now explicitly stops previous active runtime (`onExecutionStop`) before replacing `pendingExecution`,
+    - prevents stale execution context from carrying into a newly queued run.
+  - active-runtime preemption guard:
+    - new `/mldsl run`, `/mldsl run local`, `/loadmodule`, and `/confirmload` requests now preempt any active runtime session before continuing,
+    - ensures single active execution invariant and cleaner session boundaries.
+  - args empty-container wait guard:
+    - args stage now waits when container temporarily has zero non-player slots instead of counting misses immediately,
+    - same guard is applied to queued pending clicks to avoid premature fail on short-lived empty snapshots.
+  - scope-ack timeout alignment fix:
+    - scope wait timer is now reset at the actual scope click moment,
+    - reduces false `SCOPE_MENU_ACK_TIMEOUT` under delayed GUI transitions.
+  - run-command behavior parity fix:
+    - `/mldsl run` and `/mldsl run local` now auto-confirm and start runtime execution immediately (no extra manual `/confirmload` required).
+  - 1.16.5 publish selector fallback:
+    - in Fabric 1.16.5 adapter, `/module publish` with no pending module now grants `/codeselector`-style stick instead of returning only `NO_PENDING_PLAN`.
+  - 1.16.5 menu-open target fix:
+    - `openContainerIfNeeded` in Fabric 1.16.5 now prefers the last runtime-placed block position instead of raw crosshair target,
+    - fixes “autoclick at look direction” regression and aligns menu-open click with printer target path.
+  - direct menu open/replace parity slice (modern core + Fabric adapters):
+    - `GameBridge` now exposes target-aware block interaction/check methods (`useBlockAt/useBlockAtOffset/isAirAt/isBlockAt/isBlockAtOffset`) used by runtime core.
+    - menu open now follows legacy-like order: click sign target (`z-1`) first, fallback to event block target, with bounded retry window (`~1600ms` reopen cadence, max 8 attempts) and force re-place path.
+    - runtime now detects post-place server block revert via adapter world check and resets step to re-place with explicit fail guard (`BLOCK_REVERTED_TOO_MANY_TIMES`).
+    - params reopen now targets legacy-equivalent offset (`entry.up`) and fails explicitly when target remains unavailable (`PARAMS_TARGET_NOT_FOUND`).
+  - direct menu exhaust-policy + trace parity hardening:
+    - menu open attempts are now counted per actual open click (`attempt=<n>`), with anti-double-count guard.
+    - force re-place for menu-open failures is bounded by explicit replace cycles (`MAX_MENU_REPLACE_CYCLES`), and final abort is deterministic (`MENU_OPEN_REPLACE_EXHAUSTED`).
+    - place stage trace marker aligned to parity gate format (`runtime_state=PLACE_BLOCK confirmed=1`).
+  - publish selection-path + trace-state slice (modern core):
+    - `handlePublish` now accepts two explicit sources:
+      - pending downloaded module payload (`/loadmodule`),
+      - live selector rows (`/codeselector` / `bc_select`) via `GameBridge.selectedRows()`.
+    - publish now writes selector snapshot into bundle (`selection_rows.json`) and includes `selectedRows` in `publish_meta.json`.
+    - unified `PUBLISH_TRACE` stream added in modern core (`publish.start`, `publish.bundle.created`, `publish.selection.snapshot`, `warmup.done`, `publish.stop`), relayed to user-visible publish debug chat.
+  - publish bridge/state-machine groundwork slice:
+    - `GameBridge` extended with publish context gates/hooks (`canUseEditorContext`, `isScreenOpen`, `closeScreenIfOpen`, `enqueueTpPath`, `isTpPathBusy`, `isHoldingBlockerItem`).
+    - new core publish package added:
+      - `publish/PublishSessionState`
+      - `publish/PublishWarmupExecutor`
+      - `publish/PublishExportExecutor`
+      - `publish/PublishCacheView`
+    - `RuntimeCore.handlePublish` now routes through warmup executor + export executor (single core-owned flow).
+    - publish error contract expanded with explicit warmup/context/sign/page codes (`PUBLISH_WARMUP_TIMEOUT`, `PUBLISH_CONTEXT_BLOCKED`, `PUBLISH_SIGN_INVALID`, `PUBLISH_NEXT_PAGE_RETRY_EXHAUSTED`).
+  - direct scope-routing parity slice:
+    - `name||Игрок/Моб/Сущность по условию` now follows deterministic two-step menu route in core (`scope -> target`),
+    - missing scope/target items now fail explicitly (`SCOPE_MENU_NOT_FOUND` / `SCOPE_TARGET_NOT_FOUND`).
+  - direct place confirmation parity slice (modern Fabric adapters):
+    - `fabric120` and `fabric121` block-only runtime steps now use pending confirm state (`target/block/attempts/timestamps`) and advance cursor only after real world-block confirmation,
+    - explicit bounded states/errors added: `PLACE_WAIT_CONFIRM`, `PLACE_RETRY_INTERACT`, `PLACE_CONFIRM_TIMEOUT`, timed `PLACE_INTERACT_REJECTED`,
+    - menu/container open in `fabric120`/`fabric121` now prefers last runtime-placed block target instead of raw crosshair to reduce misclick-at-look regressions.
+  - fabric1165 selection seed support slice:
+    - added `/bc_select`, `/bc_select_clear`, `/bc_select_list` commands (same selection model as modern branches),
+    - runtime seed resolver in `fabric1165` now prioritizes selected blocks (current dimension first) before crosshair fallback.
+  - codeselector parity slice for modern Fabric:
+    - added `/codeselector` command in `fabric120` and `fabric121` (selector stick with `mldsl_code_selector` tag),
+    - `/module publish` in `fabric120`/`fabric121` now falls back to selector issue on `NO_PENDING_PLAN` (same UX as `fabric1165`),
+    - direct command chain parity confirmed in adapters: `/loadmodule`, `/mldsl run`, `/confirmload`, `/module publish`, `/codeselector`.
+  - codeselector UX simplification:
+    - `/codeselector` in `fabric1165`/`fabric120`/`fabric121` always issues selector stick (legacy-like explicit behavior),
+    - `bc_select` remains available as explicit technical selection command.
+  - codeselector behavior correction:
+    - `/codeselector` now always issues selector stick (no implicit crosshair selection side effects),
+    - selection toggle path now enforces target validation: selection is allowed only when block under target is `blue_stained_glass`.
+  - codeselector right-click interaction parity (modern Fabric):
+    - added client `UseBlockCallback` handler for selector stick in `fabric1165`/`fabric120`/`fabric121`,
+    - selector stick now toggles selection on RMB only for valid rows (`light_blue_stained_glass` or block directly above it),
+    - invalid targets show explicit actionbar reason; empty row (`air` above light-blue glass) is rejected.
+  - selector strict-target + publish-fallback correction:
+    - selection now rejects clicks on glass block itself; only block above `light_blue_stained_glass` is valid target,
+    - `/module publish` no longer auto-issues selector stick when it already exists or when selection is already non-empty; in that case returns explicit `NO_PENDING_PLAN`.
   - duplicated Fabric command bridge logic reduced:
     - common `PlaceCommandBridgeUtil` introduced in `modern/core/place`,
     - command build/sanitize/send reflection moved out of adapters.
@@ -157,6 +281,26 @@
 - Legacy 1.12 item(...) trace diagnostics:
   - added debug-gated `PLACE_ITEM_TRACE` logs in `placeadvanced item(...)` flow (`begin/after_click/restore`),
   - trace includes target slot id, stack display/nbt snapshot, cursor state, and temp hotbar slot state for per-step sync debugging.
+- Legacy 1.12 `/module publish` warmup stabilization:
+  - warmup uses deterministic TP-path to `entryBlock.z - 2` before chest open attempts,
+  - `PUBLISH_TRACE stage=warmup.wait` is now rate-limited (same reason at most once per second) to avoid client-thread log spam stalls during blocked warmup states.
+- Dev workflow deploy automation:
+  - added robust watcher script `tools/deploy-when-mc-closed.ps1` (waits for MC process stop via window/command-line detection, then copies built jar to `.minecraft\\mods`),
+  - VSCode default build task is now `Build + Deploy (wait MC close)` so `Ctrl+Shift+B` always starts post-build deploy watcher.
+  - watcher process detection refined for launcher stacks: ignores TLauncher/LabyMod updater JVMs and tracks only real game JVM signatures (`launchwrapper/Main`, `--gameDir/--assetsDir`), so deploy is not blocked by open launcher window.
+  - `runbuildasjdk8not21.bat` now auto-starts deploy watcher after successful build (with explicit console status), so JDK8 build path no longer skips auto-copy flow.
+  - JDK8 helper now starts watcher as detached hidden process and writes watcher trace to `build/deploy-watcher.log` (`waiting/copy/retry`) for post-mortem copy diagnostics.
+- Legacy 1.12 MLDSL compiler resolution defaults:
+  - compiler lookup now prefers dev `mldsl_cli.py` (`Documents\\mlctmodified`) before installed `mldsl.exe`,
+  - new config setting `mldsl.customMlDslCompilerPath` (empty by default) allows explicit custom compiler path/command override.
+- Legacy 1.12 NOT-condition parity (compiler -> plan -> printer):
+  - runtime plan import now preserves entry-level `negated` metadata through `placeadvanced` conversion path,
+  - place queue entries carry `negated` flag end-to-end (`PlanStep` -> `PlaceEntry`),
+  - printer post-place state machine now applies `НЕТ` arrow toggle on condition signs for `negated=true` entries,
+  - negate-apply failures are fail-fast (`negate_apply_failed`) with explicit `PLACE_NEGATE_*` debug traces.
+- Legacy 1.12 NOT post-stage ordering fix:
+  - post-place processing is now dispatched by `postPlaceKind` (`SIGN_NAME`/`CYCLE`/`NEGATE`) via explicit handlers,
+  - `NEGATE` no longer проходит через generic `missing name` ветку and now always reaches arrow RMB stage when queued.
 - Legacy 1.12 client lighting debug toggle:
   - added `/disablelighting [on|off|toggle|info]` command to quickly switch ambient occlusion (AO),
   - intended as temporary client-side lag mitigation for heavy block-spam sessions (does not change server light packets).
@@ -169,13 +313,27 @@
   - `off` enables hard mode and drops incoming `SPacketChunkData`/`SPacketBlockChange`/`SPacketMultiBlockChange`,
   - `batch` stores these packets and applies them on configurable interval (`/lightsync batch 5` = every 5 seconds),
   - `on` restores normal sync and forces renderer reload.
+- Modern publish parity slice (core-owned warmup/page/sign gate):
+  - `PublishWarmupExecutor` now follows deterministic warmup stages with explicit blocked reasons:
+    `dimension_mismatch`, `not_dev_creative`, `blocked heldIngot/screen`, `tp_path_busy`, `timeout`,
+  - warmup TP target uses legacy-aligned `entry.z-2` semantics and bounded retry pass queue,
+  - paged chest flow now performs bounded next-page retries and emits deterministic exhaustion trace:
+    `PUBLISH_TRACE stage=autocache.close reason=next_page_retry_exhausted`,
+  - `RuntimeCore.handlePublish` now maps warmup failures to explicit `RuntimeErrorCode`
+    (`PUBLISH_WARMUP_TIMEOUT`, `PUBLISH_CONTEXT_BLOCKED`, `PUBLISH_NEXT_PAGE_RETRY_EXHAUSTED`),
+  - added publish sign-validation/cache stage with traces:
+    `publish.sign.cache_hit` / `publish.sign.invalid` and explicit `PUBLISH_SIGN_INVALID` fail path.
+- Modern publish sign resolver + adapter bridge slice:
+  - synthetic sign validation was removed from `RuntimeCore`; publish now resolves sign data through core `PublishSignResolver`,
+  - `GameBridge` includes explicit publish sign I/O boundary (`isSignAt`, `readSignLinesAt`, `dimensionId`) and Fabric 1.16.5/1.20/1.21 adapters implement these methods,
+  - `SelectedRow` now carries explicit entry/sign coordinates (default sign target `z-1`) for deterministic sign lookup and cache keys.
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:
   - `skip` steps,
   - block-only steps with empty `name/args`.
-- Steps with menu/sign/action arguments (`name/args`) are still not ported to direct client executor and remain blocked by explicit `UNIMPLEMENTED_MENU_ARGS`.
-- Next required porting block: legacy menu/sign args pipeline (`PlaceState` parity) into modern adapters/core (see TODO `MOD-030`).
+- `name/args` path is routed through core direct runtime executor (no temporary server-command bridge).
+- Remaining parity gap for `name/args`: full legacy GUI parity for text-entry edge cases and full page-arrow heuristics parity on all server menu variants.
 
 ## Known regressions / risks
 - Ongoing high-risk area: GUI/chest timing races on unstable server latency.
