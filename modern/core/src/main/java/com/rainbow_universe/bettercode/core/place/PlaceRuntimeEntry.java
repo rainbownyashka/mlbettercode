@@ -2,7 +2,9 @@ package com.rainbow_universe.bettercode.core.place;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public final class PlaceRuntimeEntry {
     public static final int POST_PLACE_NONE = 0;
@@ -24,6 +26,10 @@ public final class PlaceRuntimeEntry {
     private int lastMenuWindowId;
     private boolean needOpenMenu;
     private int menuOpenAttempts;
+    private long menuRetrySinceMs;
+    private long lastOpenAttemptMs;
+    private boolean forceRePlaceRequested;
+    private int menuReplaceCount;
     private int randomClicks;
     private long nextMenuActionMs;
     private int triedWindowId;
@@ -39,12 +45,14 @@ public final class PlaceRuntimeEntry {
     private int pendingArgClickSlot;
     private int pendingArgClicks;
     private long pendingArgNextMs;
+    private int argsWindowId;
     private int argsGuiPage;
     private boolean argsPageTurnPending;
     private long argsPageTurnStartMs;
     private long argsPageTurnNextMs;
     private int argsPageRetryCount;
     private String argsPageLastHash;
+    private final Set<Integer> usedArgSlots;
 
     private boolean awaitingParamsChest;
     private boolean needOpenParamsChest;
@@ -64,6 +72,7 @@ public final class PlaceRuntimeEntry {
     private long firstPlaceAttemptMs;
     private long placedConfirmedMs;
     private int placedLostCount;
+    private long cursorNotEmptySinceMs;
 
     public PlaceRuntimeEntry(boolean pause, boolean skip, String blockId, String name, String argsRaw, List<PlaceArgSpec> args) {
         this.pause = pause;
@@ -79,6 +88,10 @@ public final class PlaceRuntimeEntry {
         this.lastMenuWindowId = -1;
         this.needOpenMenu = false;
         this.menuOpenAttempts = 0;
+        this.menuRetrySinceMs = 0L;
+        this.lastOpenAttemptMs = 0L;
+        this.forceRePlaceRequested = false;
+        this.menuReplaceCount = 0;
         this.randomClicks = 0;
         this.nextMenuActionMs = 0L;
         this.triedWindowId = -1;
@@ -93,12 +106,14 @@ public final class PlaceRuntimeEntry {
         this.pendingArgClickSlot = -1;
         this.pendingArgClicks = 0;
         this.pendingArgNextMs = 0L;
+        this.argsWindowId = -1;
         this.argsGuiPage = 0;
         this.argsPageTurnPending = false;
         this.argsPageTurnStartMs = 0L;
         this.argsPageTurnNextMs = 0L;
         this.argsPageRetryCount = 0;
         this.argsPageLastHash = "";
+        this.usedArgSlots = new HashSet<Integer>();
         this.awaitingParamsChest = false;
         this.needOpenParamsChest = false;
         this.paramsOpenAttempts = 0;
@@ -115,6 +130,7 @@ public final class PlaceRuntimeEntry {
         this.firstPlaceAttemptMs = 0L;
         this.placedConfirmedMs = 0L;
         this.placedLostCount = 0;
+        this.cursorNotEmptySinceMs = 0L;
     }
 
     public static PlaceRuntimeEntry fromSpec(PlaceEntrySpec spec) {
@@ -162,6 +178,14 @@ public final class PlaceRuntimeEntry {
     public void setNeedOpenMenu(boolean needOpenMenu) { this.needOpenMenu = needOpenMenu; }
     public int menuOpenAttempts() { return menuOpenAttempts; }
     public void setMenuOpenAttempts(int menuOpenAttempts) { this.menuOpenAttempts = menuOpenAttempts; }
+    public long menuRetrySinceMs() { return menuRetrySinceMs; }
+    public void setMenuRetrySinceMs(long menuRetrySinceMs) { this.menuRetrySinceMs = menuRetrySinceMs; }
+    public long lastOpenAttemptMs() { return lastOpenAttemptMs; }
+    public void setLastOpenAttemptMs(long lastOpenAttemptMs) { this.lastOpenAttemptMs = lastOpenAttemptMs; }
+    public boolean forceRePlaceRequested() { return forceRePlaceRequested; }
+    public void setForceRePlaceRequested(boolean forceRePlaceRequested) { this.forceRePlaceRequested = forceRePlaceRequested; }
+    public int menuReplaceCount() { return menuReplaceCount; }
+    public void setMenuReplaceCount(int menuReplaceCount) { this.menuReplaceCount = menuReplaceCount; }
     public int randomClicks() { return randomClicks; }
     public void setRandomClicks(int randomClicks) { this.randomClicks = randomClicks; }
     public long nextMenuActionMs() { return nextMenuActionMs; }
@@ -190,6 +214,8 @@ public final class PlaceRuntimeEntry {
     public void setPendingArgClicks(int pendingArgClicks) { this.pendingArgClicks = pendingArgClicks; }
     public long pendingArgNextMs() { return pendingArgNextMs; }
     public void setPendingArgNextMs(long pendingArgNextMs) { this.pendingArgNextMs = pendingArgNextMs; }
+    public int argsWindowId() { return argsWindowId; }
+    public void setArgsWindowId(int argsWindowId) { this.argsWindowId = argsWindowId; }
     public int argsGuiPage() { return argsGuiPage; }
     public void setArgsGuiPage(int argsGuiPage) { this.argsGuiPage = argsGuiPage; }
     public boolean argsPageTurnPending() { return argsPageTurnPending; }
@@ -202,6 +228,10 @@ public final class PlaceRuntimeEntry {
     public void setArgsPageRetryCount(int argsPageRetryCount) { this.argsPageRetryCount = argsPageRetryCount; }
     public String argsPageLastHash() { return argsPageLastHash; }
     public void setArgsPageLastHash(String argsPageLastHash) { this.argsPageLastHash = argsPageLastHash == null ? "" : argsPageLastHash; }
+    public Set<Integer> usedArgSlots() { return Collections.unmodifiableSet(usedArgSlots); }
+    public void clearUsedArgSlots() { this.usedArgSlots.clear(); }
+    public boolean isUsedArgSlot(int slotNumber) { return this.usedArgSlots.contains(Integer.valueOf(slotNumber)); }
+    public void markUsedArgSlot(int slotNumber) { this.usedArgSlots.add(Integer.valueOf(slotNumber)); }
     public boolean awaitingParamsChest() { return awaitingParamsChest; }
     public void setAwaitingParamsChest(boolean awaitingParamsChest) { this.awaitingParamsChest = awaitingParamsChest; }
     public boolean needOpenParamsChest() { return needOpenParamsChest; }
@@ -234,4 +264,6 @@ public final class PlaceRuntimeEntry {
     public void setPlacedConfirmedMs(long placedConfirmedMs) { this.placedConfirmedMs = placedConfirmedMs; }
     public int placedLostCount() { return placedLostCount; }
     public void setPlacedLostCount(int placedLostCount) { this.placedLostCount = placedLostCount; }
+    public long cursorNotEmptySinceMs() { return cursorNotEmptySinceMs; }
+    public void setCursorNotEmptySinceMs(long cursorNotEmptySinceMs) { this.cursorNotEmptySinceMs = cursorNotEmptySinceMs; }
 }

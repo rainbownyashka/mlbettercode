@@ -5,12 +5,21 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonParseException;
+import com.rainbow_universe.bettercode.core.bridge.SelectedRow;
+import com.rainbow_universe.bettercode.core.publish.PublishExportExecutor;
+import com.rainbow_universe.bettercode.core.publish.PublishCacheView;
+import com.rainbow_universe.bettercode.core.publish.PublishSignResolver;
+import com.rainbow_universe.bettercode.core.publish.PublishSessionState;
+import com.rainbow_universe.bettercode.core.publish.PublishWarmupExecutor;
 import com.rainbow_universe.bettercode.core.place.PlaceArgSpec;
+import com.rainbow_universe.bettercode.core.place.DefaultMenuRouteResolver;
+import com.rainbow_universe.bettercode.core.place.MenuRouteResolver;
 import com.rainbow_universe.bettercode.core.place.PlaceArgsParser;
 import com.rainbow_universe.bettercode.core.place.PlaceEntrySpec;
 import com.rainbow_universe.bettercode.core.place.PlacePlanBuilder;
 import com.rainbow_universe.bettercode.core.place.PlaceRuntimeEntry;
 import com.rainbow_universe.bettercode.core.place.PlaceRuntimeState;
+import com.rainbow_universe.bettercode.core.place.PlaceRuntimeStepExecutor;
 import com.rainbow_universe.bettercode.core.settings.SettingsProvider;
 
 import java.io.ByteArrayOutputStream;
@@ -41,8 +50,10 @@ public final class RuntimeCore {
 
     private final CoreLogger logger;
     private final SettingsProvider settings;
+    private final MenuRouteResolver menuRouteResolver = new DefaultMenuRouteResolver();
     private volatile PendingLoad pendingLoad;
     private volatile PendingExecution pendingExecution;
+    private long publishTraceSeq;
 
     public RuntimeCore(CoreLogger logger) {
         this(logger, new SettingsProvider() {
@@ -69,10 +80,21 @@ public final class RuntimeCore {
     }
 
     public RuntimeResult handleRun(String postId, String configKey, GameBridge bridge) {
-        return handleLoadModule(postId, null, configKey, bridge);
+        stopActiveExecutionIfAny(bridge, "run_request");
+        RuntimeResult load = handleLoadModule(postId, null, configKey, bridge);
+        if (!load.ok()) {
+            return load;
+        }
+        RuntimeResult confirm = handleConfirmLoad(bridge);
+        if (!confirm.ok()) {
+            return RuntimeResult.fail(confirm.errorCode(),
+                (load.message() == null ? "" : load.message() + " | ") + confirm.message());
+        }
+        return RuntimeResult.ok((load.message() == null ? "" : load.message() + " | ") + confirm.message());
     }
 
     public RuntimeResult handleRunLocal(String rawPath, boolean checkOnly, GameBridge bridge) {
+        stopActiveExecutionIfAny(bridge, "run_local_request");
         if (rawPath == null || rawPath.trim().isEmpty()) {
             return RuntimeResult.fail(RuntimeErrorCode.PARSE_SCHEMA_MISMATCH, "local path is required");
         }
@@ -104,8 +126,11 @@ public final class RuntimeCore {
             pl.savedFiles.add(resolved.toFile());
             pendingLoad = pl;
             bridge.sendChat("[confirmload-debug] local plan staged path=" + resolved + " entries=" + ops.size());
-            bridge.sendActionBar("local plan ready. use /confirmload");
-            return RuntimeResult.ok("Local plan staged: " + resolved.getFileName());
+            RuntimeResult confirm = handleConfirmLoad(bridge);
+            if (!confirm.ok()) {
+                return confirm;
+            }
+            return RuntimeResult.ok("Local plan started: " + resolved.getFileName());
         } catch (Exception e) {
             String reason = describeDownloadError(e);
             return RuntimeResult.fail(RuntimeErrorCode.PARSE_SCHEMA_MISMATCH, "local parse failed: " + reason);
@@ -113,6 +138,7 @@ public final class RuntimeCore {
     }
 
     public RuntimeResult handleLoadModule(String postId, String fileName, String configKey, GameBridge bridge) {
+        stopActiveExecutionIfAny(bridge, "loadmodule_request");
         if (postId == null || postId.trim().isEmpty()) {
             return RuntimeResult.fail(RuntimeErrorCode.DOWNLOAD_FAILED, "postId is required");
         }
@@ -162,6 +188,7 @@ public final class RuntimeCore {
     }
 
     public RuntimeResult handleConfirmLoad(GameBridge bridge) {
+        stopActiveExecutionIfAny(bridge, "confirmload_request");
         logger.info("confirmload-debug", "confirm requested scoreboardLines=" + bridge.scoreboardLines().size());
         PendingLoad pl = pendingLoad;
         if (pl == null) {
@@ -220,7 +247,7 @@ public final class RuntimeCore {
             bridge.onExecutionStop();
             return;
         }
-        PlaceExecResult step = bridge.executePlaceStep(stepEntry, false);
+        PlaceExecResult step = PlaceRuntimeStepExecutor.execute(stepEntry, bridge, settings, logger, menuRouteResolver);
         if (!step.ok()) {
             String code = step.errorCode() == null ? "exec_failed" : step.errorCode();
             String msg = step.errorMessage() == null ? "" : step.errorMessage();
@@ -262,52 +289,109 @@ public final class RuntimeCore {
             "publish requested scoreboardLines=" + ctx.lineCount() + " tier=" + ctx.detectedTier() + " editorLike=" + ctx.editorLike());
 
         PendingLoad pl = pendingLoad;
-        if (pl == null || pl.savedFiles.isEmpty()) {
-            return RuntimeResult.fail(RuntimeErrorCode.NO_PENDING_PLAN, "No pending module data. Use /loadmodule first.");
+        List<SelectedRow> rows = bridge.selectedRows();
+        publishTrace(bridge, "publish.start", "hasPendingLoad=" + (pl != null) + " selectedRows=" + (rows == null ? 0 : rows.size()));
+        if ((pl == null || pl.savedFiles.isEmpty()) && (rows == null || rows.isEmpty())) {
+            publishTrace(bridge, "publish.stop", "reason=no_pending_and_no_selection");
+            return RuntimeResult.fail(RuntimeErrorCode.NO_PENDING_PLAN, "No pending module data and no selected rows. Use /loadmodule or /codeselector first.");
         }
-        try {
-            Path publishRoot = bridge.runDirectory().resolve("mldsl_publish");
-            Files.createDirectories(publishRoot);
-            String bundleName = "bundle_" + safePath(pl.postId) + "_" + System.currentTimeMillis();
-            Path bundleDir = publishRoot.resolve(bundleName);
-            Files.createDirectories(bundleDir);
-
-            int copied = 0;
-            for (File src : pl.savedFiles) {
-                if (src == null || !src.exists()) {
-                    continue;
+        PublishSessionState session = new PublishSessionState(
+            "pub_" + System.currentTimeMillis(),
+            bridge.nowMs(),
+            bridge.currentDimension(),
+            true,
+            pl == null ? "selection" : pl.postId,
+            pl == null ? "default" : pl.configKey
+        );
+        if (rows != null) {
+            session.selectedRows.addAll(rows);
+            session.warmupQueue.addAll(rows);
+        }
+        if (pl != null && pl.savedFiles != null) {
+            session.sourceFiles.addAll(pl.savedFiles);
+        }
+        PublishWarmupExecutor.Result warmup = PublishWarmupExecutor.run(session, bridge,
+            new PublishWarmupExecutor.Trace() {
+                @Override
+                public void trace(String stage, String details) {
+                    publishTrace(bridge, stage, details);
                 }
-                Path dst = bundleDir.resolve(safePath(src.getName()));
-                Files.copy(src.toPath(), dst, StandardCopyOption.REPLACE_EXISTING);
-                copied++;
-            }
-            Path meta = bundleDir.resolve("publish_meta.json");
-            OutputStreamWriter writer = null;
-            try {
-                writer = new OutputStreamWriter(Files.newOutputStream(meta), StandardCharsets.UTF_8);
-                writer.write("{\n");
-                writer.write("  \"postId\": \"" + escapeJson(pl.postId) + "\",\n");
-                writer.write("  \"config\": \"" + escapeJson(pl.configKey) + "\",\n");
-                writer.write("  \"generatedAt\": " + System.currentTimeMillis() + ",\n");
-                writer.write("  \"copiedFiles\": " + copied + ",\n");
-                writer.write("  \"events\": " + pl.events + ",\n");
-                writer.write("  \"funcs\": " + pl.funcs + ",\n");
-                writer.write("  \"loops\": " + pl.loops + ",\n");
-                writer.write("  \"actions\": " + pl.actions + "\n");
-                writer.write("}\n");
-            } finally {
-                if (writer != null) {
-                    writer.close();
-                }
-            }
+            });
+        if (!warmup.done) {
+            RuntimeErrorCode code = mapPublishErrorCode(warmup.errorCode);
+            publishTrace(bridge, "publish.stop", "reason=" + warmup.errorCode + " detail=" + warmup.errorMessage);
+            return RuntimeResult.fail(code, warmup.errorMessage);
+        }
+        RuntimeResult signValidation = validatePublishSigns(session, bridge);
+        if (!signValidation.ok()) {
+            return signValidation;
+        }
+        PublishExportExecutor.Result out = PublishExportExecutor.prepareBundle(session, bridge.runDirectory());
+        if (!out.ok) {
+            publishTrace(bridge, "publish.stop", "reason=prep_failed detail=" + out.errorMessage);
+            return RuntimeResult.fail(RuntimeErrorCode.PUBLISH_PREP_FAILED, out.errorMessage);
+        }
+        publishTrace(bridge, "publish.bundle.created", "dir=" + out.bundleDir.toAbsolutePath());
+        if (!session.selectedRows.isEmpty()) {
+            publishTrace(bridge, "publish.selection.snapshot", "rows=" + session.selectedRows.size() + " file=selection_rows.json");
+        }
+        publishTrace(bridge, "warmup.done", "bundle=" + out.bundleDir.getFileName());
+        bridge.sendChat("[publish-debug] prepared bundle=" + out.bundleDir.getFileName() + " files=" + out.copiedFiles);
+        bridge.sendActionBar("publish bundle ready: " + out.bundleDir.getFileName());
+        return RuntimeResult.ok("Publish bundle prepared at: " + out.bundleDir.toAbsolutePath());
+    }
 
-            bridge.sendChat("[publish-debug] prepared bundle=" + bundleDir.getFileName() + " files=" + copied);
-            bridge.sendActionBar("publish bundle ready: " + bundleDir.getFileName());
-            return RuntimeResult.ok("Publish bundle prepared at: " + bundleDir.toAbsolutePath());
-        } catch (Exception e) {
-            String reason = describeDownloadError(e);
-            logger.error("publish-debug", "publish prep failed reason=" + reason);
-            return RuntimeResult.fail(RuntimeErrorCode.PUBLISH_PREP_FAILED, reason);
+    private RuntimeResult validatePublishSigns(PublishSessionState session, GameBridge bridge) {
+        if (session == null) {
+            return RuntimeResult.fail(RuntimeErrorCode.PUBLISH_SIGN_INVALID, "null publish session");
+        }
+        if (session.selectedRows == null || session.selectedRows.isEmpty()) {
+            return RuntimeResult.ok("no selected rows");
+        }
+        for (SelectedRow row : session.selectedRows) {
+            if (row == null) {
+                continue;
+            }
+            PublishSignResolver.Result resolved = PublishSignResolver.resolve(row, session.cacheView, bridge);
+            if (!resolved.ok) {
+                publishTrace(bridge, "publish.sign.invalid",
+                    "entry=" + row.entryX() + "," + row.entryY() + "," + row.entryZ()
+                        + " reason=" + resolved.reason);
+                return RuntimeResult.fail(RuntimeErrorCode.PUBLISH_SIGN_INVALID,
+                    "invalid sign context at " + row.entryX() + "," + row.entryY() + "," + row.entryZ()
+                        + " reason=" + resolved.reason);
+            }
+            publishTrace(bridge, "publish.sign.cache_hit",
+                "entry=" + row.entryX() + "," + row.entryY() + "," + row.entryZ()
+                    + " source=" + resolved.source + " key=" + resolved.key);
+        }
+        return RuntimeResult.ok("sign validation ok");
+    }
+
+    private static RuntimeErrorCode mapPublishErrorCode(String raw) {
+        if (raw == null) {
+            return RuntimeErrorCode.PUBLISH_CONTEXT_BLOCKED;
+        }
+        if ("PUBLISH_WARMUP_TIMEOUT".equalsIgnoreCase(raw)) {
+            return RuntimeErrorCode.PUBLISH_WARMUP_TIMEOUT;
+        }
+        if ("PUBLISH_NEXT_PAGE_RETRY_EXHAUSTED".equalsIgnoreCase(raw)) {
+            return RuntimeErrorCode.PUBLISH_NEXT_PAGE_RETRY_EXHAUSTED;
+        }
+        if ("PUBLISH_SIGN_INVALID".equalsIgnoreCase(raw)) {
+            return RuntimeErrorCode.PUBLISH_SIGN_INVALID;
+        }
+        return RuntimeErrorCode.PUBLISH_CONTEXT_BLOCKED;
+    }
+
+    private void publishTrace(GameBridge bridge, String stage, String details) {
+        publishTraceSeq++;
+        long ts = System.currentTimeMillis();
+        String line = "PUBLISH_TRACE seq=" + publishTraceSeq + " ts=" + ts + " stage=" + stage
+            + " " + (details == null ? "" : details);
+        logger.info("publish-debug", line);
+        if (bridge != null) {
+            bridge.sendChat("[publish-debug] " + line);
         }
     }
 
@@ -878,6 +962,19 @@ public final class RuntimeCore {
             return java.net.URLEncoder.encode(s, "UTF-8");
         } catch (Exception e) {
             return "";
+        }
+    }
+
+    private void stopActiveExecutionIfAny(GameBridge bridge, String reason) {
+        PendingExecution prev = pendingExecution;
+        if (prev == null) {
+            return;
+        }
+        logger.warn("printer-debug", "runtime stop_before_new_request reason=" + reason
+            + " source=" + prev.source + " postId=" + prev.postId + " config=" + prev.config);
+        pendingExecution = null;
+        if (bridge != null) {
+            bridge.onExecutionStop();
         }
     }
 
