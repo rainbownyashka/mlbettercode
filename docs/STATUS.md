@@ -327,6 +327,11 @@
   - synthetic sign validation was removed from `RuntimeCore`; publish now resolves sign data through core `PublishSignResolver`,
   - `GameBridge` includes explicit publish sign I/O boundary (`isSignAt`, `readSignLinesAt`, `dimensionId`) and Fabric 1.16.5/1.20/1.21 adapters implement these methods,
   - `SelectedRow` now carries explicit entry/sign coordinates (default sign target `z-1`) for deterministic sign lookup and cache keys.
+- Modern parity hotfix slice (post-user-log regressions):
+  - publish warmup now fails fast on unreachable targets when TP is unavailable (`PUBLISH_TP_UNAVAILABLE`) instead of false-positive `warmup.done`,
+  - warmup no longer silently finishes with unresolved retry queue (`warmup.stop reason=unresolved_queue`),
+  - run block-revert detection now uses bounded recheck window (`BLOCK_RECHECK miss=<n>`) before triggering force re-place, reducing false early `BLOCK_REVERTED_TOO_MANY_TIMES`,
+  - seed selection for direct runtime in Fabric 1.16.5/1.20/1.21 now picks nearest valid selected row (block above `light_blue_stained_glass`) in current dimension first.
 
 ## Migration checkpoint (where port currently stops)
 - Direct runtime port is active in modern Fabric adapters only for:

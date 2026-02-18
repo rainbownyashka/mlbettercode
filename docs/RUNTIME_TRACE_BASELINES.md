@@ -70,5 +70,6 @@ Purpose: lock behavior-critical trace scenarios before and during multi-version 
 - Direct `run` core state machine is active with explicit fail/trace markers (`MENU_OPEN_REPLACE_EXHAUSTED`, `BLOCK_REVERTED_TOO_MANY_TIMES`, `PARAMS_TARGET_NOT_FOUND`).
 - Modern publish now emits core-owned `PUBLISH_TRACE` stages and accepts both pending-load payload and live selector rows.
 - Modern publish warmup now has explicit blocked-reason stages (`dimension_mismatch`, `not_dev_creative`, `blocked`, `tp_path_busy`), bounded page-turn retries, and deterministic exhaustion close trace (`autocache.close reason=next_page_retry_exhausted`).
-- Modern publish now emits explicit sign-stage traces (`publish.sign.cache_hit`, `publish.sign.invalid`) and returns mapped runtime codes (`PUBLISH_WARMUP_TIMEOUT`, `PUBLISH_CONTEXT_BLOCKED`, `PUBLISH_NEXT_PAGE_RETRY_EXHAUSTED`, `PUBLISH_SIGN_INVALID`).
+- Modern publish now emits explicit sign-stage traces (`publish.sign.cache_hit`, `publish.sign.invalid`) and returns mapped runtime codes (`PUBLISH_WARMUP_TIMEOUT`, `PUBLISH_TP_UNAVAILABLE`, `PUBLISH_CONTEXT_BLOCKED`, `PUBLISH_NEXT_PAGE_RETRY_EXHAUSTED`, `PUBLISH_SIGN_INVALID`).
 - Modern core now uses adapter-backed sign resolver (`isSignAt`/`readSignLinesAt`) with cache source mapping (`live|scope|dim`); remaining gap is live-server trace alignment for sign/page timing (`MOD-077`, `MOD-078`, `MOD-079`).
+- Run block-revert handling now emits `runtime_state=BLOCK_RECHECK miss=<n> elapsed=<ms>` before replace/fail to separate transient desync from true revert.
