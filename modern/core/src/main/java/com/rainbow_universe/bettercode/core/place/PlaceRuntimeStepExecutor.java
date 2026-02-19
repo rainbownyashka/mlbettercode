@@ -435,14 +435,21 @@ public final class PlaceRuntimeStepExecutor {
                 }
                 int randomSlot = findRandomMenuSlot(view, entry);
                 if (randomSlot < 0) {
-                    // Transient unresolved menu state: wait/reopen before hard failing route.
-                    if (now - entry.menuStartMs() < MENU_TIMEOUT_MS) {
-                        entry.setNeedOpenMenu(true);
-                        entry.setMenuRetrySinceMs(now);
-                        entry.setNextMenuActionMs(now + Math.max(MENU_NEXT_ACTION_MIN_GAP_MS, delay));
-                        return PlaceExecResult.inProgress(0, "WAIT_MENU_ROUTE");
+                    // Legacy parity: if no clicks were made in this menu window and no route/random slot exists,
+                    // this is a hard dead-end. Otherwise, close/reopen and continue search.
+                    if (entry.menuClicksSinceOpen() == 0) {
+                        return fail(logger, "NO_PATH_GUI", "menu key not found and random path unavailable: " + routeKey);
                     }
-                    return fail(logger, "NO_PATH_GUI", "menu key not found and random path unavailable: " + routeKey);
+                    bridge.closeScreen();
+                    entry.setNeedOpenMenu(true);
+                    entry.setMenuRetrySinceMs(now);
+                    entry.setNextMenuActionMs(now + Math.max(MENU_NEXT_ACTION_MIN_GAP_MS, delay));
+                    entry.setMenuClicksSinceOpen(0);
+                    entry.setTriedWindowId(-1);
+                    entry.setMenuNonEmptySinceMs(0L);
+                    entry.setMenuNonEmptyWindowId(-1);
+                    entry.clearTriedMenuSlots();
+                    return PlaceExecResult.inProgress(0, "WAIT_MENU_ROUTE");
                 }
                 if (!ensureCursorClear(entry, bridge, now)) {
                     if (isCursorTimeout(entry, now)) {

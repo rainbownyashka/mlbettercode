@@ -368,6 +368,10 @@
   - pending-args + anchor parity follow-up (2026-02-19):
     - core args pending-click stage now uses bounded recover path on transient GUI races (`window_changed` / `slot_missing`) via `ARGS_PENDING_RECOVER` instead of immediate hard-fail, closer to legacy retry semantics,
     - adapters (`1165/120/121`) now keep canonical current-step entry anchor (`lastEntryTarget`) and use it for offset/menu/sign operations, reducing stale `pendingTarget` drift after failed place/re-place cycles.
+  - menu random dead-end parity follow-up (2026-02-19):
+    - core `randomSlot < 0` route branch now matches legacy logic:
+      - if no menu clicks were made in the current window, fail fast as true dead-end (`NO_PATH_GUI`),
+      - otherwise close/reopen menu and continue route search, instead of timing out/failing early.
   - legacy block-id compatibility slice (modern Fabric adapters):
     - added shared mapper `LegacyBlockIdCompat` in core for common 1.12->1.13+ renames (`planks -> oak_planks` and related defaults),
     - `fabric1165/fabric120/fabric121` placement path now normalizes legacy block ids before registry lookup and block-presence checks,
