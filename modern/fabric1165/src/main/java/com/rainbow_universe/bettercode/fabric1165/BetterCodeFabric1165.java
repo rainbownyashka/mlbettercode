@@ -1052,7 +1052,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 return false;
             }
             try {
-                return mc.world.getBlockState(pos).getBlock() == expected;
+                return mc.world.getBlockState(pos).getBlock() == expected
+                    || mc.world.getBlockState(pos.up()).getBlock() == expected;
             } catch (Exception e) {
                 return false;
             }

@@ -50,6 +50,9 @@
   - place-stage completion gate fix (2026-02-19):
     - core no longer flips `placedBlock=true` on adapter `inProgress` response,
     - menu stage starts only after real block-confirm step result (`ok && !inProgress`), preventing false transition to old-sign menu when block placement has not completed yet.
+  - dual-Y place-confirm parity fix (2026-02-19):
+    - core block-recheck now accepts both placement planes (`entry.down` and `entry`) to avoid false block-lost loops on vertical jitter,
+    - modern Fabric adapters (`1165/120/121`) `isBlockPlaced(...)` now confirms expected block at both `target` and `target.up()`.
   - menu route transient unresolved guard:
     - unresolved route with no random candidates now enters bounded wait/reopen (`WAIT_MENU_ROUTE`) before final `NO_PATH_GUI`.
   - blue-glass search parity hardening:

@@ -103,8 +103,9 @@ public final class PlaceRuntimeStepExecutor {
         }
 
         if (entry.placedBlock() && entry.placedConfirmedMs() > 0L) {
-            // Legacy parity: placed runtime block is at entry.down (not entry itself).
-            boolean blockStillPlaced = bridge.isBlockAtOffset(0, -1, 0, entry.blockId());
+            // Accept both legacy planes: entry.down (expected) and entry (server/client offset jitter).
+            boolean blockStillPlaced = bridge.isBlockAtOffset(0, -1, 0, entry.blockId())
+                || bridge.isBlockAtOffset(0, 0, 0, entry.blockId());
             if (blockStillPlaced) {
                 entry.setBlockRecheckMisses(0);
                 entry.setBlockRecheckStartMs(0L);
