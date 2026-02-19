@@ -803,16 +803,10 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     DIRECT_PLACE_STATE.placeAttempts = 0;
                 }
 
-                BlockHitResult hit = new BlockHitResult(
-                    new Vec3d(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5),
-                    Direction.UP,
-                    target,
-                    false
-                );
-                ActionResult result = mc.interactionManager.interactBlock(mc.player, mc.world, Hand.MAIN_HAND, hit);
+                ClickResult result = clickBlockLegacy(target.getX(), target.getY(), target.getZ(), "place_block", true);
                 DIRECT_PLACE_STATE.lastPlaceAttemptMs = now;
                 DIRECT_PLACE_STATE.placeAttempts++;
-                if (result == null || !result.isAccepted()) {
+                if (result == null || !result.accepted()) {
                     if (DIRECT_PLACE_STATE.pendingSinceMs > 0L && now - DIRECT_PLACE_STATE.pendingSinceMs > 6000L) {
                         return PlaceExecResult.fail(0, 0, "PLACE_INTERACT_REJECTED",
                             "interactBlock rejected too long at target=" + target

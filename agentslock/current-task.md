@@ -1,6 +1,6 @@
 # Agent Lock
 
-task_id: MOD-091+MOD-092+MOD-094
+task_id: MOD-091+MOD-092+MOD-094+MOD-095
 owner: codex
 status: in_progress
 scope: 1:1 parity migration; run/publish parity with adapter pending-confirm reset, selected-row glass normalization, and sign-read compatibility hardening
@@ -13,4 +13,4 @@ files:
   - modern/fabric120/src/main/java/com/rainbow_universe/bettercode/fabric120/BetterCodeFabric120.java
   - modern/fabric121/src/main/java/com/rainbow_universe/bettercode/fabric121/BetterCodeFabric121.java
 updated_at: 2026-02-19T13:20:00+03:00
-next: finish remaining parity gaps from latest.log (menu ack loop stability, sign-read false negatives, event route NO_PATH_GUI) and validate new pending-reset fix in live smoke
+next: finish remaining parity gaps from latest.log (menu ack loop stability, sign-read false negatives, event route NO_PATH_GUI) and validate pending-reset + legacy place-click primitive fixes in live smoke
