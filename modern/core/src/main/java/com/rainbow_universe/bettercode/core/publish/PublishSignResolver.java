@@ -60,7 +60,7 @@ public final class PublishSignResolver {
             liveLines = bridge.readSignLinesAt(signX, signY, signZ);
         }
 
-        String scopeKey = "row:" + entryX + ":" + entryY + ":" + entryZ;
+        String scopeKey = dim + ":row:" + entryX + ":" + entryY + ":" + entryZ;
         String dimPosKey = dim + ":" + signX + ":" + signY + ":" + signZ;
         PublishCacheView.ResolvedSign resolved = cacheView.resolve(scopeKey, dimPosKey, liveLines);
         if (resolved == null || PublishCacheView.isInvalid(resolved.lines)) {
