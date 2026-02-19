@@ -408,17 +408,22 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
         if (world == null || clicked == null) {
             return null;
         }
-        try {
-            if (world.getBlockState(clicked).getBlock() == Blocks.LIGHT_BLUE_STAINED_GLASS) {
-                return clicked;
+        BlueGlassSearch.Probe probe = new BlueGlassSearch.Probe() {
+            @Override
+            public boolean isBlueGlass(int x, int y, int z) {
+                return FabricBridge.isBlueGlass(MinecraftClient.getInstance(), x, y, z);
             }
-            BlockPos down = clicked.down();
-            if (world.getBlockState(down).getBlock() == Blocks.LIGHT_BLUE_STAINED_GLASS) {
-                return down;
+
+            @Override
+            public boolean isFree(int x, int y, int z) {
+                return FabricBridge.isFreeGlass(MinecraftClient.getInstance(), x, y, z);
             }
-        } catch (Exception ignore) {
-        }
-        return null;
+        };
+        BlockPosView glass = BlueGlassSearch.resolveClickedGlass(
+            new BlockPosView(clicked.getX(), clicked.getY(), clicked.getZ()),
+            probe
+        );
+        return glass == null ? null : new BlockPos(glass.x(), glass.y(), glass.z());
     }
 
     private static boolean isCodeSelectorItem(ItemStack stack) {
@@ -934,17 +939,8 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
                     return BetterCodeFabric120.FabricBridge.isFreeGlass(mc, x, y, z);
                 }
             };
-            List<BlockPosView> scanned = BlueGlassSearch.scan(seedGlasses, probe);
-            if (scanned.isEmpty()) {
-                scanned = seedGlasses;
-            }
-            BlockPosView nearestFree = BlueGlassSearch.nearest(scanned, probe,
-                p -> mc.player.squaredDistanceTo(p.x() + 0.5, p.y() + 0.5, p.z() + 0.5), true);
-            if (nearestFree != null) {
-                return new BlockPos(nearestFree.x(), nearestFree.y(), nearestFree.z());
-            }
-            BlockPosView nearestAny = BlueGlassSearch.nearest(scanned, probe,
-                p -> mc.player.squaredDistanceTo(p.x() + 0.5, p.y() + 0.5, p.z() + 0.5), false);
+            BlockPosView nearestAny = BlueGlassSearch.chooseNearestSeed(seedGlasses, probe,
+                p -> mc.player.squaredDistanceTo(p.x() + 0.5, p.y() + 0.5, p.z() + 0.5));
             return nearestAny == null ? null : new BlockPos(nearestAny.x(), nearestAny.y(), nearestAny.z());
         }
 

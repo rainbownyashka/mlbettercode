@@ -28,6 +28,41 @@ public final class BlueGlassSearch {
         return scan(seeds, probe, DEFAULT_STEP_Z, DEFAULT_FLOOR_DY, DEFAULT_MAX_NODES);
     }
 
+    public static BlockPosView resolveClickedGlass(BlockPosView clicked, Probe probe) {
+        if (clicked == null || probe == null) {
+            return null;
+        }
+        if (probe.isBlueGlass(clicked.x(), clicked.y(), clicked.z())) {
+            return clicked;
+        }
+        int dx = clicked.x();
+        int dy = clicked.y() - 1;
+        int dz = clicked.z();
+        if (probe.isBlueGlass(dx, dy, dz)) {
+            return new BlockPosView(dx, dy, dz);
+        }
+        return null;
+    }
+
+    public static BlockPosView chooseNearestSeed(
+        Collection<BlockPosView> seeds,
+        Probe probe,
+        ToDoubleFunction<BlockPosView> distSq
+    ) {
+        if (seeds == null || seeds.isEmpty() || probe == null || distSq == null) {
+            return null;
+        }
+        List<BlockPosView> scanned = scan(seeds, probe);
+        if (scanned.isEmpty()) {
+            scanned = new ArrayList<BlockPosView>(seeds);
+        }
+        BlockPosView free = nearest(scanned, probe, distSq, true);
+        if (free != null) {
+            return free;
+        }
+        return nearest(scanned, probe, distSq, false);
+    }
+
     public static List<BlockPosView> scan(
         Collection<BlockPosView> seeds,
         Probe probe,
