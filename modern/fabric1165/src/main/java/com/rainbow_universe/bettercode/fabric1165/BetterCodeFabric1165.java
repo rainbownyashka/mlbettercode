@@ -69,9 +69,11 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static final String CODE_SELECTOR_TAG = "mldsl_code_selector";
@@ -629,6 +631,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         boolean active;
         int cursor;
         BlockPos seed;
+        BlockPos startSeed;
+        BlockPos pendingRowSeed;
         String dimension;
         String failReason;
         BlockPos pendingTarget;
@@ -638,11 +642,14 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         int placeAttempts;
         long tpSettleUntilMs;
         long lastPlaceWorldTraceMs;
+        final Set<String> usedRowSeeds = new HashSet<String>();
 
         void reset() {
             active = false;
             cursor = 0;
             seed = null;
+            startSeed = null;
+            pendingRowSeed = null;
             dimension = null;
             failReason = "";
             pendingTarget = null;
@@ -652,6 +659,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             placeAttempts = 0;
             tpSettleUntilMs = 0L;
             lastPlaceWorldTraceMs = 0L;
+            usedRowSeeds.clear();
         }
     }
 
@@ -742,9 +750,11 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     return;
                 }
                 DIRECT_PLACE_STATE.seed = seed;
+                DIRECT_PLACE_STATE.startSeed = seed;
                 DIRECT_PLACE_STATE.dimension = mc.world.getRegistryKey().getValue().toString();
                 DIRECT_PLACE_STATE.cursor = 0;
                 DIRECT_PLACE_STATE.active = true;
+                DIRECT_PLACE_STATE.usedRowSeeds.add(seedKey(seed));
                 System.out.println("[printer-debug] direct_runtime_start seed=" + seed + " dim=" + DIRECT_PLACE_STATE.dimension + " steps=" + totalSteps);
             }
         }
@@ -844,6 +854,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     DIRECT_PLACE_STATE.cursor++;
                     System.out.println("[printer-debug] direct_skip_step cursor=" + DIRECT_PLACE_STATE.cursor);
                     return PlaceExecResult.ok(1);
+                }
+                if (isNewlineControl(entry)) {
+                    return advanceToNextRowSeed(mc, now);
                 }
 
                 // Core owns menu/args flow, but adapter must still place/re-place the block for the same entry.
@@ -1223,6 +1236,117 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             String rawName = entry.name() == null ? "" : entry.name().trim();
             String rawArgs = entry.argsRaw() == null ? "" : entry.argsRaw().trim();
             return !rawName.isEmpty() || (!rawArgs.isEmpty() && !"no".equalsIgnoreCase(rawArgs));
+        }
+
+        private static boolean isNewlineControl(PlaceRuntimeEntry entry) {
+            if (entry == null) {
+                return false;
+            }
+            String id = entry.blockId() == null ? "" : entry.blockId().trim().toLowerCase();
+            return "newline".equals(id) || "row".equals(id) || "new_line".equals(id);
+        }
+
+        private static PlaceExecResult advanceToNextRowSeed(MinecraftClient mc, long now) {
+            synchronized (DIRECT_PLACE_STATE) {
+                if (!DIRECT_PLACE_STATE.active || DIRECT_PLACE_STATE.startSeed == null) {
+                    return PlaceExecResult.fail(0, 0, "NEWLINE_ROW_NOT_READY", "runtime seed is not initialized");
+                }
+                if (DIRECT_PLACE_STATE.pendingRowSeed == null) {
+                    BlockPos next = findNextRowSeed(mc, DIRECT_PLACE_STATE.startSeed, DIRECT_PLACE_STATE.seed, DIRECT_PLACE_STATE.usedRowSeeds);
+                    if (next == null) {
+                        return PlaceExecResult.fail(0, 0, "NEWLINE_ROW_NOT_FOUND", "no free blue-glass row found for newline");
+                    }
+                    DIRECT_PLACE_STATE.pendingRowSeed = next;
+                    System.out.println("[printer-debug] newline_row selected from=" + DIRECT_PLACE_STATE.seed + " to=" + next);
+                }
+                BlockPos nextSeed = DIRECT_PLACE_STATE.pendingRowSeed;
+                double standX = nextSeed.getX() + 0.5;
+                double standY = nextSeed.getY() + 1.0;
+                double standZ = nextSeed.getZ() - 2.0 + 0.5;
+                if (mc.player.squaredDistanceTo(standX, standY, standZ) > 6.0D) {
+                    if (isTpPathBusyNow()) {
+                        return PlaceExecResult.inProgress(0, "WAIT_TP_PATH_NEWLINE");
+                    }
+                    boolean tpQueued = new FabricBridge(null).enqueueTpPath(nextSeed.getX(), nextSeed.getY() + 1, nextSeed.getZ() - 2);
+                    if (!tpQueued) {
+                        return PlaceExecResult.fail(0, 0, "TP_PATH_FAILED", "cannot tp to newline row seed=" + nextSeed);
+                    }
+                    DIRECT_PLACE_STATE.tpSettleUntilMs = now + PLACE_TP_SETTLE_MS;
+                    return PlaceExecResult.inProgress(0, "WAIT_TP_PATH_NEWLINE");
+                }
+                if (now < DIRECT_PLACE_STATE.tpSettleUntilMs) {
+                    return PlaceExecResult.inProgress(0, "WAIT_TP_SETTLE_NEWLINE");
+                }
+                DIRECT_PLACE_STATE.seed = nextSeed;
+                DIRECT_PLACE_STATE.cursor = 0;
+                DIRECT_PLACE_STATE.usedRowSeeds.add(seedKey(nextSeed));
+                DIRECT_PLACE_STATE.pendingRowSeed = null;
+                clearPendingPlaceState(DIRECT_PLACE_STATE);
+                System.out.println("[printer-debug] newline_row switched seed=" + DIRECT_PLACE_STATE.seed + " cursor=0");
+                return PlaceExecResult.ok(1);
+            }
+        }
+
+        private static BlockPos findNextRowSeed(MinecraftClient mc, BlockPos rootSeed, BlockPos currentSeed, Set<String> used) {
+            if (mc == null || mc.player == null || mc.world == null || rootSeed == null) {
+                return null;
+            }
+            List<BlockPosView> seeds = new ArrayList<BlockPosView>();
+            seeds.add(new BlockPosView(rootSeed.getX(), rootSeed.getY(), rootSeed.getZ()));
+            BlueGlassSearch.Probe probe = new BlueGlassSearch.Probe() {
+                @Override
+                public boolean isBlueGlass(int x, int y, int z) {
+                    return BetterCodeFabric1165.FabricBridge.isBlueGlass(mc, x, y, z);
+                }
+
+                @Override
+                public boolean isFree(int x, int y, int z) {
+                    return BetterCodeFabric1165.FabricBridge.isFreeGlass(mc, x, y, z);
+                }
+            };
+            List<BlockPosView> scanned = BlueGlassSearch.scan(seeds, probe);
+            if (scanned == null || scanned.isEmpty()) {
+                return null;
+            }
+            BlockPos best = null;
+            double bestDist = Double.MAX_VALUE;
+            for (BlockPosView s : scanned) {
+                if (s == null) {
+                    continue;
+                }
+                if (!probe.isFree(s.x(), s.y(), s.z())) {
+                    continue;
+                }
+                String key = seedKey(s.x(), s.y(), s.z());
+                if (used != null && used.contains(key)) {
+                    continue;
+                }
+                double d;
+                if (currentSeed != null) {
+                    double dx = s.x() - currentSeed.getX();
+                    double dy = s.y() - currentSeed.getY();
+                    double dz = s.z() - currentSeed.getZ();
+                    d = dx * dx + dy * dy + dz * dz;
+                } else {
+                    d = mc.player.squaredDistanceTo(s.x() + 0.5, s.y() + 0.5, s.z() + 0.5);
+                }
+                if (d < bestDist) {
+                    bestDist = d;
+                    best = new BlockPos(s.x(), s.y(), s.z());
+                }
+            }
+            return best;
+        }
+
+        private static String seedKey(BlockPos pos) {
+            if (pos == null) {
+                return "";
+            }
+            return seedKey(pos.getX(), pos.getY(), pos.getZ());
+        }
+
+        private static String seedKey(int x, int y, int z) {
+            return x + ":" + y + ":" + z;
         }
 
         @Override

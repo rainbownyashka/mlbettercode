@@ -790,6 +790,7 @@ public final class RuntimeCore {
             }
             String blockTok = normPlanToken(block);
             if ("newline".equals(blockTok)) {
+                out.add(PlaceOp.block("newline", "", "no"));
                 continue;
             }
             if ("skip".equals(blockTok)) {
@@ -854,6 +855,7 @@ public final class RuntimeCore {
             }
             String low = normPlanToken(tok);
             if ("newline".equals(low)) {
+                out.add(PlaceOp.block("newline", "", "no"));
                 if (isLegacyControlTripletTail(args, i)) {
                     i += 3;
                 } else {
