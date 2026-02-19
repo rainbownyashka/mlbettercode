@@ -19,4 +19,20 @@ if "%~1"=="" (
   call gradlew.bat %*
 )
 
-exit /b %ERRORLEVEL%
+set "BUILD_EXIT=%ERRORLEVEL%"
+if not "%BUILD_EXIT%"=="0" (
+  echo [ERROR] Build failed, deploy watcher not started.
+  exit /b %BUILD_EXIT%
+)
+
+set "WATCHER_PS=%~dp0tools\deploy-when-mc-closed.ps1"
+set "WATCHER_LOG=%~dp0build\deploy-watcher.log"
+if not exist "%WATCHER_PS%" (
+  echo [WARN] Deploy watcher script not found: "%WATCHER_PS%"
+  exit /b 0
+)
+
+echo [INFO] Starting deploy watcher (wait MC close -> copy jar)...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell -WindowStyle Hidden -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"\"%WATCHER_PS%\"\" -LogFile \"\"%WATCHER_LOG%\"\"'"
+echo [INFO] Deploy watcher started. Log: %WATCHER_LOG%
+exit /b 0

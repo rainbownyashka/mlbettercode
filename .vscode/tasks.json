@@ -1,0 +1,41 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Gradle jar",
+      "type": "shell",
+      "command": ".\\gradlew.bat",
+      "args": [
+        "--no-daemon",
+        "jar"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$javac"
+      ]
+    },
+    {
+      "label": "Build + Deploy (wait MC close)",
+      "type": "shell",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Gradle jar"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "Start-Process powershell -WindowStyle Hidden -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}\\tools\\deploy-when-mc-closed.ps1\"'; Write-Host \"Deploy watcher started\""
+      ],
+      "problemMatcher": []
+    }
+  ]
+}
