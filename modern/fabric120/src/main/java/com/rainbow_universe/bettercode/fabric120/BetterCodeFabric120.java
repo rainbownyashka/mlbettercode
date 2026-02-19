@@ -729,6 +729,7 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
         BlockPos pendingRowSeed;
         String dimension;
         String failReason;
+        BlockPos lastEntryTarget;
         BlockPos pendingTarget;
         String pendingBlockId;
         long pendingSinceMs;
@@ -745,6 +746,7 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
             pendingRowSeed = null;
             dimension = null;
             failReason = "";
+            lastEntryTarget = null;
             pendingTarget = null;
             pendingBlockId = "";
             pendingSinceMs = 0L;
@@ -929,6 +931,7 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
 
                 if (entry.isSkip() || entry.moveOnly()) {
                     BlockPos skipEntry = DIRECT_PLACE_STATE.seed.add(-2 * DIRECT_PLACE_STATE.cursor, 1, 0);
+                    DIRECT_PLACE_STATE.lastEntryTarget = skipEntry;
                     double standX = skipEntry.getX() + 0.5;
                     double standY = skipEntry.getY();
                     double standZ = skipEntry.getZ() - 2.0 + 0.5;
@@ -985,6 +988,7 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
                 }
 
                 BlockPos entryPos = DIRECT_PLACE_STATE.seed.add(-2 * DIRECT_PLACE_STATE.cursor, 1, 0);
+                DIRECT_PLACE_STATE.lastEntryTarget = entryPos;
                 BlockPos target = entryPos.down();
                 double standX = entryPos.getX() + 0.5;
                 double standY = entryPos.getY();
@@ -1136,6 +1140,9 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
             synchronized (DIRECT_PLACE_STATE) {
                 if (!DIRECT_PLACE_STATE.active || DIRECT_PLACE_STATE.seed == null) {
                     return null;
+                }
+                if (DIRECT_PLACE_STATE.lastEntryTarget != null) {
+                    return DIRECT_PLACE_STATE.lastEntryTarget;
                 }
                 if (DIRECT_PLACE_STATE.pendingTarget != null) {
                     return DIRECT_PLACE_STATE.pendingTarget.up();

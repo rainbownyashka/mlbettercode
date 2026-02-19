@@ -15,5 +15,6 @@ files:
   - modern/fabric1165/src/main/java/com/rainbow_universe/bettercode/fabric1165/BetterCodeFabric1165.java
   - modern/fabric120/src/main/java/com/rainbow_universe/bettercode/fabric120/BetterCodeFabric120.java
   - modern/fabric121/src/main/java/com/rainbow_universe/bettercode/fabric121/BetterCodeFabric121.java
-updated_at: 2026-02-19T19:25:00+07:00
+updated_at: 2026-02-19T20:45:00+07:00
 next: run live 1.16.5 smoke with new jar and collect latest.log for MOD-107 gates: verify `inProgress` place results no longer enter OPEN_MENU early, confirm no old-sign clicks when new block is not yet placed, and continue GUI route-lag stabilization.
+active_agents: []

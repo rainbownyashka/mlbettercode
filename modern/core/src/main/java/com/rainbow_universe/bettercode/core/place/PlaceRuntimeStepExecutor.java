@@ -519,12 +519,23 @@ public final class PlaceRuntimeStepExecutor {
                     return fail(logger, "ARGS_CONTAINER_CLOSED", "container closed during pending clicks");
                 }
                 if (entry.argsWindowId() >= 0 && view.windowId() != entry.argsWindowId()) {
+                    int prevWindowId = entry.argsWindowId();
                     if (entry.pendingArgClicks() == 0 && entry.advancedArgIndex() == 0 && entry.argsMisses() == 0) {
                         logger.info("printer-debug",
-                            "runtime_state=ARGS_WINDOW_REBIND from=" + entry.argsWindowId() + " to=" + view.windowId());
+                            "runtime_state=ARGS_WINDOW_REBIND from=" + prevWindowId + " to=" + view.windowId());
                         entry.setArgsWindowId(view.windowId());
                         entry.setArgsMisses(1);
                         return PlaceExecResult.inProgress(0, "ARGS_WINDOW_REBIND");
+                    }
+                    if (entry.argsMisses() < MAX_ARG_MISSES) {
+                        entry.setArgsMisses(entry.argsMisses() + 1);
+                        entry.setPendingArgClickSlot(-1);
+                        entry.setPendingArgClicks(0);
+                        entry.setPendingArgNextMs(now + Math.max(120, delay));
+                        entry.setArgsWindowId(view.windowId());
+                        logger.info("printer-debug",
+                            "runtime_state=ARGS_PENDING_RECOVER reason=window_changed from=" + prevWindowId + " to=" + view.windowId());
+                        return PlaceExecResult.inProgress(0, "ARGS_PENDING_RECOVER");
                     }
                     return fail(logger, "ARGS_WINDOW_CHANGED", "args window changed during pending clicks");
                 }
@@ -533,6 +544,17 @@ public final class PlaceRuntimeStepExecutor {
                     return PlaceExecResult.inProgress(0, "ARGS_CONTAINER_EMPTY");
                 }
                 if (!hasNonPlayerSlotNumber(view, entry.pendingArgClickSlot())) {
+                    if (entry.argsMisses() < MAX_ARG_MISSES) {
+                        int missingSlot = entry.pendingArgClickSlot();
+                        entry.setArgsMisses(entry.argsMisses() + 1);
+                        entry.setPendingArgClickSlot(-1);
+                        entry.setPendingArgClicks(0);
+                        entry.setPendingArgNextMs(now + Math.max(120, delay));
+                        logger.info("printer-debug",
+                            "runtime_state=ARGS_PENDING_RECOVER reason=slot_missing slot=" + missingSlot
+                                + " misses=" + entry.argsMisses());
+                        return PlaceExecResult.inProgress(0, "ARGS_PENDING_RECOVER");
+                    }
                     return fail(logger, "ARGS_PENDING_SLOT_MISSING",
                         "pending slot disappeared: " + entry.pendingArgClickSlot());
                 }
