@@ -176,15 +176,25 @@ public final class PublishWarmupExecutor {
     private static Result processPagedChest(PublishSessionState state, GameBridge bridge, Trace trace, SelectedRow row) {
         state.nextPageRetryCount = 0;
         int pageTurns = 0;
+        boolean hadNextPages = false;
         while (pageTurns < 32) {
             ContainerView view = bridge.getContainerSnapshot();
             if (view == null || view.windowId() < 0) {
+                if (hadNextPages && state.warmupPass == 0 && row != null && !state.warmupRetryQueue.contains(row)) {
+                    state.warmupRetryQueue.addLast(row);
+                    trace.trace("warmup.retry_mark", "reason=paged_chest pos=" + row.x() + "," + row.y() + "," + row.z());
+                }
                 return Result.done();
             }
             SlotView next = findNextPageArrow(view);
             if (next == null) {
+                if (hadNextPages && state.warmupPass == 0 && row != null && !state.warmupRetryQueue.contains(row)) {
+                    state.warmupRetryQueue.addLast(row);
+                    trace.trace("warmup.retry_mark", "reason=paged_chest pos=" + row.x() + "," + row.y() + "," + row.z());
+                }
                 return Result.done();
             }
+            hadNextPages = true;
             String prevHash = hashNonPlayer(view);
             ClickResult click = bridge.clickSlot(view.windowId(), next.slotNumber(), 0, "PICKUP");
             if (click == null || !click.accepted()) {

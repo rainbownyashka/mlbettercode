@@ -375,6 +375,9 @@
   - publish scope persistence follow-up (2026-02-19):
     - modern core now persists last known scoreboard ID line to `mldsl_cache/last_scoreboard_id.txt`,
     - publish scope resolver now restores cached ID on scoreboard-late/empty frames before falling back to `default`, reducing false scope drift in sign-cache keys.
+  - publish warmup retry-pass parity follow-up (2026-02-19):
+    - modern warmup now explicitly marks paged chests for retry pass (`warmup.retry_mark reason=paged_chest`) when next-page arrows were observed,
+    - second warmup pass now re-processes these rows (legacy-like additional page warmup) instead of finishing after only first traversal.
   - legacy block-id compatibility slice (modern Fabric adapters):
     - added shared mapper `LegacyBlockIdCompat` in core for common 1.12->1.13+ renames (`planks -> oak_planks` and related defaults),
     - `fabric1165/fabric120/fabric121` placement path now normalizes legacy block ids before registry lookup and block-presence checks,
