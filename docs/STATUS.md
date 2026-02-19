@@ -353,6 +353,9 @@
     - menu key fallback aliases expanded in core route matcher (`alternateMenuKeys`) with normalized token stripping (`событие/действие/условие/при`) and extra common action synonyms to reduce residual `NO_PATH_GUI` on server-specific labels.
   - core menu-ack stall guard follow-up (2026-02-19):
     - fixed stale `lastMenuWindowId` state when container closes (`windowId=-1`): runtime now resets cached menu window id immediately, so legacy reopen timer path is not blocked by stale positive window ids during `WAIT_MENU_ACK`.
+  - adapter gui snapshot parity follow-up (2026-02-19):
+    - `fabric120/fabric121` container snapshot path now caches per world-tick + syncId + screenId (same approach as 1.16.5 adapter) and resets cache on screen close/error,
+    - reduces repeated heavy GUI slot rebuilds during route/args retries and narrows runtime lag drift between adapters under menu loops.
   - legacy block-id compatibility slice (modern Fabric adapters):
     - added shared mapper `LegacyBlockIdCompat` in core for common 1.12->1.13+ renames (`planks -> oak_planks` and related defaults),
     - `fabric1165/fabric120/fabric121` placement path now normalizes legacy block ids before registry lookup and block-presence checks,

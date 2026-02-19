@@ -91,6 +91,10 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
     private static final DirectPlaceState DIRECT_PLACE_STATE = new DirectPlaceState();
     private static final LocalTpState LOCAL_TP_STATE = new LocalTpState();
     private static final long PLACE_TP_SETTLE_MS = 350L;
+    private static long SNAPSHOT_CACHE_TICK = Long.MIN_VALUE;
+    private static int SNAPSHOT_CACHE_SYNC_ID = -1;
+    private static int SNAPSHOT_CACHE_SCREEN_ID = -1;
+    private static ContainerView SNAPSHOT_CACHE_VIEW = ContainerView.empty();
 
     @Override
     public void onInitializeClient() {
@@ -1499,11 +1503,21 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
         public ContainerView getContainerSnapshot() {
             MinecraftClient mc = MinecraftClient.getInstance();
             if (!(mc.currentScreen instanceof HandledScreen<?> hs) || mc.player == null) {
+                resetSnapshotCache();
                 return ContainerView.empty();
             }
             try {
+                long tick = mc.world == null ? Long.MIN_VALUE : mc.world.getTime();
+                int syncId = hs.getScreenHandler().syncId;
+                int screenId = System.identityHashCode(hs);
+                if (tick == SNAPSHOT_CACHE_TICK
+                    && syncId == SNAPSHOT_CACHE_SYNC_ID
+                    && screenId == SNAPSHOT_CACHE_SCREEN_ID
+                    && SNAPSHOT_CACHE_VIEW != null) {
+                    return SNAPSHOT_CACHE_VIEW;
+                }
                 List<SlotView> out = new ArrayList<>();
-                int windowId = hs.getScreenHandler().syncId;
+                int windowId = syncId;
                 String title = hs.getTitle() == null ? "" : hs.getTitle().getString();
                 for (Slot s : hs.getScreenHandler().slots) {
                     if (s == null) {
@@ -1522,8 +1536,14 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                     boolean playerInv = s.inventory == mc.player.getInventory();
                     out.add(new SlotView(readIntField(s, "id", -1), readIntField(s, "index", -1), playerInv, empty, itemId, display, nbt));
                 }
-                return new ContainerView(windowId, title, hs.getScreenHandler().slots.size(), out);
+                ContainerView built = new ContainerView(windowId, title, hs.getScreenHandler().slots.size(), out);
+                SNAPSHOT_CACHE_TICK = tick;
+                SNAPSHOT_CACHE_SYNC_ID = syncId;
+                SNAPSHOT_CACHE_SCREEN_ID = screenId;
+                SNAPSHOT_CACHE_VIEW = built;
+                return built;
             } catch (Exception e) {
+                resetSnapshotCache();
                 return ContainerView.empty();
             }
         }
@@ -2209,5 +2229,12 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
         } catch (Exception ignore) {
         }
         return false;
+    }
+
+    private static void resetSnapshotCache() {
+        SNAPSHOT_CACHE_TICK = Long.MIN_VALUE;
+        SNAPSHOT_CACHE_SYNC_ID = -1;
+        SNAPSHOT_CACHE_SCREEN_ID = -1;
+        SNAPSHOT_CACHE_VIEW = ContainerView.empty();
     }
 }
