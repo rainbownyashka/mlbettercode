@@ -14,7 +14,6 @@
     "onLanguage:mldsl",
     "onCommand:mldsl.reloadApi",
     "onCommand:mldsl.smartInsertMenu",
-    "onCommand:mldsl.compileAndCopy",
     "onCommand:mldsl.compilePlan",
     "onCommand:mldsl.publishModule"
   ],
@@ -74,10 +73,6 @@
         "title": "MLDSL: Guided Insert"
       },
       {
-        "command": "mldsl.compileAndCopy",
-        "title": "MLDSL: Compile And Copy"
-      },
-      {
         "command": "mldsl.compilePlan",
         "title": "MLDSL: Compile To plan.json"
       },
@@ -95,13 +90,22 @@
           "command": "mldsl.smartInsertMenu"
         },
         {
-          "command": "mldsl.compileAndCopy"
-        },
-        {
           "command": "mldsl.compilePlan"
         },
         {
           "command": "mldsl.publishModule"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "mldsl.compilePlan",
+          "when": "resourceLangId == mldsl",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mldsl.publishModule",
+          "when": "resourceLangId == mldsl",
+          "group": "navigation@2"
         }
       ]
     },

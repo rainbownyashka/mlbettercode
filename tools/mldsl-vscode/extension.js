@@ -232,14 +232,35 @@ function selectDomain(spec) {
   return "player";
 }
 
+function selectSign2Group(spec) {
+  const s2 = normKey((spec && spec.sign2) || "");
+  if (s2.includes("игрокпоусловию")) return "ifplayer";
+  if (s2.includes("мобпоусловию")) return "ifmob";
+  if (s2.includes("сущностьпоусловию") || s2.includes("сущностпоусловию")) return "ifentity";
+  return "";
+}
+
 function selectHintsFromRawModule(rawModule) {
   const raw = String(rawModule || "").toLowerCase();
   const parts = raw.split(".").filter(Boolean);
   const has = (needle) => parts.some((p) => p.replace(/[\s_\\-]/g, "").includes(needle));
+  const ifPlayer = has("ifplayer") || has("ifplayer") || has("еслиигрок");
+  const ifMob = has("ifmob") || has("еслимоб");
+  const ifEntity = has("ifentity") || has("еслисущество") || has("еслисущность");
   return {
+    scopeMode: ifPlayer ? "ifplayer" : ifMob ? "ifmob" : ifEntity ? "ifentity" : "",
     wantPlayer: has("player") || has("игрок"),
-    wantEntity: has("entity") || has("mob") || has("моб") || has("сущность") || has("существо"),
+    wantMob: has("mob") || has("моб"),
+    wantEntity: has("entity") || has("сущность") || has("существо"),
   };
+}
+
+function extendSelectAliases(funcName, spec) {
+  const aliases = new Set([funcName, ...((Array.isArray(spec.aliases) ? spec.aliases : []).filter(Boolean))]);
+  const menuNorm = normKey(spec.menu || spec.sign2 || spec.gui || "");
+  if (menuNorm.includes("значениеравно")) aliases.add("переменная_равна");
+  if (menuNorm.includes("держитпредмет")) aliases.add("держит");
+  return aliases;
 }
 
 function loadApi() {
@@ -315,6 +336,32 @@ function loadGameValuesCatalog() {
   return { byLocName, byKey, path: p, exists: fs.existsSync(p) };
 }
 
+// Shared module alias map: used both while building lookup and during completion runtime.
+const MODULE_ALIASES = {
+  "игрок": "player",
+  "player": "player",
+  "если_игрок": "if_player",
+  "еслиигрок": "if_player",
+  "if_player": "if_player",
+  "если_игра": "if_game",
+  "еслиигра": "if_game",
+  "if_game": "if_game",
+  "игра": "game",
+  "game": "game",
+  "перем": "var",
+  "переменная": "var",
+  "var": "var",
+  "массив": "array",
+  "array": "array",
+  "если_значение": "if_value",
+  "еслизначение": "if_value",
+  "if_value": "if_value",
+  "misc": "misc",
+  "select": "misc",
+  "vyborka": "misc",
+  "выборка": "misc",
+};
+
 function buildLookup(api) {
   function expandRuntimeAliases(aliases) {
     const out = new Set(Array.isArray(aliases) ? aliases.filter(Boolean) : []);
@@ -344,32 +391,7 @@ function buildLookup(api) {
       }
     }
   }
-  // hardcoded module aliases (draft)
-  const moduleAliases = {
-    "игрок": "player",
-    "player": "player",
-    "если_игрок": "if_player",
-    "еслиигрок": "if_player",
-    "if_player": "if_player",
-    "если_игра": "if_game",
-    "еслиигра": "if_game",
-    "if_game": "if_game",
-    "игра": "game",
-    "game": "game",
-    "перем": "var",
-    "переменная": "var",
-    "var": "var",
-    "массив": "array",
-    "array": "array",
-    "если_значение": "if_value",
-    "еслизначение": "if_value",
-    "if_value": "if_value",
-    "misc": "misc",
-    "select": "misc",
-    "vyborka": "misc",
-    "выборка": "misc",
-  };
-  for (const [alias, target] of Object.entries(moduleAliases)) {
+  for (const [alias, target] of Object.entries(MODULE_ALIASES)) {
     if (lookup[target] && !lookup[alias]) lookup[alias] = lookup[target];
   }
   return lookup;
@@ -729,7 +751,6 @@ function activate(context) {
   let lookup = {};
   let events = { all: [], byPrefix: {} };
   let gamevalues = { byLocName: {}, byKey: {} };
-  let statusItem = null;
   let didWarnMissingApi = false;
 
   function reloadApi(reason) {
@@ -927,6 +948,33 @@ function activate(context) {
     return null;
   }
 
+  function findDevCliPy() {
+    const { compilerPath } = getConfig();
+    if (compilerPath && fs.existsSync(compilerPath)) {
+      const cpNorm = String(compilerPath).toLowerCase();
+      if (cpNorm.endsWith("mldsl_cli.py")) return compilerPath;
+    }
+
+    const candidates = [];
+    const folders = vscode.workspace.workspaceFolders || [];
+    for (const f of folders) {
+      const root = f.uri.fsPath;
+      candidates.push(path.join(root, "mldsl_cli.py"));
+      candidates.push(path.join(root, "tools", "mldsl_cli.py"));
+    }
+
+    const userProfile = process.env.USERPROFILE;
+    if (userProfile) {
+      candidates.push(path.join(userProfile, "Documents", "mlctmodified", "mldsl_cli.py"));
+      candidates.push(path.join(userProfile, "Documents", "mlctbroken", "mlctmodified", "mldsl_cli.py"));
+    }
+
+    for (const p of candidates) {
+      if (p && fs.existsSync(p)) return p;
+    }
+    return null;
+  }
+
   function findCliPath() {
     const { compilerPath } = getConfig();
     if (compilerPath && fs.existsSync(compilerPath) && !String(compilerPath).toLowerCase().endsWith(".py"))
@@ -961,11 +1009,31 @@ function activate(context) {
   }
 
   function findCompiler() {
+    const pycli = findDevCliPy();
+    if (pycli) return { kind: "pycli", pycli };
     const cli = findCliPath();
     if (cli) return { kind: "cli", cli };
     const py = findCompilerPathLegacyPy();
     if (py) return { kind: "py", py };
     return null;
+  }
+
+  function getCompilerExecAndArgs(compiler, pythonPath, subcommandArgs) {
+    if (compiler.kind === "cli") {
+      return { execFile: compiler.cli, args: subcommandArgs };
+    }
+    const pyExec = pythonPath || "python";
+    if (compiler.kind === "pycli") {
+      return { execFile: pyExec, args: [compiler.pycli, ...subcommandArgs] };
+    }
+    // legacy python compiler expects positional: <script> <input> [--plan ...]
+    const transformed = [];
+    for (let i = 0; i < subcommandArgs.length; i++) {
+      const a = subcommandArgs[i];
+      if (a === "compile") continue;
+      transformed.push(a);
+    }
+    return { execFile: pyExec, args: [compiler.py, ...transformed] };
   }
 
   function resolvePlanPath() {
@@ -1002,15 +1070,17 @@ function activate(context) {
 
     const filePath = ed.document.uri.fsPath;
     if (compiler.kind === "cli") {
-      output.appendLine(`[compile#${id}] ${compiler.cli} compile ${filePath}`);
+      output.appendLine(`[compile#${id}] compiler=cli path=${compiler.cli}`);
+    } else if (compiler.kind === "pycli") {
+      output.appendLine(`[compile#${id}] compiler=pycli path=${compiler.pycli}`);
     } else {
-      output.appendLine(`[compile#${id}] ${pythonPath} ${compiler.py} ${filePath}`);
+      output.appendLine(`[compile#${id}] compiler=py path=${compiler.py}`);
     }
 
     const env = Object.assign({}, process.env, { PYTHONIOENCODING: "utf-8" });
-
-    const execFile = compiler.kind === "cli" ? compiler.cli : pythonPath || "python";
-    const args = compiler.kind === "cli" ? ["compile", filePath] : [compiler.py, filePath];
+    const cmd = getCompilerExecAndArgs(compiler, pythonPath, ["compile", filePath]);
+    const execFile = cmd.execFile;
+    const args = cmd.args;
 
     cp.execFile(execFile, args, { env }, async (err, stdout, stderr) => {
       if (stderr && String(stderr).trim()) {
@@ -1060,15 +1130,17 @@ function activate(context) {
     const filePath = ed.document.uri.fsPath;
     const outPlan = resolvePlanPath();
     if (compiler.kind === "cli") {
-      output.appendLine(`[plan#${id}] ${compiler.cli} compile ${filePath} --plan ${outPlan}`);
+      output.appendLine(`[plan#${id}] compiler=cli path=${compiler.cli}`);
+    } else if (compiler.kind === "pycli") {
+      output.appendLine(`[plan#${id}] compiler=pycli path=${compiler.pycli}`);
     } else {
-      output.appendLine(`[plan#${id}] ${pythonPath} ${compiler.py} --plan ${outPlan} ${filePath}`);
+      output.appendLine(`[plan#${id}] compiler=py path=${compiler.py}`);
     }
 
     const env = Object.assign({}, process.env, { PYTHONIOENCODING: "utf-8" });
-
-    const execFile = compiler.kind === "cli" ? compiler.cli : pythonPath || "python";
-    const args = compiler.kind === "cli" ? ["compile", filePath, "--plan", outPlan] : [compiler.py, "--plan", outPlan, filePath];
+    const cmd = getCompilerExecAndArgs(compiler, pythonPath, ["compile", filePath, "--plan", outPlan]);
+    const execFile = cmd.execFile;
+    const args = cmd.args;
 
     cp.execFile(execFile, args, { env }, async (err, stdout, stderr) => {
       if (stderr && String(stderr).trim()) {
@@ -1181,11 +1253,17 @@ function activate(context) {
     output.appendLine(`[publish#${id}] tmp=${tmpRoot}`);
 
     const env = Object.assign({}, process.env, { PYTHONIOENCODING: "utf-8" });
-    const execFile = compiler.kind === "cli" ? compiler.cli : pythonPath || "python";
-    const args =
-      compiler.kind === "cli"
-        ? ["compile", entryFile, "--plan", planPath]
-        : [compiler.py, "--plan", planPath, entryFile];
+    if (compiler.kind === "cli") {
+      output.appendLine(`[publish#${id}] compiler=cli path=${compiler.cli}`);
+    } else if (compiler.kind === "pycli") {
+      output.appendLine(`[publish#${id}] compiler=pycli path=${compiler.pycli}`);
+    } else {
+      output.appendLine(`[publish#${id}] compiler=py path=${compiler.py}`);
+    }
+
+    const cmd = getCompilerExecAndArgs(compiler, pythonPath, ["compile", entryFile, "--plan", planPath]);
+    const execFile = cmd.execFile;
+    const args = cmd.args;
 
     output.appendLine(`[publish#${id}] ${execFile} ${args.join(" ")}`);
 
@@ -1277,9 +1355,10 @@ function activate(context) {
         // select.<...> completion (works even when generic module matcher fails)
         const selDot = findSelectDotContext(line, position.character);
         if (selDot) {
-          const mod = lookup[moduleAliases["select"]] || lookup["misc"];
+          const mod = lookup[MODULE_ALIASES["select"]] || lookup["misc"];
           if (!mod) return;
           const prefix = String(selDot.prefix || "");
+          const hintsSel = selectHintsFromRawModule(selDot.rawModule || "select");
           const items = [];
 
           // Common built-in english shorthands supported by the compiler.
@@ -1322,22 +1401,34 @@ function activate(context) {
             items.push(item);
           }
 
-          for (const [alias, entry] of Object.entries(mod.byName)) {
-            if (prefix && !normKey(alias).startsWith(normKey(prefix))) continue;
-            const spec = entry.spec;
+          const prefixNorm = normKey(prefix);
+          const canonical = (mod && mod.canonical) || {};
+          const seen = new Set();
+          for (const [funcName, spec] of Object.entries(canonical)) {
+            if (!spec || typeof spec !== "object") continue;
             if (!isSelectSpec(spec)) continue;
-            const funcName = entry.funcName;
-            const item = new vscode.CompletionItem(alias, vscode.CompletionItemKind.Function);
-            const params = (spec.params || []).map((p) => p.name).join(", ");
-            const menuName = spec.menu ? ` · ${spec.menu}` : "";
-            item.detail = `select.${funcName}(${params})${menuName}`;
-            // AGENT_TAG: completion_keyword_call
-            // Default function completion inserts keyword args, so optional/positional ambiguity
-            // on server side is avoided in generated user calls.
-            item.insertText = buildKeywordCallSnippet(alias, spec);
-            trySetSnippetInsertRule(item);
-            item.documentation = specToMarkdown(spec);
-            items.push(item);
+            const grp = selectSign2Group(spec);
+            if (hintsSel.scopeMode && grp && grp !== hintsSel.scopeMode) continue;
+            if (!hintsSel.scopeMode) {
+              const dom = selectDomain(spec);
+              if (hintsSel.wantPlayer && dom !== "player") continue;
+              if ((hintsSel.wantEntity || hintsSel.wantMob) && dom !== "entity") continue;
+            }
+            const aliases = extendSelectAliases(funcName, spec);
+            for (const alias of aliases) {
+              if (prefixNorm && !normKey(alias).startsWith(prefixNorm)) continue;
+              const key = `${funcName}::${alias}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              const item = new vscode.CompletionItem(alias, vscode.CompletionItemKind.Function);
+              const params = (spec.params || []).map((p) => p.name).join(", ");
+              const menuName = spec.menu ? ` · ${spec.menu}` : "";
+              item.detail = `select.${funcName}(${params})${menuName}`;
+              item.insertText = buildKeywordCallSnippet(alias, spec);
+              trySetSnippetInsertRule(item);
+              item.documentation = specToMarkdown(spec);
+              items.push(item);
+            }
           }
 
           output.appendLine(`[completion#${id}] select-dot prefix='${prefix}' items=${items.length}`);
@@ -1589,7 +1680,7 @@ function activate(context) {
 
         let mod = lookup[info.module];
         if (info.module === "select") {
-          mod = lookup[moduleAliases["select"]] || lookup["misc"];
+          mod = lookup[MODULE_ALIASES["select"]] || lookup["misc"];
         }
         if (!mod) {
           output.appendLine(`[completion#${id}] module not found: ${info.module}`);
@@ -1598,13 +1689,14 @@ function activate(context) {
 
         const items = [];
         if (info.module === "select") {
-          const { wantPlayer, wantEntity } = selectHintsFromRawModule(info.rawModule);
+          const hintsSel = selectHintsFromRawModule(info.rawModule);
           const hints = [
             { label: "player", insertText: "player." },
             { label: "entity", insertText: "entity." },
             { label: "mob", insertText: "mob." },
             { label: "ifplayer", insertText: "ifplayer." },
             { label: "ifmob", insertText: "ifmob." },
+            { label: "ifentity", insertText: "ifentity." },
             { label: "игрок", insertText: "игрок." },
             { label: "сущность", insertText: "сущность." },
             { label: "моб", insertText: "моб." },
@@ -1625,17 +1717,24 @@ function activate(context) {
         // declared in api_aliases.json are available for prefix filtering.
         const seenLabels = new Set();
         const prefixNorm = normKey(info.prefix || "");
-        const canonical = (mod && mod.canonical) || {};
+          const canonical = (mod && mod.canonical) || {};
         for (const [funcName, spec] of Object.entries(canonical)) {
           if (!spec || typeof spec !== "object") continue;
           if (info.module === "select") {
-            const { wantPlayer, wantEntity } = selectHintsFromRawModule(info.rawModule);
+            const hintsSel = selectHintsFromRawModule(info.rawModule);
             if (!isSelectSpec(spec)) continue;
-            const dom = selectDomain(spec);
-            if (wantEntity && dom !== "entity") continue;
-            if (wantPlayer && dom !== "player") continue;
+            const grp = selectSign2Group(spec);
+            if (hintsSel.scopeMode && grp && grp !== hintsSel.scopeMode) continue;
+            if (!hintsSel.scopeMode) {
+              const dom = selectDomain(spec);
+              if (hintsSel.wantPlayer && dom !== "player") continue;
+              if ((hintsSel.wantEntity || hintsSel.wantMob) && dom !== "entity") continue;
+            }
           }
-          const aliases = new Set([funcName, ...((Array.isArray(spec.aliases) ? spec.aliases : []).filter(Boolean))]);
+          const aliases =
+            info.module === "select"
+              ? extendSelectAliases(funcName, spec)
+              : new Set([funcName, ...((Array.isArray(spec.aliases) ? spec.aliases : []).filter(Boolean))]);
           for (const alias of aliases) {
             if (prefixNorm && !normKey(alias).startsWith(prefixNorm)) continue;
             const dedupeKey = `${funcName}::${alias}`;
@@ -1862,26 +1961,6 @@ function activate(context) {
     vscode.workspace.onDidChangeTextDocument((e) => updateDiagnostics(e.document))
   );
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor((ed) => ed && updateDiagnostics(ed.document)));
-
-  function updateStatusBar() {
-    const ed = vscode.window.activeTextEditor;
-    const ok = ed && ed.document && ed.document.languageId === "mldsl";
-    if (!statusItem) {
-      statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-      statusItem.command = "mldsl.compileAndCopy";
-      context.subscriptions.push(statusItem);
-    }
-    if (ok) {
-      statusItem.text = "MLDSL: Compile";
-      statusItem.tooltip = "Compile current .mldsl and copy /placeadvanced command(s) to clipboard (or use MLDSL: Compile to plan.json)";
-      statusItem.show();
-    } else {
-      statusItem.hide();
-    }
-  }
-
-  context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => updateStatusBar()));
-  updateStatusBar();
 
   context.subscriptions.push(completionProvider, hoverProvider, defProvider, codeActionProvider);
 }
