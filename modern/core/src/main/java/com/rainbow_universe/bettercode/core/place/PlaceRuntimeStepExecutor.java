@@ -84,6 +84,9 @@ public final class PlaceRuntimeStepExecutor {
             if (!placed.ok()) {
                 return placed;
             }
+            if (placed.inProgress()) {
+                return placed;
+            }
             entry.setPlacedBlock(true);
             entry.setPlacedConfirmedMs(now);
             entry.setAwaitingMenu(true);

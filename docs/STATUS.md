@@ -47,6 +47,9 @@
     - `skip/moveOnly` runtime steps in Fabric adapters now do TP-to-`entry.z-2` only and never place blocks; step completes only after reaching stand position (no accidental place on skip),
     - verbose per-tick core diagnostics rate reduced (`VERBOSE_TRACE_GAP_MS=700`) to lower GUI/tick pressure from trace storms under stuck states,
     - `fabric1165` instant local TP apply is now restricted to near range (`<=10` blocks); farther distances use TP-path steps.
+  - place-stage completion gate fix (2026-02-19):
+    - core no longer flips `placedBlock=true` on adapter `inProgress` response,
+    - menu stage starts only after real block-confirm step result (`ok && !inProgress`), preventing false transition to old-sign menu when block placement has not completed yet.
   - menu route transient unresolved guard:
     - unresolved route with no random candidates now enters bounded wait/reopen (`WAIT_MENU_ROUTE`) before final `NO_PATH_GUI`.
   - blue-glass search parity hardening:
