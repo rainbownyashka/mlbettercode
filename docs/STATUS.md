@@ -84,6 +84,10 @@
     - `fabric1165` selector map migrated to shared `SelectedRow` model (`Map<String, SelectedRow>`) via `CodeSelectorStore.toggle(...)`,
     - added shared reflection compatibility helper: `modern/core/src/main/java/com/rainbow_universe/bettercode/core/util/ReflectCompat.java`,
     - sign-line reflection and look-spoof packet reflection paths now use `ReflectCompat` in `fabric1165/fabric120/fabric121` (reduced adapter drift).
+  - post-place parity transfer slice (2026-02-19):
+    - core plan builder now ports legacy post-place metadata from ops (`__MLDSL_NEGATED__::` prefix, `lapis_block -> SIGN_NAME`, `emerald_block -> CYCLE` with `ticks=` parse),
+    - runtime step executor now runs explicit post-place state machine with legacy-like delays/stages (`SIGN_NAME`, `CYCLE`, `NEGATE`) and sign target resolve at `entry.z-1` with `dy=0..-2`,
+    - no `nocache` behavior was introduced in this slice (risky branch intentionally deferred).
 - `/mldsl run` plan execution path wired to place pipeline.
 - Chest page merge logic stores and reuses merged snapshot across pages.
 - `/loadmodule` supports explicit error reasons (timeout/http/ssl/etc.).

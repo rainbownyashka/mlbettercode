@@ -27,6 +27,9 @@ public final class PlaceRuntimeStepExecutor {
     private static final long ARGS_TIMEOUT_MS = 12000L;
     private static final long ARGS_ACTION_MIN_GAP_MS = 180L;
     private static final long CURSOR_TIMEOUT_MS = 5000L;
+    private static final long POST_PLACE_START_DELAY_MS = 450L;
+    private static final long POST_PLACE_NEGATE_DELAY_MS = 350L;
+    private static final long POST_PLACE_STEP_DELAY_MS = 550L;
     private static final int MAX_ARG_MISSES = 60;
     private static final int MAX_MENU_OPEN_ATTEMPTS = 8;
     private static final int MAX_MENU_REPLACE_CYCLES = 2;
@@ -98,6 +101,16 @@ public final class PlaceRuntimeStepExecutor {
             }
             entry.setPlacedBlock(true);
             entry.setPlacedConfirmedMs(now);
+            if (entry.postPlaceKind() == PlaceRuntimeEntry.POST_PLACE_SIGN_NAME
+                || entry.postPlaceKind() == PlaceRuntimeEntry.POST_PLACE_CYCLE) {
+                entry.setAwaitingMenu(false);
+                entry.setAwaitingParamsChest(false);
+                entry.setAwaitingArgs(false);
+                entry.setPostPlaceStage(0);
+                entry.setPostPlaceNextMs(now + Math.max(POST_PLACE_START_DELAY_MS, delay));
+                logger.info("printer-debug", "runtime_state=POST_PLACE_START kind=" + entry.postPlaceKind() + " reason=after_place");
+                return PlaceExecResult.inProgress(0, "POST_PLACE");
+            }
             entry.setAwaitingMenu(true);
             entry.setNeedOpenMenu(true);
             entry.setMenuStartMs(now);
@@ -165,6 +178,13 @@ public final class PlaceRuntimeStepExecutor {
             entry.setMenuNonEmptyWindowId(-1);
         }
 
+        if (entry.postPlaceKind() != PlaceRuntimeEntry.POST_PLACE_NONE
+            && !entry.awaitingMenu()
+            && !entry.awaitingParamsChest()
+            && !entry.awaitingArgs()) {
+            return executePostPlace(entry, bridge, logger, now, delay);
+        }
+
         if (entry.awaitingParamsChest()) {
             if (!hasAdvancedArgs(entry)) {
                 entry.setAwaitingParamsChest(false);
@@ -172,7 +192,7 @@ public final class PlaceRuntimeStepExecutor {
                 entry.setAwaitingArgs(false);
                 entry.setArgsWindowId(-1);
                 logger.info("printer-debug", "runtime_state=SKIP_PARAMS_NO_ARGS");
-                return PlaceExecResult.ok(1);
+                return finishOrPostPlace(entry, bridge, logger, now, delay);
             }
             ContainerView view = bridge.getContainerSnapshot();
             int expectedWindowId = entry.lastMenuWindowId();
@@ -510,7 +530,7 @@ public final class PlaceRuntimeStepExecutor {
                 entry.setLastMenuClickMs(now);
                 entry.setMenuClicksSinceOpen(0);
                 logger.info("printer-debug", "runtime_state=SKIP_PARAMS_NO_ARGS");
-                return PlaceExecResult.ok(1);
+                return finishOrPostPlace(entry, bridge, logger, now, delay);
             }
             entry.setAwaitingMenu(false);
             entry.setAwaitingParamsChest(true);
@@ -614,7 +634,7 @@ public final class PlaceRuntimeStepExecutor {
                 entry.setAwaitingArgs(false);
                 entry.setArgsWindowId(-1);
                 bridge.closeScreen();
-                return PlaceExecResult.ok(1);
+                return finishOrPostPlace(entry, bridge, logger, now, delay);
             }
 
             ContainerView view = bridge.getContainerSnapshot();
@@ -788,7 +808,7 @@ public final class PlaceRuntimeStepExecutor {
             return PlaceExecResult.inProgress(0, "APPLY_ARGS_INPUT");
         }
 
-        return PlaceExecResult.ok(1);
+        return finishOrPostPlace(entry, bridge, logger, now, delay);
     }
 
     private static boolean shouldEmitVerboseTrace(long now) {
@@ -802,6 +822,218 @@ public final class PlaceRuntimeStepExecutor {
             lastVerboseTraceMs = now;
             return true;
         }
+    }
+
+    private static PlaceExecResult finishOrPostPlace(
+        PlaceRuntimeEntry entry,
+        GameBridge bridge,
+        CoreLogger logger,
+        long now,
+        int delay
+    ) {
+        if (entry == null) {
+            return PlaceExecResult.ok(1);
+        }
+        if (entry.postPlaceKind() == PlaceRuntimeEntry.POST_PLACE_NONE && entry.negated()) {
+            entry.setPostPlaceKind(PlaceRuntimeEntry.POST_PLACE_NEGATE);
+            entry.setPostPlaceStage(0);
+            entry.setPostPlaceNextMs(now + Math.max(POST_PLACE_NEGATE_DELAY_MS, delay));
+            if (logger != null) {
+                logger.info("printer-debug", "runtime_state=POST_PLACE_START kind=" + entry.postPlaceKind() + " reason=negated_after_gui");
+            }
+            return PlaceExecResult.inProgress(0, "POST_PLACE");
+        }
+        if (entry.postPlaceKind() == PlaceRuntimeEntry.POST_PLACE_NONE) {
+            return PlaceExecResult.ok(1);
+        }
+        if (entry.postPlaceNextMs() <= 0L) {
+            entry.setPostPlaceNextMs(now + Math.max(POST_PLACE_START_DELAY_MS, delay));
+        }
+        return executePostPlace(entry, bridge, logger, now, delay);
+    }
+
+    private static PlaceExecResult executePostPlace(
+        PlaceRuntimeEntry entry,
+        GameBridge bridge,
+        CoreLogger logger,
+        long now,
+        int delay
+    ) {
+        if (entry == null || entry.postPlaceKind() == PlaceRuntimeEntry.POST_PLACE_NONE) {
+            return PlaceExecResult.ok(1);
+        }
+        if (entry.postPlaceNextMs() > 0L && now < entry.postPlaceNextMs()) {
+            return PlaceExecResult.inProgress(0, "POST_PLACE_WAIT");
+        }
+        if (!ensureCursorClear(entry, bridge, now)) {
+            if (isCursorTimeout(entry, now)) {
+                return fail(logger, "CURSOR_NOT_EMPTY", "cursor not empty during postPlace");
+            }
+            return PlaceExecResult.inProgress(0, "POST_PLACE_CURSOR_WAIT");
+        }
+        BlockPosView target = resolvePostPlaceTarget(bridge);
+        if (target == null) {
+            return fail(logger, "POST_PLACE_SIGN_NOT_FOUND", "postPlace target sign is missing");
+        }
+
+        int kind = entry.postPlaceKind();
+        int stage = entry.postPlaceStage();
+        if (kind == PlaceRuntimeEntry.POST_PLACE_SIGN_NAME) {
+            if (stage <= 0) {
+                String value = safe(entry.postPlaceName()).trim();
+                if (value.isEmpty()) {
+                    return fail(logger, "POST_PLACE_NAME_EMPTY", "postPlace name is empty");
+                }
+                int hotbarIdx = chooseHotbarInjectionIndex(bridge.getContainerSnapshot());
+                String display = displayValueForMode(PlaceInputMode.TEXT, value);
+                String nbt = nbtForMode(PlaceInputMode.TEXT, display, false);
+                if (!bridge.injectCreativeSlot(hotbarIdx, templateItemIdForMode(PlaceInputMode.TEXT), nbt, display)) {
+                    return fail(logger, "POST_PLACE_INJECT_FAILED", "cannot inject text input item");
+                }
+                if (!bridge.selectHotbarSlot(hotbarIdx)) {
+                    return fail(logger, "POST_PLACE_SELECT_FAILED", "cannot select postPlace hotbar slot");
+                }
+                if (!clickPostPlaceTarget(bridge, target, "post_place_sign_name")) {
+                    return fail(logger, "POST_PLACE_CLICK_FAILED", "postPlace sign-name click rejected");
+                }
+                entry.setPostPlaceStage(1);
+                entry.setPostPlaceNextMs(now + Math.max(POST_PLACE_STEP_DELAY_MS, delay));
+                logger.info("printer-debug", "runtime_state=POST_PLACE kind=sign_name stage=1");
+                return PlaceExecResult.inProgress(0, "POST_PLACE");
+            }
+            if (entry.negated()) {
+                entry.setPostPlaceKind(PlaceRuntimeEntry.POST_PLACE_NEGATE);
+                entry.setPostPlaceStage(0);
+                entry.setPostPlaceNextMs(now + Math.max(POST_PLACE_NEGATE_DELAY_MS, delay));
+                logger.info("printer-debug", "runtime_state=POST_PLACE_START kind=" + entry.postPlaceKind() + " reason=negated_after_sign_name");
+                return PlaceExecResult.inProgress(0, "POST_PLACE");
+            }
+            clearPostPlaceState(entry);
+            return PlaceExecResult.ok(1);
+        }
+
+        if (kind == PlaceRuntimeEntry.POST_PLACE_CYCLE) {
+            if (stage <= 0) {
+                String value = safe(entry.postPlaceName()).trim();
+                if (value.isEmpty()) {
+                    return fail(logger, "POST_PLACE_NAME_EMPTY", "postPlace cycle name is empty");
+                }
+                int hotbarIdx = chooseHotbarInjectionIndex(bridge.getContainerSnapshot());
+                String display = displayValueForMode(PlaceInputMode.TEXT, value);
+                String nbt = nbtForMode(PlaceInputMode.TEXT, display, false);
+                if (!bridge.injectCreativeSlot(hotbarIdx, templateItemIdForMode(PlaceInputMode.TEXT), nbt, display)) {
+                    return fail(logger, "POST_PLACE_INJECT_FAILED", "cannot inject cycle-name input item");
+                }
+                if (!bridge.selectHotbarSlot(hotbarIdx)) {
+                    return fail(logger, "POST_PLACE_SELECT_FAILED", "cannot select postPlace cycle-name slot");
+                }
+                if (!clickPostPlaceTarget(bridge, target, "post_place_cycle_name")) {
+                    return fail(logger, "POST_PLACE_CLICK_FAILED", "postPlace cycle-name click rejected");
+                }
+                entry.setPostPlaceStage(1);
+                entry.setPostPlaceNextMs(now + Math.max(POST_PLACE_STEP_DELAY_MS, delay));
+                logger.info("printer-debug", "runtime_state=POST_PLACE kind=cycle stage=1");
+                return PlaceExecResult.inProgress(0, "POST_PLACE");
+            }
+            if (stage == 1) {
+                int ticks = Math.max(5, entry.postPlaceCycleTicks());
+                int hotbarIdx = chooseHotbarInjectionIndex(bridge.getContainerSnapshot());
+                String display = displayValueForMode(PlaceInputMode.NUMBER, String.valueOf(ticks));
+                String nbt = nbtForMode(PlaceInputMode.NUMBER, display, false);
+                if (!bridge.injectCreativeSlot(hotbarIdx, templateItemIdForMode(PlaceInputMode.NUMBER), nbt, display)) {
+                    return fail(logger, "POST_PLACE_INJECT_FAILED", "cannot inject cycle-ticks input item");
+                }
+                if (!bridge.selectHotbarSlot(hotbarIdx)) {
+                    return fail(logger, "POST_PLACE_SELECT_FAILED", "cannot select postPlace cycle slot");
+                }
+                if (!clickPostPlaceTarget(bridge, target, "post_place_cycle_ticks")) {
+                    return fail(logger, "POST_PLACE_CLICK_FAILED", "postPlace cycle-ticks click rejected");
+                }
+                entry.setPostPlaceStage(2);
+                entry.setPostPlaceNextMs(now + Math.max(POST_PLACE_STEP_DELAY_MS, delay));
+                logger.info("printer-debug", "runtime_state=POST_PLACE kind=cycle stage=2 ticks=" + ticks);
+                return PlaceExecResult.inProgress(0, "POST_PLACE");
+            }
+            if (entry.negated()) {
+                entry.setPostPlaceKind(PlaceRuntimeEntry.POST_PLACE_NEGATE);
+                entry.setPostPlaceStage(0);
+                entry.setPostPlaceNextMs(now + Math.max(POST_PLACE_NEGATE_DELAY_MS, delay));
+                logger.info("printer-debug", "runtime_state=POST_PLACE_START kind=" + entry.postPlaceKind() + " reason=negated_after_cycle");
+                return PlaceExecResult.inProgress(0, "POST_PLACE");
+            }
+            clearPostPlaceState(entry);
+            return PlaceExecResult.ok(1);
+        }
+
+        if (kind == PlaceRuntimeEntry.POST_PLACE_NEGATE) {
+            if (stage <= 0) {
+                int hotbarIdx = chooseHotbarInjectionIndex(bridge.getContainerSnapshot());
+                if (!bridge.injectCreativeSlot(hotbarIdx, "minecraft:arrow", "", "")) {
+                    return fail(logger, "POST_PLACE_INJECT_FAILED", "cannot inject negate arrow");
+                }
+                if (!bridge.selectHotbarSlot(hotbarIdx)) {
+                    return fail(logger, "POST_PLACE_SELECT_FAILED", "cannot select negate arrow slot");
+                }
+                if (!clickPostPlaceTarget(bridge, target, "post_place_negate")) {
+                    return fail(logger, "POST_PLACE_CLICK_FAILED", "postPlace negate click rejected");
+                }
+                entry.setPostPlaceStage(1);
+                entry.setPostPlaceNextMs(now + Math.max(POST_PLACE_STEP_DELAY_MS, delay));
+                logger.info("printer-debug", "runtime_state=POST_PLACE kind=negate stage=1");
+                return PlaceExecResult.inProgress(0, "POST_PLACE");
+            }
+            clearPostPlaceState(entry);
+            return PlaceExecResult.ok(1);
+        }
+
+        clearPostPlaceState(entry);
+        return PlaceExecResult.ok(1);
+    }
+
+    private static BlockPosView resolvePostPlaceTarget(GameBridge bridge) {
+        if (bridge == null) {
+            return null;
+        }
+        BlockPosView anchor = bridge.getRuntimeEntryAnchor();
+        if (anchor == null) {
+            return null;
+        }
+        for (int dy = 0; dy >= -2; dy--) {
+            int x = anchor.x();
+            int y = anchor.y() + dy;
+            int z = anchor.z() - 1;
+            if (bridge.isSignAt(x, y, z)) {
+                return new BlockPosView(x, y, z);
+            }
+        }
+        return new BlockPosView(anchor.x(), anchor.y(), anchor.z());
+    }
+
+    private static boolean clickPostPlaceTarget(GameBridge bridge, BlockPosView target, String purpose) {
+        if (bridge == null || target == null) {
+            return false;
+        }
+        ClickResult legacy = bridge.clickBlockLegacy(target.x(), target.y(), target.z(), purpose, true);
+        if (legacy != null && legacy.accepted()) {
+            return true;
+        }
+        ClickResult packet = bridge.sendUseItemOnBlock(target.x(), target.y(), target.z());
+        if (packet != null && packet.accepted()) {
+            return true;
+        }
+        ClickResult interact = bridge.interactBlock(target.x(), target.y(), target.z());
+        return interact != null && interact.accepted();
+    }
+
+    private static void clearPostPlaceState(PlaceRuntimeEntry entry) {
+        if (entry == null) {
+            return;
+        }
+        entry.setPostPlaceKind(PlaceRuntimeEntry.POST_PLACE_NONE);
+        entry.setPostPlaceName("");
+        entry.setPostPlaceCycleTicks(-1);
+        entry.setPostPlaceStage(0);
+        entry.setPostPlaceNextMs(0L);
     }
 
     private static boolean hasAdvancedArgs(PlaceRuntimeEntry entry) {
@@ -930,6 +1162,8 @@ public final class PlaceRuntimeStepExecutor {
         entry.setNextMenuActionMs(now + Math.max(120, delay));
         entry.setMenuOpenAttempts(0);
         entry.setForceRePlaceRequested(true);
+        entry.setPostPlaceStage(0);
+        entry.setPostPlaceNextMs(0L);
     }
 
     private static boolean ensureCursorClear(PlaceRuntimeEntry entry, GameBridge bridge, long now) {

@@ -13,6 +13,10 @@ public final class PlaceEntrySpec {
     private final String expectedSign2;
     private final String argsRaw;
     private final List<PlaceArgSpec> args;
+    private final boolean negated;
+    private final int postPlaceKind;
+    private final String postPlaceName;
+    private final int postPlaceCycleTicks;
 
     private PlaceEntrySpec(
         boolean pause,
@@ -22,7 +26,11 @@ public final class PlaceEntrySpec {
         String expectedSign1,
         String expectedSign2,
         String argsRaw,
-        List<PlaceArgSpec> args
+        List<PlaceArgSpec> args,
+        boolean negated,
+        int postPlaceKind,
+        String postPlaceName,
+        int postPlaceCycleTicks
     ) {
         this.pause = pause;
         this.skip = skip;
@@ -32,14 +40,20 @@ public final class PlaceEntrySpec {
         this.expectedSign2 = expectedSign2 == null ? "" : expectedSign2;
         this.argsRaw = argsRaw == null ? "" : argsRaw;
         this.args = args == null ? Collections.<PlaceArgSpec>emptyList() : new ArrayList<PlaceArgSpec>(args);
+        this.negated = negated;
+        this.postPlaceKind = postPlaceKind;
+        this.postPlaceName = postPlaceName == null ? "" : postPlaceName;
+        this.postPlaceCycleTicks = postPlaceCycleTicks;
     }
 
     public static PlaceEntrySpec pause() {
-        return new PlaceEntrySpec(true, false, "minecraft:air", "", "", "", "", Collections.<PlaceArgSpec>emptyList());
+        return new PlaceEntrySpec(true, false, "minecraft:air", "", "", "", "", Collections.<PlaceArgSpec>emptyList(),
+            false, PlaceRuntimeEntry.POST_PLACE_NONE, "", -1);
     }
 
     public static PlaceEntrySpec skip() {
-        return new PlaceEntrySpec(false, true, "skip", "", "", "", "", Collections.<PlaceArgSpec>emptyList());
+        return new PlaceEntrySpec(false, true, "skip", "", "", "", "", Collections.<PlaceArgSpec>emptyList(),
+            false, PlaceRuntimeEntry.POST_PLACE_NONE, "", -1);
     }
 
     public static PlaceEntrySpec block(
@@ -48,9 +62,14 @@ public final class PlaceEntrySpec {
         String expectedSign1,
         String expectedSign2,
         String argsRaw,
-        List<PlaceArgSpec> args
+        List<PlaceArgSpec> args,
+        boolean negated,
+        int postPlaceKind,
+        String postPlaceName,
+        int postPlaceCycleTicks
     ) {
-        return new PlaceEntrySpec(false, false, blockId, name, expectedSign1, expectedSign2, argsRaw, args);
+        return new PlaceEntrySpec(false, false, blockId, name, expectedSign1, expectedSign2, argsRaw, args,
+            negated, postPlaceKind, postPlaceName, postPlaceCycleTicks);
     }
 
     public boolean isPause() {
@@ -83,5 +102,21 @@ public final class PlaceEntrySpec {
 
     public List<PlaceArgSpec> args() {
         return Collections.unmodifiableList(args);
+    }
+
+    public boolean negated() {
+        return negated;
+    }
+
+    public int postPlaceKind() {
+        return postPlaceKind;
+    }
+
+    public String postPlaceName() {
+        return postPlaceName;
+    }
+
+    public int postPlaceCycleTicks() {
+        return postPlaceCycleTicks;
     }
 }

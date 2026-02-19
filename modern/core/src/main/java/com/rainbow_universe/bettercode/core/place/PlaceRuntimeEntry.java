@@ -10,6 +10,7 @@ public final class PlaceRuntimeEntry {
     public static final int POST_PLACE_NONE = 0;
     public static final int POST_PLACE_SIGN_NAME = 1;
     public static final int POST_PLACE_CYCLE = 2;
+    public static final int POST_PLACE_NEGATE = 3;
 
     private final boolean pause;
     private final boolean skip;
@@ -17,6 +18,7 @@ public final class PlaceRuntimeEntry {
     private final String name;
     private final String argsRaw;
     private final List<PlaceArgSpec> args;
+    private final boolean negated;
 
     // Runtime mutable state (legacy PlaceEntry parity baseline)
     private boolean placedBlock;
@@ -80,13 +82,14 @@ public final class PlaceRuntimeEntry {
     private long blockRecheckStartMs;
     private long cursorNotEmptySinceMs;
 
-    public PlaceRuntimeEntry(boolean pause, boolean skip, String blockId, String name, String argsRaw, List<PlaceArgSpec> args) {
+    public PlaceRuntimeEntry(boolean pause, boolean skip, String blockId, String name, String argsRaw, List<PlaceArgSpec> args, boolean negated) {
         this.pause = pause;
         this.skip = skip;
         this.blockId = blockId == null ? "" : blockId;
         this.name = name == null ? "" : name;
         this.argsRaw = argsRaw == null ? "" : argsRaw;
         this.args = args == null ? Collections.<PlaceArgSpec>emptyList() : new ArrayList<PlaceArgSpec>(args);
+        this.negated = negated;
         this.placedBlock = false;
         this.awaitingMenu = false;
         this.menuStartMs = 0L;
@@ -147,9 +150,13 @@ public final class PlaceRuntimeEntry {
 
     public static PlaceRuntimeEntry fromSpec(PlaceEntrySpec spec) {
         if (spec == null || spec.isPause()) {
-            return new PlaceRuntimeEntry(true, false, "minecraft:air", "", "", Collections.<PlaceArgSpec>emptyList());
+            return new PlaceRuntimeEntry(true, false, "minecraft:air", "", "", Collections.<PlaceArgSpec>emptyList(), false);
         }
-        return new PlaceRuntimeEntry(false, spec.isSkip(), spec.blockId(), spec.name(), spec.argsRaw(), spec.args());
+        PlaceRuntimeEntry out = new PlaceRuntimeEntry(false, spec.isSkip(), spec.blockId(), spec.name(), spec.argsRaw(), spec.args(), spec.negated());
+        out.setPostPlaceKind(spec.postPlaceKind());
+        out.setPostPlaceName(spec.postPlaceName());
+        out.setPostPlaceCycleTicks(spec.postPlaceCycleTicks());
+        return out;
     }
 
     public boolean isPause() {
@@ -174,6 +181,10 @@ public final class PlaceRuntimeEntry {
 
     public List<PlaceArgSpec> args() {
         return Collections.unmodifiableList(args);
+    }
+
+    public boolean negated() {
+        return negated;
     }
 
     public boolean placedBlock() { return placedBlock; }
