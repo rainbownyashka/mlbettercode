@@ -1155,6 +1155,7 @@ public final class PlaceRuntimeStepExecutor {
             if (!stripped.isEmpty() && !stripped.equals(base)) {
                 out.add(stripped);
             }
+            addPathSegmentAliases(out, base);
             if (base.startsWith("событие ")) {
                 out.add(base.substring("событие ".length()).trim());
             }
@@ -1201,6 +1202,30 @@ public final class PlaceRuntimeStepExecutor {
             dedup.add(n);
         }
         return dedup;
+    }
+
+    private static void addPathSegmentAliases(List<String> out, String base) {
+        if (out == null || base == null) {
+            return;
+        }
+        String[] chains = base.split(">");
+        if (chains.length <= 1) {
+            return;
+        }
+        for (String c : chains) {
+            String n = norm(c);
+            if (!n.isEmpty()) {
+                out.add(n);
+                String stripped = stripMenuNoiseTokens(n);
+                if (!stripped.isEmpty() && !stripped.equals(n)) {
+                    out.add(stripped);
+                }
+            }
+        }
+        String last = norm(chains[chains.length - 1]);
+        if (!last.isEmpty()) {
+            out.add(last);
+        }
     }
 
     private static String stripMenuNoiseTokens(String s) {

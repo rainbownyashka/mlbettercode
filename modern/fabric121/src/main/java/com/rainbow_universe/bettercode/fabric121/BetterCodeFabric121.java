@@ -1531,7 +1531,7 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                     if (!empty) {
                         itemId = st.getItem() == null ? "" : String.valueOf(Registries.ITEM.getId(st.getItem()));
                         display = st.getName() == null ? "" : st.getName().getString();
-                        nbt = readNbtString(st);
+                        nbt = readNbtStringCapped(st, 256);
                     }
                     boolean playerInv = s.inventory == mc.player.getInventory();
                     out.add(new SlotView(readIntField(s, "id", -1), readIntField(s, "index", -1), playerInv, empty, itemId, display, nbt));
@@ -2101,6 +2101,17 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             } catch (Exception ignore) {
             }
             return "";
+        }
+
+        private static String readNbtStringCapped(ItemStack st, int maxLen) {
+            String nbt = readNbtString(st);
+            if (nbt == null) {
+                return "";
+            }
+            if (nbt.length() <= maxLen) {
+                return nbt;
+            }
+            return nbt.substring(0, Math.max(0, maxLen)) + "...";
         }
 
         private static void applyDisplayName(ItemStack st, String displayName) {

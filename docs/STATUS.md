@@ -356,6 +356,9 @@
   - adapter gui snapshot parity follow-up (2026-02-19):
     - `fabric120/fabric121` container snapshot path now caches per world-tick + syncId + screenId (same approach as 1.16.5 adapter) and resets cache on screen close/error,
     - reduces repeated heavy GUI slot rebuilds during route/args retries and narrows runtime lag drift between adapters under menu loops.
+  - cache compaction + route fallback follow-up (2026-02-19):
+    - `fabric120/fabric121` snapshot cache payload now stores capped NBT strings (`256` chars) to reduce container-view memory pressure in hot GUI loops,
+    - core menu route fallback now also derives aliases from `>`-separated path segments (legacy click-menu path style), improving resolution for nested menu labels without widening random-click behavior.
   - legacy block-id compatibility slice (modern Fabric adapters):
     - added shared mapper `LegacyBlockIdCompat` in core for common 1.12->1.13+ renames (`planks -> oak_planks` and related defaults),
     - `fabric1165/fabric120/fabric121` placement path now normalizes legacy block ids before registry lookup and block-presence checks,

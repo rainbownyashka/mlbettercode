@@ -1455,8 +1455,7 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
                     if (!empty) {
                         itemId = st.getItem() == null ? "" : String.valueOf(Registries.ITEM.getId(st.getItem()));
                         display = st.getName() == null ? "" : st.getName().getString();
-                        NbtCompound tag = st.getNbt();
-                        nbt = tag == null ? "" : tag.toString();
+                        nbt = readNbtStringCapped(st, 256);
                     }
                     boolean playerInv = s.inventory == mc.player.getInventory();
                     out.add(new SlotView(readIntField(s, "id", -1), readIntField(s, "index", -1), playerInv, empty, itemId, display, nbt));
@@ -1823,6 +1822,22 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
             } catch (Exception ignore) {
             }
             return fallback;
+        }
+
+        private static String readNbtStringCapped(ItemStack st, int maxLen) {
+            if (st == null) {
+                return "";
+            }
+            String nbt = "";
+            try {
+                NbtCompound tag = st.getNbt();
+                nbt = tag == null ? "" : tag.toString();
+            } catch (Exception ignore) {
+            }
+            if (nbt.length() <= maxLen) {
+                return nbt;
+            }
+            return nbt.substring(0, Math.max(0, maxLen)) + "...";
         }
 
         private static String normalizeBlockIdForRuntime(String sourceBlockId) {
