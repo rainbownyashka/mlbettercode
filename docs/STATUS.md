@@ -42,6 +42,11 @@
     - restored legacy-like auto-TP gate before block placement in modern Fabric adapters: if player is far from `entry + (0,0,-2)`, step returns `WAIT_TP_PATH` and queues TP toward `entry.z-2` before attempting place,
     - `fabric1165` TP queue now performs immediate local position apply (`setPosition/updatePosition` reflection fallback) when possible, preventing publish warmup from failing on immediate `tp_path_busy`,
     - args pipeline now tolerates one initial container window rebind (`runtime_state=ARGS_WINDOW_REBIND`) instead of hard-failing immediately with `ARGS_WINDOW_CHANGED` during params-chest transition races.
+  - custom validation + control-step parity slice (2026-02-19):
+    - added explicit menu-sign presence validation before menu-open attempts in core (`isSignAt(entry.z-1, dy=0..-2)`): when sign is missing, runtime requests bounded force-replace instead of blind GUI clicks,
+    - `skip/moveOnly` runtime steps in Fabric adapters now do TP-to-`entry.z-2` only and never place blocks; step completes only after reaching stand position (no accidental place on skip),
+    - verbose per-tick core diagnostics rate reduced (`VERBOSE_TRACE_GAP_MS=700`) to lower GUI/tick pressure from trace storms under stuck states,
+    - `fabric1165` instant local TP apply is now restricted to near range (`<=10` blocks); farther distances use TP-path steps.
   - menu route transient unresolved guard:
     - unresolved route with no random candidates now enters bounded wait/reopen (`WAIT_MENU_ROUTE`) before final `NO_PATH_GUI`.
   - blue-glass search parity hardening:

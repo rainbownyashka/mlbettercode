@@ -813,6 +813,21 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 }
 
                 if (entry.isSkip() || entry.moveOnly()) {
+                    BlockPos skipEntry = DIRECT_PLACE_STATE.seed.add(-2 * DIRECT_PLACE_STATE.cursor, 1, 0);
+                    double standX = skipEntry.getX() + 0.5;
+                    double standY = skipEntry.getY();
+                    double standZ = skipEntry.getZ() - 2.0 + 0.5;
+                    if (mc.player.squaredDistanceTo(standX, standY, standZ) > 6.0D) {
+                        if (isTpPathBusy()) {
+                            return PlaceExecResult.inProgress(0, "WAIT_TP_PATH_SKIP");
+                        }
+                        boolean tpQueued = enqueueTpPath(skipEntry.getX(), skipEntry.getY(), skipEntry.getZ() - 2);
+                        if (!tpQueued) {
+                            return PlaceExecResult.fail(0, 0, "TP_PATH_FAILED",
+                                "cannot tp to skip target=" + skipEntry);
+                        }
+                        return PlaceExecResult.inProgress(0, "WAIT_TP_PATH_SKIP");
+                    }
                     DIRECT_PLACE_STATE.cursor++;
                     System.out.println("[printer-debug] direct_skip_step cursor=" + DIRECT_PLACE_STATE.cursor);
                     return PlaceExecResult.ok(1);
@@ -1469,6 +1484,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             double dx = x - sx;
             double dy = y - sy;
             double dz = z - sz;
+            double distSq = dx * dx + dy * dy + dz * dz;
             synchronized (LOCAL_TP_STATE) {
                 LOCAL_TP_STATE.queue.clear();
                 int safety = 0;
@@ -1497,7 +1513,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 if (LOCAL_TP_STATE.queue.isEmpty()) {
                     return false;
                 }
-                if (setPlayerPositionLocal(mc, x + 0.5D, y, z + 0.5D)) {
+                if (distSq <= 100.0D && setPlayerPositionLocal(mc, x + 0.5D, y, z + 0.5D)) {
                     LOCAL_TP_STATE.queue.clear();
                     LOCAL_TP_STATE.nextMs = 0L;
                     System.out.println("[printer-debug] testcase_tp queued target=" + x + "," + y + "," + z

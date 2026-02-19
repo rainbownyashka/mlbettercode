@@ -34,7 +34,7 @@ public final class PlaceRuntimeStepExecutor {
     private static final int BLOCK_RECHECK_MISS_REQUIRED = 3;
     private static final long PAGE_TURN_TIMEOUT_MS = 1500L;
     private static final int PAGE_TURN_MAX_RETRIES = 5;
-    private static final long VERBOSE_TRACE_GAP_MS = 350L;
+    private static final long VERBOSE_TRACE_GAP_MS = 700L;
     private static long lastVerboseTraceMs = 0L;
 
     private PlaceRuntimeStepExecutor() {
@@ -248,6 +248,14 @@ public final class PlaceRuntimeStepExecutor {
                     entry.setNextMenuActionMs(now + Math.max(120, delay));
                 }
                 if (entry.needOpenMenu() && now >= entry.nextMenuActionMs()) {
+                    if (!hasSignAtMenuAnchor(bridge)) {
+                        entry.setMenuOpenAttempts(entry.menuOpenAttempts() + 1);
+                        if (!startMenuForceReplace(entry, now, delay, logger, "menu_sign_missing")) {
+                            return fail(logger, "MENU_SIGN_NOT_FOUND", "menu sign missing near runtime entry");
+                        }
+                        logger.info("printer-debug", "runtime_state=FORCE_REPLACE reason=menu_sign_missing");
+                        return PlaceExecResult.inProgress(0, "FORCE_REPLACE");
+                    }
                     int openAttempt = entry.menuOpenAttempts() + 1;
                     boolean opened = tryOpenMenuTarget(bridge);
                     entry.setNeedOpenMenu(false);
@@ -713,6 +721,22 @@ public final class PlaceRuntimeStepExecutor {
         // Final fallback matches legacy when sign target can't be resolved.
         if (bridge.useBlockAtOffset(0, 1, 0, "params_open")) {
             return true;
+        }
+        return false;
+    }
+
+    private static boolean hasSignAtMenuAnchor(GameBridge bridge) {
+        if (bridge == null) {
+            return false;
+        }
+        BlockPosView anchor = bridge.getRuntimeEntryAnchor();
+        if (anchor == null) {
+            return false;
+        }
+        for (int dy = 0; dy >= -2; dy--) {
+            if (bridge.isSignAt(anchor.x(), anchor.y() + dy, anchor.z() - 1)) {
+                return true;
+            }
         }
         return false;
     }
