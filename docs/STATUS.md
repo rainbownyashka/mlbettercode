@@ -316,6 +316,11 @@
     - added per-tick container snapshot cache in adapter (`getContainerSnapshot`) to avoid repeated slot+NBT rebuilds during one client tick,
     - slot NBT in snapshots is now capped (512 chars) to reduce hot-loop string/regex cost under heavy GUI retries,
     - core menu route now detects stagnant unresolved GUI hash and forces bounded reopen (`ROUTE_MENU_STAGNANT`) instead of long random-click loops.
+  - runtime duplicate-execution diagnostics slice (2026-02-19):
+    - `fabric1165` now logs adapter init count (`mod_init ... initCount=`) to detect duplicate mod initialization,
+    - `fabric1165` end-tick hook now logs `runtime_tick_duplicate_detected` when runtime tick driver fires multiple times in the same world tick,
+    - `fabric1165` legacy click path now logs `legacy_click_duplicate_suspect` for repeated same-target clicks within a short window,
+    - core runtime now logs `runtime_perf stage=step_execute` when a single step execution exceeds slow threshold.
   - legacy block-id compatibility slice (modern Fabric adapters):
     - added shared mapper `LegacyBlockIdCompat` in core for common 1.12->1.13+ renames (`planks -> oak_planks` and related defaults),
     - `fabric1165/fabric120/fabric121` placement path now normalizes legacy block ids before registry lookup and block-presence checks,

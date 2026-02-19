@@ -58,6 +58,8 @@ public final class RuntimeCore {
     private long publishTraceSeq;
     private volatile String lastScoreboardIdLine;
     private static final long IN_PROGRESS_LOG_GAP_MS = 1200L;
+    private static final long SLOW_STEP_WARN_MS = 120L;
+    private static final long SLOW_STEP_WARN_GAP_MS = 1000L;
 
     public RuntimeCore(CoreLogger logger) {
         this(logger, new SettingsProvider() {
@@ -251,7 +253,23 @@ public final class RuntimeCore {
             bridge.onExecutionStop();
             return;
         }
+        long stepStartNs = System.nanoTime();
         PlaceExecResult step = PlaceRuntimeStepExecutor.execute(stepEntry, bridge, settings, logger, menuRouteResolver);
+        long stepElapsedMs = (System.nanoTime() - stepStartNs) / 1_000_000L;
+        String stepReason = step.errorMessage() == null ? "" : step.errorMessage();
+        if (stepElapsedMs >= SLOW_STEP_WARN_MS
+            && (nowMs - exec.lastSlowStepLogMs >= SLOW_STEP_WARN_GAP_MS
+            || !safeEq(exec.lastSlowStepReason, stepReason))) {
+            logger.warn("printer-debug",
+                "runtime_perf stage=step_execute elapsedMs=" + stepElapsedMs
+                    + " source=" + exec.source
+                    + " step=" + exec.state.executedCount() + "/" + exec.state.totalCount()
+                    + " inProgress=" + step.inProgress()
+                    + " ok=" + step.ok()
+                    + " reason=" + (stepReason.isEmpty() ? "-" : stepReason));
+            exec.lastSlowStepLogMs = nowMs;
+            exec.lastSlowStepReason = stepReason;
+        }
         if (!step.ok()) {
             String code = step.errorCode() == null ? "exec_failed" : step.errorCode();
             String msg = step.errorMessage() == null ? "" : step.errorMessage();
@@ -304,6 +322,12 @@ public final class RuntimeCore {
         String rawName = entry.name() == null ? "" : entry.name().trim();
         String rawArgs = entry.argsRaw() == null ? "" : entry.argsRaw().trim();
         return !rawName.isEmpty() || (!rawArgs.isEmpty() && !"no".equalsIgnoreCase(rawArgs));
+    }
+
+    private static boolean safeEq(String a, String b) {
+        String x = a == null ? "" : a;
+        String y = b == null ? "" : b;
+        return x.equals(y);
     }
 
     public RuntimeResult handlePublish(GameBridge bridge) {
@@ -1194,6 +1218,8 @@ public final class RuntimeCore {
         long nextStepAtMs;
         long lastInProgressLogMs;
         String lastInProgressReason;
+        long lastSlowStepLogMs;
+        String lastSlowStepReason;
 
         PendingExecution(List<PlaceEntrySpec> specs, String source, String postId, String config, String path) {
             this.source = source == null ? "unknown" : source;
@@ -1204,6 +1230,8 @@ public final class RuntimeCore {
             this.nextStepAtMs = System.currentTimeMillis();
             this.lastInProgressLogMs = 0L;
             this.lastInProgressReason = "";
+            this.lastSlowStepLogMs = 0L;
+            this.lastSlowStepReason = "";
         }
     }
 }

@@ -90,6 +90,13 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static final LocalTpState LOCAL_TP_STATE = new LocalTpState();
     private static volatile String LAST_WORLD_SEED_HINT_DIM = "";
     private static volatile BlockPos LAST_WORLD_SEED_HINT = null;
+    private static int INIT_CALL_COUNT = 0;
+    private static long LAST_RUNTIME_TICK_WORLD_TIME = Long.MIN_VALUE;
+    private static long LAST_RUNTIME_TICK_WALL_MS = 0L;
+    private static String LAST_RUNTIME_TICK_DIM = "";
+    private static String LAST_LEGACY_CLICK_KEY = "";
+    private static long LAST_LEGACY_CLICK_MS = 0L;
+    private static int LAST_LEGACY_CLICK_BURST = 0;
     private static long SNAPSHOT_CACHE_TICK = Long.MIN_VALUE;
     private static int SNAPSHOT_CACHE_SYNC_ID = -1;
     private static int SNAPSHOT_CACHE_SCREEN_ID = -1;
@@ -97,6 +104,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        INIT_CALL_COUNT++;
+        System.out.println("[printer-debug] mod_init adapter=fabric1165 initCount=" + INIT_CALL_COUNT
+            + " classLoader=" + String.valueOf(getClass().getClassLoader()));
         ClientCommandManager.DISPATCHER.register(
             ClientCommandManager.literal("modsettings")
                 .executes(ctx -> modSettingsList(ctx.getSource()))
@@ -213,6 +223,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         );
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            traceRuntimeTickProbe(client);
             handleLocalTpPath(client);
             refreshWorldLoadSeedHint(client);
             runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis());
@@ -1698,6 +1709,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             if (mc.player == null || mc.interactionManager == null || mc.world == null) {
                 return ClickResult.rejected("client_context_missing", AckState.REJECTED);
             }
+            traceLegacyClickBurst(mc, x, y, z, purpose);
             if (spoofLook) {
                 aimAtBlock(mc, x, y, z);
             }
@@ -2350,6 +2362,49 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             + " playerFeet=" + feet
             + " candidate=" + candidate
             + " hit=" + hit);
+    }
+
+    private static void traceRuntimeTickProbe(MinecraftClient mc) {
+        if (mc == null || mc.world == null) {
+            return;
+        }
+        long worldTick = mc.world.getTime();
+        long nowMs = System.currentTimeMillis();
+        String dim = mc.world.getRegistryKey() == null ? "unknown" : String.valueOf(mc.world.getRegistryKey().getValue());
+        if (worldTick == LAST_RUNTIME_TICK_WORLD_TIME && dim.equals(LAST_RUNTIME_TICK_DIM)) {
+            long dtMs = LAST_RUNTIME_TICK_WALL_MS <= 0L ? -1L : (nowMs - LAST_RUNTIME_TICK_WALL_MS);
+            System.out.println("[printer-debug] runtime_tick_duplicate_detected dim=" + dim
+                + " worldTick=" + worldTick
+                + " dtMs=" + dtMs
+                + " initCount=" + INIT_CALL_COUNT);
+        }
+        LAST_RUNTIME_TICK_WORLD_TIME = worldTick;
+        LAST_RUNTIME_TICK_WALL_MS = nowMs;
+        LAST_RUNTIME_TICK_DIM = dim;
+    }
+
+    private static void traceLegacyClickBurst(MinecraftClient mc, int x, int y, int z, String purpose) {
+        if (mc == null || mc.world == null) {
+            return;
+        }
+        long nowMs = System.currentTimeMillis();
+        long worldTick = mc.world.getTime();
+        String key = (purpose == null ? "-" : purpose)
+            + "|" + x + "," + y + "," + z
+            + "|tick=" + worldTick;
+        if (key.equals(LAST_LEGACY_CLICK_KEY) && nowMs - LAST_LEGACY_CLICK_MS <= 180L) {
+            LAST_LEGACY_CLICK_BURST++;
+            if (LAST_LEGACY_CLICK_BURST <= 4 || LAST_LEGACY_CLICK_BURST % 5 == 0) {
+                System.out.println("[printer-debug] legacy_click_duplicate_suspect burst=" + LAST_LEGACY_CLICK_BURST
+                    + " key=" + key
+                    + " dtMs=" + (nowMs - LAST_LEGACY_CLICK_MS)
+                    + " initCount=" + INIT_CALL_COUNT);
+            }
+        } else {
+            LAST_LEGACY_CLICK_BURST = 0;
+        }
+        LAST_LEGACY_CLICK_KEY = key;
+        LAST_LEGACY_CLICK_MS = nowMs;
     }
 
     private static void resetSnapshotCache() {
