@@ -8,6 +8,7 @@ import com.google.gson.JsonParseException;
 import com.rainbow_universe.bettercode.core.bridge.SelectedRow;
 import com.rainbow_universe.bettercode.core.publish.PublishExportExecutor;
 import com.rainbow_universe.bettercode.core.publish.PublishCacheView;
+import com.rainbow_universe.bettercode.core.publish.PublishCacheStore;
 import com.rainbow_universe.bettercode.core.publish.PublishRowContext;
 import com.rainbow_universe.bettercode.core.publish.PublishSignResolver;
 import com.rainbow_universe.bettercode.core.publish.PublishSessionState;
@@ -308,6 +309,16 @@ public final class RuntimeCore {
             session.selectedRows.addAll(rows);
             session.warmupQueue.addAll(rows);
         }
+        try {
+            PublishCacheView persisted = PublishCacheStore.load(bridge.runDirectory());
+            session.cacheView.mergeFrom(persisted);
+            publishTrace(bridge, "publish.cache.load",
+                "scope=" + persisted.scopeSnapshot().size()
+                    + " dimPos=" + persisted.dimPosSnapshot().size()
+                    + " entryToSign=" + persisted.entryToSignSnapshot().size());
+        } catch (Exception e) {
+            publishTrace(bridge, "publish.cache.load", "error=" + e.getClass().getSimpleName());
+        }
         if (pl != null && pl.savedFiles != null) {
             session.sourceFiles.addAll(pl.savedFiles);
         }
@@ -319,14 +330,17 @@ public final class RuntimeCore {
                 }
             });
         if (!warmup.done) {
+            savePublishCache(bridge.runDirectory(), session.cacheView, bridge);
             RuntimeErrorCode code = mapPublishErrorCode(warmup.errorCode);
             publishTrace(bridge, "publish.stop", "reason=" + warmup.errorCode + " detail=" + warmup.errorMessage);
             return RuntimeResult.fail(code, warmup.errorMessage);
         }
         RuntimeResult signValidation = validatePublishSigns(session, bridge);
         if (!signValidation.ok()) {
+            savePublishCache(bridge.runDirectory(), session.cacheView, bridge);
             return signValidation;
         }
+        savePublishCache(bridge.runDirectory(), session.cacheView, bridge);
         PublishExportExecutor.Result out = PublishExportExecutor.prepareBundle(session, bridge.runDirectory());
         if (!out.ok) {
             publishTrace(bridge, "publish.stop", "reason=prep_failed detail=" + out.errorMessage);
@@ -380,6 +394,21 @@ public final class RuntimeCore {
                     + " source=" + resolved.source + " key=" + resolved.key);
         }
         return RuntimeResult.ok("sign validation ok");
+    }
+
+    private void savePublishCache(Path runDirectory, PublishCacheView cacheView, GameBridge bridge) {
+        if (runDirectory == null || cacheView == null) {
+            return;
+        }
+        try {
+            PublishCacheStore.save(runDirectory, cacheView);
+            publishTrace(bridge, "publish.cache.save",
+                "scope=" + cacheView.scopeSnapshot().size()
+                    + " dimPos=" + cacheView.dimPosSnapshot().size()
+                    + " entryToSign=" + cacheView.entryToSignSnapshot().size());
+        } catch (Exception e) {
+            publishTrace(bridge, "publish.cache.save", "error=" + e.getClass().getSimpleName());
+        }
     }
 
     private static RuntimeErrorCode mapPublishErrorCode(String raw) {

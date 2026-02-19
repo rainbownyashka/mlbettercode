@@ -62,7 +62,9 @@ public final class PublishSignResolver {
 
         String scopeKey = dim + ":row:" + entryX + ":" + entryY + ":" + entryZ;
         String dimPosKey = dim + ":" + signX + ":" + signY + ":" + signZ;
-        PublishCacheView.ResolvedSign resolved = cacheView.resolve(scopeKey, dimPosKey, liveLines);
+        String entryKey = dim + ":entry:" + entryX + ":" + entryY + ":" + entryZ;
+        String signPosKey = dim + ":" + signX + ":" + signY + ":" + signZ;
+        PublishCacheView.ResolvedSign resolved = cacheView.resolve(scopeKey, dimPosKey, entryKey, signPosKey, liveLines);
         if (resolved == null || PublishCacheView.isInvalid(resolved.lines)) {
             if (!signPresent) {
                 return Result.fail("sign_missing");

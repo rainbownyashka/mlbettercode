@@ -90,6 +90,13 @@
    - removes false block-lost detection that could trigger unnecessary `FORCE_REPLACE`/timeout chains.
 10. Publish cache key parity hardening:
    - modern `scopeKey` now includes dimension (`dim:row:x:y:z`) to avoid cross-dimension cache collisions for identical coordinates.
+11. Persistent publish sign-cache (legacy parity slice):
+   - added disk-backed cache file for modern publish: `mldsl_cache/publish_sign_cache.json`,
+   - persisted payload now includes:
+     - `scope` sign lines cache,
+     - `dimPos` sign lines cache,
+     - `entryToSign` mapping (`dim:entry:x:y:z` -> `dim:sign:x:y:z`),
+   - cache is loaded at publish start and saved after warmup/sign-validation stages (including fail paths).
 
 ### Verified Now
 1. Compile gates passed:
@@ -107,8 +114,8 @@
    - `PLACE_CONFIRM_TIMEOUT` on step0 valid path
    - look-driven seed drift in `direct_runtime_start`.
 3. Publish cache persistence parity:
-   - modern publish sign cache is still session-memory only (`PublishCacheView` in `PublishSessionState`),
-   - legacy keeps persistent sign caches (`scope` + `dim:pos` + entry->sign map) across runs via code-cache snapshot.
+   - confirm runtime behavior on live server that persisted cache is reused between separate game runs,
+   - confirm no stale/empty overwrite regressions vs legacy when sign temporarily unloads.
 
 ## Required Trace Gates (must be visible in logs)
 

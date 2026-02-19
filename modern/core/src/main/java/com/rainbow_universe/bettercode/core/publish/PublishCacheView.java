@@ -18,6 +18,7 @@ public final class PublishCacheView {
 
     private final Map<String, String[]> signByScope = new HashMap<String, String[]>();
     private final Map<String, String[]> signByDimPos = new HashMap<String, String[]>();
+    private final Map<String, String> entryToSignByScopeEntry = new HashMap<String, String>();
 
     public void putScope(String key, String[] lines) {
         if (key == null || key.trim().isEmpty() || isInvalid(lines)) {
@@ -41,15 +42,41 @@ public final class PublishCacheView {
         return copy(signByDimPos.get(key));
     }
 
-    public ResolvedSign resolve(String scopeKey, String dimPosKey, String[] liveLines) {
+    public void putEntryToSign(String entryKey, String signPosKey) {
+        if (entryKey == null || entryKey.trim().isEmpty() || signPosKey == null || signPosKey.trim().isEmpty()) {
+            return;
+        }
+        String prev = entryToSignByScopeEntry.get(entryKey);
+        if (prev == null || !prev.equals(signPosKey)) {
+            entryToSignByScopeEntry.put(entryKey, signPosKey);
+        }
+    }
+
+    public String getEntryToSign(String entryKey) {
+        if (entryKey == null) {
+            return null;
+        }
+        String hit = entryToSignByScopeEntry.get(entryKey);
+        return hit == null ? null : hit;
+    }
+
+    public ResolvedSign resolve(String scopeKey, String dimPosKey, String entryKey, String signPosKey, String[] liveLines) {
         if (!isInvalid(liveLines)) {
             putScope(scopeKey, liveLines);
             putDimPos(dimPosKey, liveLines);
+            putEntryToSign(entryKey, signPosKey);
             return new ResolvedSign("live", dimPosKey == null ? scopeKey : dimPosKey, liveLines);
         }
         String[] scope = getScope(scopeKey);
         if (!isInvalid(scope)) {
             return new ResolvedSign("scope", scopeKey, scope);
+        }
+        String mappedSign = getEntryToSign(entryKey);
+        if (mappedSign != null && !mappedSign.trim().isEmpty()) {
+            String[] byMapped = getDimPos(mappedSign);
+            if (!isInvalid(byMapped)) {
+                return new ResolvedSign("entry", mappedSign, byMapped);
+            }
         }
         String[] dim = getDimPos(dimPosKey);
         if (!isInvalid(dim)) {
@@ -77,5 +104,46 @@ public final class PublishCacheView {
         String[] out = new String[src.length];
         System.arraycopy(src, 0, out, 0, src.length);
         return out;
+    }
+
+    public Map<String, String[]> scopeSnapshot() {
+        Map<String, String[]> out = new HashMap<String, String[]>();
+        for (Map.Entry<String, String[]> e : signByScope.entrySet()) {
+            if (e == null) {
+                continue;
+            }
+            out.put(e.getKey(), copy(e.getValue()));
+        }
+        return out;
+    }
+
+    public Map<String, String[]> dimPosSnapshot() {
+        Map<String, String[]> out = new HashMap<String, String[]>();
+        for (Map.Entry<String, String[]> e : signByDimPos.entrySet()) {
+            if (e == null) {
+                continue;
+            }
+            out.put(e.getKey(), copy(e.getValue()));
+        }
+        return out;
+    }
+
+    public Map<String, String> entryToSignSnapshot() {
+        return new HashMap<String, String>(entryToSignByScopeEntry);
+    }
+
+    public void mergeFrom(PublishCacheView other) {
+        if (other == null) {
+            return;
+        }
+        for (Map.Entry<String, String[]> e : other.scopeSnapshot().entrySet()) {
+            putScope(e.getKey(), e.getValue());
+        }
+        for (Map.Entry<String, String[]> e : other.dimPosSnapshot().entrySet()) {
+            putDimPos(e.getKey(), e.getValue());
+        }
+        for (Map.Entry<String, String> e : other.entryToSignSnapshot().entrySet()) {
+            putEntryToSign(e.getKey(), e.getValue());
+        }
     }
 }

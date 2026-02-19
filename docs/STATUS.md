@@ -16,7 +16,8 @@
   - sign detection in adapters hardened to registry-id based check (obfuscation-safe), not class-name only,
   - menu route matching hardened with legacy-like text normalization + tokenized NBT fallback in core route resolver,
   - core block-recheck coordinate fixed to legacy plane (`entry.down`) to avoid false block-revert loops,
-  - publish sign-cache scope key now includes dimension to avoid cross-dimension collisions.
+  - publish sign-cache scope key now includes dimension to avoid cross-dimension collisions,
+  - modern publish sign-cache persistence added (`mldsl_cache/publish_sign_cache.json`) with `scope` + `dimPos` + `entryToSign` maps loaded/saved in core publish flow.
 - `/mldsl run` plan execution path wired to place pipeline.
 - Chest page merge logic stores and reuses merged snapshot across pages.
 - `/loadmodule` supports explicit error reasons (timeout/http/ssl/etc.).
