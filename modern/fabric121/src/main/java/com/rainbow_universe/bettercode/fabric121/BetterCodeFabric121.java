@@ -42,6 +42,7 @@ import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.StringNbtReader;
 import net.minecraft.registry.Registries;
 import net.minecraft.scoreboard.Scoreboard;
@@ -921,10 +922,7 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                 }
 
                 String sourceBlockId = entry.blockId() == null ? "" : entry.blockId().trim();
-                String blockId = LegacyBlockIdCompat.normalizeForModern(sourceBlockId);
-                if (!sourceBlockId.equalsIgnoreCase(blockId)) {
-                    System.out.println("[printer-debug] block_id_compat from=" + sourceBlockId + " to=" + blockId);
-                }
+                String blockId = normalizeBlockIdForRuntime(sourceBlockId);
                 Identifier id = Identifier.tryParse(blockId);
                 if (id == null) {
                     return PlaceExecResult.fail(0, 0, "INVALID_BLOCK_ID", "invalid block id: " + sourceBlockId);
@@ -1613,6 +1611,46 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             } catch (Exception ignore) {
             }
             return fallback;
+        }
+
+        private static String normalizeBlockIdForRuntime(String sourceBlockId) {
+            String base = sourceBlockId == null ? "" : sourceBlockId.trim();
+            if (base.isEmpty()) {
+                return "";
+            }
+            String vanillaFixed = translateLegacyBlockIdViaVanillaFlattening(base);
+            String normalized = LegacyBlockIdCompat.normalizeForModern(vanillaFixed);
+            if (!base.equalsIgnoreCase(normalized)) {
+                String mode = base.equalsIgnoreCase(vanillaFixed) ? "compat_map" : "vanilla_flattening";
+                System.out.println("[printer-debug] block_id_compat mode=" + mode + " from=" + base + " to=" + normalized);
+            }
+            return normalized;
+        }
+
+        private static String translateLegacyBlockIdViaVanillaFlattening(String sourceBlockId) {
+            String namespaced = sourceBlockId.contains(":")
+                ? sourceBlockId.toLowerCase()
+                : ("minecraft:" + sourceBlockId.toLowerCase());
+            String[] classNames = new String[] {
+                "net.minecraft.datafixer.fix.BlockStateFlattening",
+                "net.minecraft.util.datafix.fixes.BlockStateFlattening"
+            };
+            for (String className : classNames) {
+                try {
+                    Class<?> c = Class.forName(className);
+                    java.lang.reflect.Method m = c.getDeclaredMethod("lookupBlock", String.class);
+                    m.setAccessible(true);
+                    Object out = m.invoke(null, namespaced);
+                    if (out instanceof String) {
+                        String s = ((String) out).trim().toLowerCase();
+                        if (!s.isEmpty()) {
+                            return s;
+                        }
+                    }
+                } catch (Exception ignore) {
+                }
+            }
+            return namespaced;
         }
 
         private static String readSignLineReflect(Object be, int line) {
