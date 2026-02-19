@@ -24,12 +24,14 @@ import com.rainbow_universe.bettercode.core.bridge.SelectedRowNormalizer;
 import com.rainbow_universe.bettercode.core.bridge.SlotView;
 import com.rainbow_universe.bettercode.core.place.PlaceRuntimeEntry;
 import com.rainbow_universe.bettercode.core.place.BlueGlassSearch;
+import com.rainbow_universe.bettercode.core.place.RowSeedSelector;
 import com.rainbow_universe.bettercode.core.settings.ModSettingsService;
 import com.rainbow_universe.bettercode.core.settings.SettingDef;
 import com.rainbow_universe.bettercode.core.settings.SettingType;
 import com.rainbow_universe.bettercode.core.util.LegacyBlockIdCompat;
 import com.rainbow_universe.bettercode.core.util.ReflectCompat;
 import com.rainbow_universe.bettercode.core.util.TestcaseTool;
+import com.rainbow_universe.bettercode.core.util.TpPathPlanner;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -912,7 +914,7 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                 DIRECT_PLACE_STATE.dimension = mc.world.getRegistryKey().getValue().toString();
                 DIRECT_PLACE_STATE.cursor = 0;
                 DIRECT_PLACE_STATE.active = true;
-                DIRECT_PLACE_STATE.usedRowSeeds.add(seedKey(seed));
+                DIRECT_PLACE_STATE.usedRowSeeds.add(RowSeedSelector.key(seed.getX(), seed.getY(), seed.getZ()));
                 System.out.println("[printer-debug] direct_runtime_start seed=" + seed + " dim=" + DIRECT_PLACE_STATE.dimension + " steps=" + totalSteps);
             }
         }
@@ -1338,11 +1340,26 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                     return PlaceExecResult.fail(0, 0, "NEWLINE_ROW_NOT_READY", "runtime seed is not initialized");
                 }
                 if (DIRECT_PLACE_STATE.pendingRowSeed == null) {
-                    BlockPos next = findNextRowSeed(mc, DIRECT_PLACE_STATE.startSeed, DIRECT_PLACE_STATE.seed, DIRECT_PLACE_STATE.usedRowSeeds);
+                    BlockPosView next = RowSeedSelector.findNextRowSeed(
+                        new BlockPosView(DIRECT_PLACE_STATE.startSeed.getX(), DIRECT_PLACE_STATE.startSeed.getY(), DIRECT_PLACE_STATE.startSeed.getZ()),
+                        new BlockPosView(DIRECT_PLACE_STATE.seed.getX(), DIRECT_PLACE_STATE.seed.getY(), DIRECT_PLACE_STATE.seed.getZ()),
+                        DIRECT_PLACE_STATE.usedRowSeeds,
+                        new BlueGlassSearch.Probe() {
+                            @Override
+                            public boolean isBlueGlass(int x, int y, int z) {
+                                return BetterCodeFabric121.FabricBridge.isBlueGlass(mc, x, y, z);
+                            }
+                            @Override
+                            public boolean isFree(int x, int y, int z) {
+                                return BetterCodeFabric121.FabricBridge.isBlueGlass(mc, x, y, z);
+                            }
+                        },
+                        p -> mc.player.squaredDistanceTo(p.x() + 0.5, p.y() + 0.5, p.z() + 0.5)
+                    );
                     if (next == null) {
                         return PlaceExecResult.fail(0, 0, "NEWLINE_ROW_NOT_FOUND", "no free blue-glass row found for newline");
                     }
-                    DIRECT_PLACE_STATE.pendingRowSeed = next;
+                    DIRECT_PLACE_STATE.pendingRowSeed = new BlockPos(next.x(), next.y(), next.z());
                     System.out.println("[printer-debug] newline_row selected from=" + DIRECT_PLACE_STATE.seed + " to=" + next);
                 }
                 BlockPos nextSeed = DIRECT_PLACE_STATE.pendingRowSeed;
@@ -1365,66 +1382,12 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                 }
                 DIRECT_PLACE_STATE.seed = nextSeed;
                 DIRECT_PLACE_STATE.cursor = 0;
-                DIRECT_PLACE_STATE.usedRowSeeds.add(seedKey(nextSeed));
+                DIRECT_PLACE_STATE.usedRowSeeds.add(RowSeedSelector.key(nextSeed.getX(), nextSeed.getY(), nextSeed.getZ()));
                 DIRECT_PLACE_STATE.pendingRowSeed = null;
                 clearPendingPlaceState(DIRECT_PLACE_STATE);
                 System.out.println("[printer-debug] newline_row switched seed=" + DIRECT_PLACE_STATE.seed + " cursor=0");
                 return PlaceExecResult.ok(1);
             }
-        }
-
-        private static BlockPos findNextRowSeed(MinecraftClient mc, BlockPos rootSeed, BlockPos currentSeed, Set<String> used) {
-            if (mc == null || mc.player == null || mc.world == null || rootSeed == null) {
-                return null;
-            }
-            List<BlockPosView> seeds = new ArrayList<BlockPosView>();
-            seeds.add(new BlockPosView(rootSeed.getX(), rootSeed.getY(), rootSeed.getZ()));
-            BlueGlassSearch.Probe probe = new BlueGlassSearch.Probe() {
-                @Override
-                public boolean isBlueGlass(int x, int y, int z) {
-                    return BetterCodeFabric121.FabricBridge.isBlueGlass(mc, x, y, z);
-                }
-                @Override
-                public boolean isFree(int x, int y, int z) {
-                    return BetterCodeFabric121.FabricBridge.isBlueGlass(mc, x, y, z);
-                }
-            };
-            seeds = BlueGlassSearch.scan(seeds, probe);
-            if (seeds.isEmpty()) {
-                return null;
-            }
-            String currentKey = currentSeed == null ? "" : seedKey(currentSeed);
-            List<BlockPos> candidates = new ArrayList<BlockPos>();
-            for (BlockPosView v : seeds) {
-                if (v == null) {
-                    continue;
-                }
-                BlockPos candidate = new BlockPos(v.x(), v.y(), v.z());
-                String key = seedKey(candidate);
-                if (key.equals(currentKey)) {
-                    continue;
-                }
-                if (used != null && used.contains(key)) {
-                    continue;
-                }
-                candidates.add(candidate);
-            }
-            if (candidates.isEmpty()) {
-                return null;
-            }
-            candidates.sort((a, b) -> {
-                double da = mc.player.squaredDistanceTo(a.getX() + 0.5, a.getY() + 0.5, a.getZ() + 0.5);
-                double db = mc.player.squaredDistanceTo(b.getX() + 0.5, b.getY() + 0.5, b.getZ() + 0.5);
-                return Double.compare(da, db);
-            });
-            return candidates.get(0);
-        }
-
-        private static String seedKey(BlockPos pos) {
-            if (pos == null) {
-                return "";
-            }
-            return pos.getX() + ":" + pos.getY() + ":" + pos.getZ();
         }
 
         private static boolean isTpPathBusyNow() {
@@ -1742,33 +1705,11 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             double sx = mc.player.getX();
             double sy = mc.player.getY();
             double sz = mc.player.getZ();
-            double dx = x - sx;
-            double dy = y - sy;
-            double dz = z - sz;
             synchronized (LOCAL_TP_STATE) {
                 LOCAL_TP_STATE.queue.clear();
-                int safety = 0;
-                for (int axis = 0; axis < 3; axis++) {
-                    double delta = axis == 0 ? dx : axis == 1 ? dy : dz;
-                    while (Math.abs(delta) >= 0.001D && safety < 5000) {
-                        double step = Math.min(10.0D, Math.abs(delta)) * Math.signum(delta);
-                        double[] move = new double[] {0.0D, 0.0D, 0.0D};
-                        if (axis == 0) {
-                            move[0] = step;
-                            dx -= step;
-                            delta = dx;
-                        } else if (axis == 1) {
-                            move[1] = step;
-                            dy -= step;
-                            delta = dy;
-                        } else {
-                            move[2] = step;
-                            dz -= step;
-                            delta = dz;
-                        }
-                        LOCAL_TP_STATE.queue.addLast(move);
-                        safety++;
-                    }
+                List<double[]> steps = TpPathPlanner.buildAxisSteps(sx, sy, sz, x, y, z, 10.0D, 5000);
+                for (double[] move : steps) {
+                    LOCAL_TP_STATE.queue.addLast(move);
                 }
                 if (LOCAL_TP_STATE.queue.isEmpty()) {
                     return false;

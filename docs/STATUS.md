@@ -344,6 +344,10 @@
     - `fabric120/fabric121` now use local stepped TP-path queue (`enqueueTpPath` + `isTpPathBusy`) with settle waits in direct runtime (`WAIT_TP_SETTLE*`) instead of immediate `/tp` command dispatch,
     - `fabric120/fabric121` direct runtime now handles control `newline/row/new_line` by switching to next free blue-glass row seed through shared `BlueGlassSearch` scan and resetting cursor on row change,
     - `fabric120/fabric121` sign reads now include NBT fallback (`Text1..Text4`) with publish diagnostics (`SIGN_READ ... fallback=nbt`) to reduce false empty-sign parity failures.
+  - adapter dedup follow-up (2026-02-19):
+    - common row-switch seed selection moved to shared core helper `modern/core/src/main/java/com/rainbow_universe/bettercode/core/place/RowSeedSelector.java`,
+    - common stepped TP-path segment builder moved to shared core helper `modern/core/src/main/java/com/rainbow_universe/bettercode/core/util/TpPathPlanner.java`,
+    - `fabric120/fabric121` now consume those shared helpers instead of local duplicated algorithms (reduced adapter drift and maintenance overhead without behavior change).
   - legacy block-id compatibility slice (modern Fabric adapters):
     - added shared mapper `LegacyBlockIdCompat` in core for common 1.12->1.13+ renames (`planks -> oak_planks` and related defaults),
     - `fabric1165/fabric120/fabric121` placement path now normalizes legacy block ids before registry lookup and block-presence checks,
