@@ -57,6 +57,7 @@ public final class RuntimeCore {
     private volatile PendingExecution pendingExecution;
     private long publishTraceSeq;
     private volatile String lastScoreboardIdLine;
+    private static final long IN_PROGRESS_LOG_GAP_MS = 1200L;
 
     public RuntimeCore(CoreLogger logger) {
         this(logger, new SettingsProvider() {
@@ -273,7 +274,7 @@ public final class RuntimeCore {
             exec.nextStepAtMs = nowMs + delay;
             String reason = step.errorMessage() == null ? "-" : step.errorMessage();
             boolean logNow = !reason.equals(exec.lastInProgressReason)
-                || nowMs - exec.lastInProgressLogMs >= 500L;
+                || nowMs - exec.lastInProgressLogMs >= IN_PROGRESS_LOG_GAP_MS;
             if (logNow) {
                 logger.info("printer-debug", "tick step in_progress source=" + exec.source
                     + " step=" + exec.state.executedCount()
@@ -787,14 +788,15 @@ public final class RuntimeCore {
             if (block == null || block.trim().isEmpty()) {
                 continue;
             }
-            if ("newline".equalsIgnoreCase(block) || "row".equalsIgnoreCase(block)) {
+            String blockTok = normPlanToken(block);
+            if ("newline".equals(blockTok)) {
                 continue;
             }
-            if ("skip".equalsIgnoreCase(block)) {
+            if ("skip".equals(blockTok)) {
                 out.add(PlaceOp.skip());
                 continue;
             }
-            if ("air".equalsIgnoreCase(block) || "minecraft:air".equalsIgnoreCase(block)) {
+            if ("air".equals(blockTok)) {
                 out.add(PlaceOp.air());
                 continue;
             }
@@ -850,19 +852,31 @@ public final class RuntimeCore {
                 i++;
                 continue;
             }
-            String low = tok.trim().toLowerCase();
+            String low = normPlanToken(tok);
             if ("newline".equals(low)) {
-                i++;
+                if (isLegacyControlTripletTail(args, i)) {
+                    i += 3;
+                } else {
+                    i++;
+                }
                 continue;
             }
             if ("skip".equals(low)) {
                 out.add(PlaceOp.skip());
-                i++;
+                if (isLegacyControlTripletTail(args, i)) {
+                    i += 3;
+                } else {
+                    i++;
+                }
                 continue;
             }
-            if ("air".equals(low) || "minecraft:air".equals(low)) {
+            if ("air".equals(low)) {
                 out.add(PlaceOp.air());
-                i++;
+                if (isLegacyControlTripletTail(args, i)) {
+                    i += 3;
+                } else {
+                    i++;
+                }
                 continue;
             }
             if (i + 2 >= args.size()) {
@@ -875,6 +889,36 @@ public final class RuntimeCore {
             i += 3;
         }
         return out;
+    }
+
+    private static String normPlanToken(String token) {
+        if (token == null) {
+            return "";
+        }
+        String t = token.trim().toLowerCase();
+        if ("minecraft:air".equals(t)) {
+            return "air";
+        }
+        if ("row".equals(t) || "new_line".equals(t) || "newrow".equals(t) || "nextrow".equals(t)) {
+            return "newline";
+        }
+        return t;
+    }
+
+    private static boolean isLegacyControlTripletTail(List<String> tokens, int i) {
+        if (tokens == null || i + 2 >= tokens.size()) {
+            return false;
+        }
+        String t1 = tokens.get(i + 1) == null ? "" : tokens.get(i + 1).trim();
+        if (t1.length() >= 2) {
+            char a = t1.charAt(0);
+            char b = t1.charAt(t1.length() - 1);
+            if ((a == '"' && b == '"') || (a == '\'' && b == '\'')) {
+                t1 = t1.substring(1, t1.length() - 1).trim();
+            }
+        }
+        String t2 = normPlanToken(tokens.get(i + 2));
+        return t1.isEmpty() && ("no".equals(t2) || t2.isEmpty());
     }
 
     private static List<String> readStringArray(JsonArray arr) {

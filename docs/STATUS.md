@@ -61,6 +61,10 @@
   - force-replace cursor drift fix (2026-02-19):
     - removed adapter cursor rollback on `forceRePlaceRequested` in `fabric1165/120/121`,
     - re-place now stays on the same runtime step anchor (prevents step-1 `planks` from being retried at step-0 `diamond_block` coords after `menu_sign_missing`).
+  - runtime tick-load + control-token parsing hardening (2026-02-19):
+    - modern core parser now normalizes legacy control tokens (`row/new_line/newrow/nextrow -> newline`) and accepts legacy control triplet tails (`["newline|skip|air", "", "no"]`) without desync,
+    - in-progress tick logs are throttled harder (`1200ms`) and verbose runtime snapshots are now opt-in (`printer.verboseRuntimeTrace`, `printer.verboseMenuSnapshot`),
+    - fabric1165 place diagnostics are rate-limited in hot loop (`place_step begin` / `PLACE_CLICK_RESULT`) to reduce render-thread pressure during printer retries.
   - menu route transient unresolved guard:
     - unresolved route with no random candidates now enters bounded wait/reopen (`WAIT_MENU_ROUTE`) before final `NO_PATH_GUI`.
   - blue-glass search parity hardening:

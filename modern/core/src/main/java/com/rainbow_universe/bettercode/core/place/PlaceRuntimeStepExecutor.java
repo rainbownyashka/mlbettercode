@@ -34,7 +34,7 @@ public final class PlaceRuntimeStepExecutor {
     private static final int BLOCK_RECHECK_MISS_REQUIRED = 3;
     private static final long PAGE_TURN_TIMEOUT_MS = 1500L;
     private static final int PAGE_TURN_MAX_RETRIES = 5;
-    private static final long VERBOSE_TRACE_GAP_MS = 700L;
+    private static final long VERBOSE_TRACE_GAP_MS = 1600L;
     private static long lastVerboseTraceMs = 0L;
 
     private PlaceRuntimeStepExecutor() {
@@ -62,7 +62,8 @@ public final class PlaceRuntimeStepExecutor {
         if (delay < 0) {
             delay = 0;
         }
-        boolean verboseTrace = shouldEmitVerboseTrace(now);
+        boolean verboseTrace = settings.getBoolean("printer.verboseRuntimeTrace", false) && shouldEmitVerboseTrace(now);
+        boolean verboseMenuSnapshot = settings.getBoolean("printer.verboseMenuSnapshot", false);
         if (verboseTrace) {
             logger.info("printer-debug",
                 "runtime_tick placed=" + entry.placedBlock()
@@ -289,12 +290,13 @@ public final class PlaceRuntimeStepExecutor {
                 return PlaceExecResult.inProgress(0, "WAIT_MENU_ACK");
             }
             if (verboseTrace) {
+                String snapshotSummary = verboseMenuSnapshot ? summarizeNonPlayerSlots(view, 10) : "-";
                 logger.info("printer-debug",
                     "menu_snapshot window=" + view.windowId()
                         + " nonPlayerSlots=" + countNonPlayerSlots(view)
                         + " nonPlayerItems=" + hasNonPlayerItems(view)
                         + " hash=" + buildNonPlayerHash(view)
-                        + " summary=" + summarizeNonPlayerSlots(view, 12));
+                        + " summary=" + snapshotSummary);
             }
             if (!hasNonPlayerItems(view)) {
                 entry.setMenuNonEmptySinceMs(0L);

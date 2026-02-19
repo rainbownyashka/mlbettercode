@@ -883,16 +883,20 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 double standY = entryPos.getY();
                 double standZ = entryPos.getZ() - 2.0 + 0.5;
                 String expectedBlockId = String.valueOf(Registry.BLOCK.getId(block));
-                System.out.println("[printer-debug] place_step begin cursor=" + DIRECT_PLACE_STATE.cursor
-                    + " seed=" + DIRECT_PLACE_STATE.seed
-                    + " entry=" + entryPos
-                    + " target=" + target
-                    + " block=" + sourceBlockId
-                    + " blockNormalized=" + blockId
-                    + " expected=" + expectedBlockId
-                    + " pendingTarget=" + DIRECT_PLACE_STATE.pendingTarget
-                    + " pendingBlock=" + DIRECT_PLACE_STATE.pendingBlockId
-                    + " attempts=" + DIRECT_PLACE_STATE.placeAttempts);
+                if (DIRECT_PLACE_STATE.placeAttempts == 0
+                    || DIRECT_PLACE_STATE.lastPlaceAttemptMs <= 0L
+                    || now - DIRECT_PLACE_STATE.lastPlaceAttemptMs >= 450L) {
+                    System.out.println("[printer-debug] place_step begin cursor=" + DIRECT_PLACE_STATE.cursor
+                        + " seed=" + DIRECT_PLACE_STATE.seed
+                        + " entry=" + entryPos
+                        + " target=" + target
+                        + " block=" + sourceBlockId
+                        + " blockNormalized=" + blockId
+                        + " expected=" + expectedBlockId
+                        + " pendingTarget=" + DIRECT_PLACE_STATE.pendingTarget
+                        + " pendingBlock=" + DIRECT_PLACE_STATE.pendingBlockId
+                        + " attempts=" + DIRECT_PLACE_STATE.placeAttempts);
+                }
 
                 if (mc.player.squaredDistanceTo(standX, standY, standZ) > 6.0D) {
                     if (isTpPathBusy()) {
@@ -944,16 +948,19 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 String currentTargetId = blockIdAt(mc, target);
                 String currentUpId = blockIdAt(mc, target.up());
                 String currentDownId = blockIdAt(mc, target.down());
-                System.out.println("[printer-debug] PLACE_CLICK_RESULT accepted="
-                    + (result != null && result.accepted())
-                    + " reason=" + (result == null ? "null" : result.reason())
-                    + " ack=" + (result == null ? "null" : result.ackState())
-                    + " attempt=" + DIRECT_PLACE_STATE.placeAttempts
-                    + " target=" + target
-                + " blocks={down:" + currentDownId + ",target:" + currentTargetId + ",up:" + currentUpId + "}"
-                + " playerPos=" + mc.player.getX() + "," + mc.player.getY() + "," + mc.player.getZ()
-                + " distToStandSq=" + mc.player.squaredDistanceTo(standX, standY, standZ)
-                + " tpBusy=" + isTpPathBusyNow());
+                boolean clickAccepted = result != null && result.accepted();
+                if (!clickAccepted || DIRECT_PLACE_STATE.placeAttempts == 1 || DIRECT_PLACE_STATE.placeAttempts % 4 == 0) {
+                    System.out.println("[printer-debug] PLACE_CLICK_RESULT accepted="
+                        + clickAccepted
+                        + " reason=" + (result == null ? "null" : result.reason())
+                        + " ack=" + (result == null ? "null" : result.ackState())
+                        + " attempt=" + DIRECT_PLACE_STATE.placeAttempts
+                        + " target=" + target
+                        + " blocks={down:" + currentDownId + ",target:" + currentTargetId + ",up:" + currentUpId + "}"
+                        + " playerPos=" + mc.player.getX() + "," + mc.player.getY() + "," + mc.player.getZ()
+                        + " distToStandSq=" + mc.player.squaredDistanceTo(standX, standY, standZ)
+                        + " tpBusy=" + isTpPathBusyNow());
+                }
                 System.out.println("[printer-debug] place_step click result accepted="
                     + (result != null && result.accepted())
                     + " reason=" + (result == null ? "null" : result.reason())
