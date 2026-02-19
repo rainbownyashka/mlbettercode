@@ -233,6 +233,12 @@ public final class PlaceRuntimeStepExecutor {
         if (entry.awaitingMenu()) {
             ContainerView view = bridge.getContainerSnapshot();
             if (view.windowId() < 0) {
+                if (entry.lastMenuWindowId() >= 0) {
+                    entry.setLastMenuWindowId(-1);
+                    if (verboseTrace) {
+                        logger.info("printer-debug", "menu_snapshot window_closed resetLastMenuWindow=1");
+                    }
+                }
                 if (verboseTrace) {
                     logger.info("printer-debug",
                         "menu_snapshot window=-1 attempts=" + entry.menuOpenAttempts()
