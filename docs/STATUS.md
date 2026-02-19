@@ -336,6 +336,9 @@
   - legacy sync gating parity slice (2026-02-19):
     - menu-stage slot clicks now require empty cursor before every scope/random/target click (`MENU_CURSOR_WAIT` -> fail on `CURSOR_NOT_EMPTY` timeout),
     - `fabric1165` `clickBlockLegacy` no longer performs fallback second interact when packet-like click already accepted (prevents double place/use on one action).
+  - menu-open ack/cursor gate follow-up (2026-02-19):
+    - menu reopen/open stage now also enforces empty-cursor gate before issuing `openMenuAtEntryAnchor` retry, preventing duplicate legacy open clicks while previous interaction is still in-flight,
+    - `fabric1165` accepted legacy block/menu clicks now report `AckState.ACKED` (instead of `PENDING`) to align with legacy sync expectation and reduce false retry churn into `RANDOM_EXHAUSTED`.
   - legacy block-id compatibility slice (modern Fabric adapters):
     - added shared mapper `LegacyBlockIdCompat` in core for common 1.12->1.13+ renames (`planks -> oak_planks` and related defaults),
     - `fabric1165/fabric120/fabric121` placement path now normalizes legacy block ids before registry lookup and block-presence checks,

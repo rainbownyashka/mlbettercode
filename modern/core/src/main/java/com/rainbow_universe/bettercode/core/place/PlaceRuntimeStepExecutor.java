@@ -255,6 +255,12 @@ public final class PlaceRuntimeStepExecutor {
                     entry.setNextMenuActionMs(now + Math.max(120, delay));
                 }
                 if (entry.needOpenMenu() && now >= entry.nextMenuActionMs()) {
+                    if (!ensureCursorClear(entry, bridge, now)) {
+                        if (isCursorTimeout(entry, now)) {
+                            return fail(logger, "CURSOR_NOT_EMPTY", "cursor not empty during menu open");
+                        }
+                        return PlaceExecResult.inProgress(0, "MENU_CURSOR_WAIT");
+                    }
                     if (!hasSignAtMenuAnchor(bridge)) {
                         entry.setMenuOpenAttempts(entry.menuOpenAttempts() + 1);
                         if (!startMenuForceReplace(entry, now, delay, logger, "menu_sign_missing")) {

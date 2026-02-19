@@ -1700,7 +1700,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             try {
                 ActionResult result = mc.interactionManager.interactBlock(mc.player, mc.world, Hand.MAIN_HAND, hit);
                 if (result != null && result.isAccepted()) {
-                    return ClickResult.accepted(AckState.PENDING);
+                    return ClickResult.accepted(AckState.ACKED);
                 }
                 return ClickResult.rejected("interact_rejected:" + String.valueOf(result), AckState.REJECTED);
             } catch (Exception e) {
@@ -1725,7 +1725,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 interactAccepted = useBlockAt(x, y, z, purpose == null ? "legacy_click_interact" : purpose + "_interact");
             }
             if (accepted || interactAccepted) {
-                return ClickResult.accepted(AckState.PENDING);
+                return ClickResult.accepted(AckState.ACKED);
             }
             String reason = packetLike == null ? "legacy_click_rejected" : packetLike.reason();
             return ClickResult.rejected(reason, AckState.REJECTED);
