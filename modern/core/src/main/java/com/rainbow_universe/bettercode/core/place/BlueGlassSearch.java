@@ -32,14 +32,31 @@ public final class BlueGlassSearch {
         if (clicked == null || probe == null) {
             return null;
         }
-        if (probe.isBlueGlass(clicked.x(), clicked.y(), clicked.z())) {
-            return clicked;
-        }
-        int dx = clicked.x();
-        int dy = clicked.y() - 1;
-        int dz = clicked.z();
-        if (probe.isBlueGlass(dx, dy, dz)) {
-            return new BlockPosView(dx, dy, dz);
+        final int x = clicked.x();
+        final int y = clicked.y();
+        final int z = clicked.z();
+
+        // Legacy-compatible anchor candidates:
+        // direct glass, block above glass, and code-mode-relative offsets
+        // requested by live migration traces (-2 x/z and -1 y variants).
+        final int[][] candidates = new int[][]{
+            {0, 0, 0},
+            {0, -1, 0},
+            {-2, 0, 0},
+            {0, 0, -2},
+            {-2, 0, -2},
+            {-2, -1, 0},
+            {0, -1, -2},
+            {-2, -1, -2}
+        };
+
+        for (int[] c : candidates) {
+            int gx = x + c[0];
+            int gy = y + c[1];
+            int gz = z + c[2];
+            if (probe.isBlueGlass(gx, gy, gz)) {
+                return new BlockPosView(gx, gy, gz);
+            }
         }
         return null;
     }

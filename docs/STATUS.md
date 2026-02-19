@@ -74,7 +74,8 @@
   - blue-glass search parity hardening:
     - unified helper added: `modern/core/src/main/java/com/rainbow_universe/bettercode/core/place/BlueGlassSearch.java`,
     - adapters now use legacy-style blue-glass scan graph (`z ±4`, `y ±10`, bounded BFS) to resolve nearest runtime seed,
-    - selector glass resolve restored to legacy behavior (accept click on blue glass or block directly above it).
+    - selector glass resolve restored to legacy behavior (accept click on blue glass or block directly above it),
+    - selector/code-mode anchor resolve now also checks migration offsets around click (`-2x`, `-2z`, `-1y` and combinations) before scan traversal, to match live 1.12.2 layout offsets.
   - adapter dedup/future-proofing slice:
     - added shared selector store helper: `modern/core/src/main/java/com/rainbow_universe/bettercode/core/bridge/CodeSelectorStore.java`,
     - `fabric1165` selector map migrated to shared `SelectedRow` model (`Map<String, SelectedRow>`) via `CodeSelectorStore.toggle(...)`,
