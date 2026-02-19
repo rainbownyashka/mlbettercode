@@ -38,6 +38,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
+import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.item.Item;
@@ -65,12 +66,16 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public final class BetterCodeFabric121 implements ClientModInitializer {
     private static final String CODE_SELECTOR_TAG = "mldsl_code_selector";
@@ -82,6 +87,8 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
     private static volatile ModSettingsService SETTINGS;
     private static volatile RuntimeCore RUNTIME;
     private static final DirectPlaceState DIRECT_PLACE_STATE = new DirectPlaceState();
+    private static final LocalTpState LOCAL_TP_STATE = new LocalTpState();
+    private static final long PLACE_TP_SETTLE_MS = 350L;
 
     @Override
     public void onInitializeClient() {
@@ -209,8 +216,10 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                     .executes(ctx -> testcaseTp(ctx.getSource())))
         ));
 
-        ClientTickEvents.END_CLIENT_TICK.register(client ->
-            runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis()));
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            handleLocalTpPath(client);
+            runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis());
+        });
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
             if (hand != Hand.MAIN_HAND || player == null || world == null || hitResult == null) {
                 return ActionResult.PASS;
@@ -707,6 +716,8 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
         boolean active;
         int cursor;
         BlockPos seed;
+        BlockPos startSeed;
+        BlockPos pendingRowSeed;
         String dimension;
         String failReason;
         BlockPos pendingTarget;
@@ -714,11 +725,15 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
         long pendingSinceMs;
         long lastPlaceAttemptMs;
         int placeAttempts;
+        long tpSettleUntilMs;
+        final Set<String> usedRowSeeds = new HashSet<String>();
 
         void reset() {
             active = false;
             cursor = 0;
             seed = null;
+            startSeed = null;
+            pendingRowSeed = null;
             dimension = null;
             failReason = "";
             pendingTarget = null;
@@ -726,6 +741,8 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             pendingSinceMs = 0L;
             lastPlaceAttemptMs = 0L;
             placeAttempts = 0;
+            tpSettleUntilMs = 0L;
+            usedRowSeeds.clear();
         }
     }
 
@@ -891,9 +908,11 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                     return;
                 }
                 DIRECT_PLACE_STATE.seed = seed;
+                DIRECT_PLACE_STATE.startSeed = seed;
                 DIRECT_PLACE_STATE.dimension = mc.world.getRegistryKey().getValue().toString();
                 DIRECT_PLACE_STATE.cursor = 0;
                 DIRECT_PLACE_STATE.active = true;
+                DIRECT_PLACE_STATE.usedRowSeeds.add(seedKey(seed));
                 System.out.println("[printer-debug] direct_runtime_start seed=" + seed + " dim=" + DIRECT_PLACE_STATE.dimension + " steps=" + totalSteps);
             }
         }
@@ -902,6 +921,10 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
         public void onExecutionStop() {
             synchronized (DIRECT_PLACE_STATE) {
                 DIRECT_PLACE_STATE.reset();
+            }
+            synchronized (LOCAL_TP_STATE) {
+                LOCAL_TP_STATE.queue.clear();
+                LOCAL_TP_STATE.nextMs = 0L;
             }
         }
 
@@ -962,6 +985,7 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                 return PlaceExecResult.fail(0, 0, "CLIENT_CONTEXT_MISSING", "player/world/interactionManager unavailable");
             }
             synchronized (DIRECT_PLACE_STATE) {
+                long now = System.currentTimeMillis();
                 if (!DIRECT_PLACE_STATE.active || DIRECT_PLACE_STATE.seed == null) {
                     return PlaceExecResult.fail(0, 0, "DIRECT_RUNTIME_NOT_READY",
                         DIRECT_PLACE_STATE.failReason == null || DIRECT_PLACE_STATE.failReason.isEmpty()
@@ -983,12 +1007,19 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                             return PlaceExecResult.fail(0, 0, "TP_PATH_FAILED",
                                 "cannot tp to skip target=" + skipEntry);
                         }
+                        DIRECT_PLACE_STATE.tpSettleUntilMs = now + PLACE_TP_SETTLE_MS;
                         return PlaceExecResult.inProgress(0, "WAIT_TP_PATH_SKIP");
+                    }
+                    if (now < DIRECT_PLACE_STATE.tpSettleUntilMs) {
+                        return PlaceExecResult.inProgress(0, "WAIT_TP_SETTLE_SKIP");
                     }
                     clearPendingPlaceState(DIRECT_PLACE_STATE);
                     DIRECT_PLACE_STATE.cursor++;
                     System.out.println("[printer-debug] direct_skip_step cursor=" + DIRECT_PLACE_STATE.cursor);
                     return PlaceExecResult.ok(1);
+                }
+                if (isNewlineControl(entry)) {
+                    return advanceToNextRowSeed(mc, now);
                 }
 
                 // Core owns menu/args flow, but adapter must still place/re-place the block for the same entry.
@@ -1025,7 +1056,6 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                 double standY = entryPos.getY();
                 double standZ = entryPos.getZ() - 2.0 + 0.5;
                 String expectedBlockId = String.valueOf(Registries.BLOCK.getId(block));
-                long now = System.currentTimeMillis();
 
                 if (mc.player.squaredDistanceTo(standX, standY, standZ) > 6.0D) {
                     if (isTpPathBusy()) {
@@ -1036,7 +1066,11 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                         return PlaceExecResult.fail(0, 0, "TP_PATH_FAILED",
                             "cannot tp to entry.z-2 for place target=" + entryPos);
                     }
+                    DIRECT_PLACE_STATE.tpSettleUntilMs = now + PLACE_TP_SETTLE_MS;
                     return PlaceExecResult.inProgress(0, "WAIT_TP_PATH");
+                }
+                if (now < DIRECT_PLACE_STATE.tpSettleUntilMs) {
+                    return PlaceExecResult.inProgress(0, "WAIT_TP_SETTLE");
                 }
 
                 if (isBlockPlaced(mc, target, block)) {
@@ -1290,6 +1324,115 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             return !rawName.isEmpty() || (!rawArgs.isEmpty() && !"no".equalsIgnoreCase(rawArgs));
         }
 
+        private static boolean isNewlineControl(PlaceRuntimeEntry entry) {
+            if (entry == null) {
+                return false;
+            }
+            String id = entry.blockId() == null ? "" : entry.blockId().trim().toLowerCase();
+            return "newline".equals(id) || "row".equals(id) || "new_line".equals(id);
+        }
+
+        private static PlaceExecResult advanceToNextRowSeed(MinecraftClient mc, long now) {
+            synchronized (DIRECT_PLACE_STATE) {
+                if (!DIRECT_PLACE_STATE.active || DIRECT_PLACE_STATE.startSeed == null) {
+                    return PlaceExecResult.fail(0, 0, "NEWLINE_ROW_NOT_READY", "runtime seed is not initialized");
+                }
+                if (DIRECT_PLACE_STATE.pendingRowSeed == null) {
+                    BlockPos next = findNextRowSeed(mc, DIRECT_PLACE_STATE.startSeed, DIRECT_PLACE_STATE.seed, DIRECT_PLACE_STATE.usedRowSeeds);
+                    if (next == null) {
+                        return PlaceExecResult.fail(0, 0, "NEWLINE_ROW_NOT_FOUND", "no free blue-glass row found for newline");
+                    }
+                    DIRECT_PLACE_STATE.pendingRowSeed = next;
+                    System.out.println("[printer-debug] newline_row selected from=" + DIRECT_PLACE_STATE.seed + " to=" + next);
+                }
+                BlockPos nextSeed = DIRECT_PLACE_STATE.pendingRowSeed;
+                double standX = nextSeed.getX() + 0.5;
+                double standY = nextSeed.getY() + 1.0;
+                double standZ = nextSeed.getZ() - 2.0 + 0.5;
+                if (mc.player.squaredDistanceTo(standX, standY, standZ) > 6.0D) {
+                    if (isTpPathBusyNow()) {
+                        return PlaceExecResult.inProgress(0, "WAIT_TP_PATH_NEWLINE");
+                    }
+                    boolean tpQueued = new FabricBridge(null).enqueueTpPath(nextSeed.getX(), nextSeed.getY() + 1, nextSeed.getZ() - 2);
+                    if (!tpQueued) {
+                        return PlaceExecResult.fail(0, 0, "TP_PATH_FAILED", "cannot tp to newline row seed=" + nextSeed);
+                    }
+                    DIRECT_PLACE_STATE.tpSettleUntilMs = now + PLACE_TP_SETTLE_MS;
+                    return PlaceExecResult.inProgress(0, "WAIT_TP_PATH_NEWLINE");
+                }
+                if (now < DIRECT_PLACE_STATE.tpSettleUntilMs) {
+                    return PlaceExecResult.inProgress(0, "WAIT_TP_SETTLE_NEWLINE");
+                }
+                DIRECT_PLACE_STATE.seed = nextSeed;
+                DIRECT_PLACE_STATE.cursor = 0;
+                DIRECT_PLACE_STATE.usedRowSeeds.add(seedKey(nextSeed));
+                DIRECT_PLACE_STATE.pendingRowSeed = null;
+                clearPendingPlaceState(DIRECT_PLACE_STATE);
+                System.out.println("[printer-debug] newline_row switched seed=" + DIRECT_PLACE_STATE.seed + " cursor=0");
+                return PlaceExecResult.ok(1);
+            }
+        }
+
+        private static BlockPos findNextRowSeed(MinecraftClient mc, BlockPos rootSeed, BlockPos currentSeed, Set<String> used) {
+            if (mc == null || mc.player == null || mc.world == null || rootSeed == null) {
+                return null;
+            }
+            List<BlockPosView> seeds = new ArrayList<BlockPosView>();
+            seeds.add(new BlockPosView(rootSeed.getX(), rootSeed.getY(), rootSeed.getZ()));
+            BlueGlassSearch.Probe probe = new BlueGlassSearch.Probe() {
+                @Override
+                public boolean isBlueGlass(int x, int y, int z) {
+                    return BetterCodeFabric121.FabricBridge.isBlueGlass(mc, x, y, z);
+                }
+                @Override
+                public boolean isFree(int x, int y, int z) {
+                    return BetterCodeFabric121.FabricBridge.isBlueGlass(mc, x, y, z);
+                }
+            };
+            seeds = BlueGlassSearch.scan(seeds, probe);
+            if (seeds.isEmpty()) {
+                return null;
+            }
+            String currentKey = currentSeed == null ? "" : seedKey(currentSeed);
+            List<BlockPos> candidates = new ArrayList<BlockPos>();
+            for (BlockPosView v : seeds) {
+                if (v == null) {
+                    continue;
+                }
+                BlockPos candidate = new BlockPos(v.x(), v.y(), v.z());
+                String key = seedKey(candidate);
+                if (key.equals(currentKey)) {
+                    continue;
+                }
+                if (used != null && used.contains(key)) {
+                    continue;
+                }
+                candidates.add(candidate);
+            }
+            if (candidates.isEmpty()) {
+                return null;
+            }
+            candidates.sort((a, b) -> {
+                double da = mc.player.squaredDistanceTo(a.getX() + 0.5, a.getY() + 0.5, a.getZ() + 0.5);
+                double db = mc.player.squaredDistanceTo(b.getX() + 0.5, b.getY() + 0.5, b.getZ() + 0.5);
+                return Double.compare(da, db);
+            });
+            return candidates.get(0);
+        }
+
+        private static String seedKey(BlockPos pos) {
+            if (pos == null) {
+                return "";
+            }
+            return pos.getX() + ":" + pos.getY() + ":" + pos.getZ();
+        }
+
+        private static boolean isTpPathBusyNow() {
+            synchronized (LOCAL_TP_STATE) {
+                return !LOCAL_TP_STATE.queue.isEmpty();
+            }
+        }
+
         @Override
         public boolean useBlockAt(int x, int y, int z, String purpose) {
             MinecraftClient mc = MinecraftClient.getInstance();
@@ -1501,7 +1644,7 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             try {
                 ActionResult result = mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
                 if (result != null && result.isAccepted()) {
-                    return ClickResult.accepted(AckState.PENDING);
+                    return ClickResult.accepted(AckState.ACKED);
                 }
                 return ClickResult.rejected("interact_rejected:" + String.valueOf(result), AckState.REJECTED);
             } catch (Exception e) {
@@ -1520,9 +1663,12 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             }
             ClickResult packetLike = sendUseItemOnBlock(x, y, z);
             boolean accepted = packetLike != null && packetLike.accepted();
-            boolean interactAccepted = useBlockAt(x, y, z, purpose == null ? "legacy_click_interact" : purpose + "_interact");
+            boolean interactAccepted = false;
+            if (!accepted) {
+                interactAccepted = useBlockAt(x, y, z, purpose == null ? "legacy_click_interact" : purpose + "_interact");
+            }
             if (accepted || interactAccepted) {
-                return ClickResult.accepted(AckState.PENDING);
+                return ClickResult.accepted(AckState.ACKED);
             }
             String reason = packetLike == null ? "legacy_click_rejected" : packetLike.reason();
             return ClickResult.rejected(reason, AckState.REJECTED);
@@ -1582,13 +1728,63 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
 
         @Override
         public boolean enqueueTpPath(int x, int y, int z) {
-            return executeClientCommand("tp " + x + " " + y + " " + z)
-                || executeClientCommand("/tp " + x + " " + y + " " + z);
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc == null || mc.player == null || mc.world == null) {
+                return false;
+            }
+            if (y < -64 || y > 320) {
+                return false;
+            }
+            BlockPos target = new BlockPos(x, y, z);
+            if (mc.world.getWorldBorder() != null && !mc.world.getWorldBorder().contains(target)) {
+                return false;
+            }
+            double sx = mc.player.getX();
+            double sy = mc.player.getY();
+            double sz = mc.player.getZ();
+            double dx = x - sx;
+            double dy = y - sy;
+            double dz = z - sz;
+            synchronized (LOCAL_TP_STATE) {
+                LOCAL_TP_STATE.queue.clear();
+                int safety = 0;
+                for (int axis = 0; axis < 3; axis++) {
+                    double delta = axis == 0 ? dx : axis == 1 ? dy : dz;
+                    while (Math.abs(delta) >= 0.001D && safety < 5000) {
+                        double step = Math.min(10.0D, Math.abs(delta)) * Math.signum(delta);
+                        double[] move = new double[] {0.0D, 0.0D, 0.0D};
+                        if (axis == 0) {
+                            move[0] = step;
+                            dx -= step;
+                            delta = dx;
+                        } else if (axis == 1) {
+                            move[1] = step;
+                            dy -= step;
+                            delta = dy;
+                        } else {
+                            move[2] = step;
+                            dz -= step;
+                            delta = dz;
+                        }
+                        LOCAL_TP_STATE.queue.addLast(move);
+                        safety++;
+                    }
+                }
+                if (LOCAL_TP_STATE.queue.isEmpty()) {
+                    return false;
+                }
+                LOCAL_TP_STATE.nextMs = System.currentTimeMillis();
+                System.out.println("[printer-debug] testcase_tp queued target=" + x + "," + y + "," + z
+                    + " steps=" + LOCAL_TP_STATE.queue.size());
+                return true;
+            }
         }
 
         @Override
         public boolean isTpPathBusy() {
-            return false;
+            synchronized (LOCAL_TP_STATE) {
+                return !LOCAL_TP_STATE.queue.isEmpty();
+            }
         }
 
         @Override
@@ -1632,14 +1828,33 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                 return null;
             }
             try {
+                String blockId = "";
+                try {
+                    blockId = String.valueOf(Registries.BLOCK.getId(mc.world.getBlockState(new BlockPos(x, y, z)).getBlock()));
+                } catch (Exception ignore) {
+                }
                 Object be = mc.world.getBlockEntity(new BlockPos(x, y, z));
                 if (be == null) {
+                    System.out.println("[publish-debug] SIGN_READ be_null pos=" + x + "," + y + "," + z + " block=" + blockId);
                     return null;
                 }
                 String[] out = new String[4];
                 for (int i = 0; i < 4; i++) {
                     out[i] = readSignLineReflect(be, i);
                 }
+                if (!hasAnySignText(out) && be instanceof BlockEntity) {
+                    String[] fromNbt = readSignLinesFromNbt((BlockEntity) be);
+                    if (hasAnySignText(fromNbt)) {
+                        System.out.println("[publish-debug] SIGN_READ adapter=121 pos=" + x + "," + y + "," + z
+                            + " block=" + blockId
+                            + " fallback=nbt"
+                            + " lines=" + formatLines(fromNbt));
+                        return fromNbt;
+                    }
+                }
+                System.out.println("[publish-debug] SIGN_READ adapter=121 pos=" + x + "," + y + "," + z
+                    + " block=" + blockId
+                    + " lines=" + formatLines(out));
                 return out;
             } catch (Exception ignore) {
             }
@@ -1765,6 +1980,140 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             return ReflectCompat.readSignLineReflect(be, line, FabricBridge::asString);
         }
 
+        private static boolean hasAnySignText(String[] lines) {
+            if (lines == null) {
+                return false;
+            }
+            for (String line : lines) {
+                if (line != null && !line.trim().isEmpty()) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static String[] readSignLinesFromNbt(BlockEntity be) {
+            if (be == null) {
+                return null;
+            }
+            try {
+                NbtCompound tag = createBlockEntityNbtReflect(be);
+                if (tag == null) {
+                    return null;
+                }
+                String[] out = new String[4];
+                boolean any = false;
+                for (int i = 0; i < 4; i++) {
+                    String key = "Text" + (i + 1);
+                    String raw = tag.getString(key);
+                    String value = raw == null ? "" : raw;
+                    if (!value.trim().isEmpty()) {
+                        value = parseSignJsonToPlain(value);
+                    }
+                    if (value != null && !value.trim().isEmpty()) {
+                        any = true;
+                    }
+                    out[i] = value == null ? "" : value;
+                }
+                return any ? out : null;
+            } catch (Exception ignore) {
+            }
+            return null;
+        }
+
+        private static String parseSignJsonToPlain(String raw) {
+            if (raw == null || raw.trim().isEmpty()) {
+                return "";
+            }
+            String value = raw;
+            try {
+                Class<?> serializer = Class.forName("net.minecraft.text.Text$Serializer");
+                java.lang.reflect.Method m = serializer.getDeclaredMethod("fromJson", String.class);
+                m.setAccessible(true);
+                Object parsed = m.invoke(null, raw);
+                return asString(parsed);
+            } catch (Exception ignore) {
+            }
+            try {
+                Class<?> serialization = Class.forName("net.minecraft.text.Text$Serialization");
+                java.lang.reflect.Method m = serialization.getDeclaredMethod("fromJson", String.class);
+                m.setAccessible(true);
+                Object parsed = m.invoke(null, raw);
+                return asString(parsed);
+            } catch (Exception ignore) {
+            }
+            return value;
+        }
+
+        private static NbtCompound createBlockEntityNbtReflect(BlockEntity be) {
+            if (be == null) {
+                return null;
+            }
+            try {
+                java.lang.reflect.Method[] methods = be.getClass().getMethods();
+                for (java.lang.reflect.Method m : methods) {
+                    if (m == null || m.getParameterCount() != 0) {
+                        continue;
+                    }
+                    if (!NbtCompound.class.isAssignableFrom(m.getReturnType())) {
+                        continue;
+                    }
+                    try {
+                        m.setAccessible(true);
+                        Object out = m.invoke(be);
+                        if (out instanceof NbtCompound) {
+                            return (NbtCompound) out;
+                        }
+                    } catch (Exception ignore) {
+                    }
+                }
+            } catch (Exception ignore) {
+            }
+            try {
+                java.lang.reflect.Method[] methods = be.getClass().getMethods();
+                for (java.lang.reflect.Method m : methods) {
+                    if (m == null || m.getParameterCount() != 1) {
+                        continue;
+                    }
+                    Class<?> p = m.getParameterTypes()[0];
+                    if (p == null || !p.isAssignableFrom(NbtCompound.class)) {
+                        continue;
+                    }
+                    NbtCompound tmp = new NbtCompound();
+                    try {
+                        m.setAccessible(true);
+                        Object out = m.invoke(be, tmp);
+                        if (out instanceof NbtCompound) {
+                            return (NbtCompound) out;
+                        }
+                        return tmp;
+                    } catch (Exception ignore) {
+                    }
+                }
+            } catch (Exception ignore) {
+            }
+            return null;
+        }
+
+        private static String formatLines(String[] lines) {
+            if (lines == null) {
+                return "null";
+            }
+            StringBuilder sb = new StringBuilder("[");
+            for (int i = 0; i < lines.length; i++) {
+                if (i > 0) {
+                    sb.append(" | ");
+                }
+                String v = lines[i] == null ? "" : lines[i].trim();
+                if (v.length() > 64) {
+                    v = v.substring(0, 64) + "...";
+                }
+                sb.append(i).append('=').append(v);
+            }
+            sb.append(']');
+            return sb.toString();
+        }
+
         private static String asString(Object text) {
             if (text == null) {
                 return "";
@@ -1861,5 +2210,63 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             ReflectCompat.sendLookPacketReflect(mc.player.networkHandler, yaw, pitch, onGround);
         }
 
+    }
+
+    private static final class LocalTpState {
+        final Deque<double[]> queue = new ArrayDeque<double[]>();
+        long nextMs;
+    }
+
+    private static void handleLocalTpPath(MinecraftClient mc) {
+        synchronized (LOCAL_TP_STATE) {
+            if (LOCAL_TP_STATE.queue.isEmpty()) {
+                return;
+            }
+            if (mc == null || mc.player == null || mc.world == null) {
+                LOCAL_TP_STATE.queue.clear();
+                return;
+            }
+            long now = System.currentTimeMillis();
+            if (now < LOCAL_TP_STATE.nextMs) {
+                return;
+            }
+            double[] step = LOCAL_TP_STATE.queue.pollFirst();
+            if (step == null) {
+                return;
+            }
+            double nx = mc.player.getX() + step[0];
+            double ny = mc.player.getY() + step[1];
+            double nz = mc.player.getZ() + step[2];
+            if (!setPlayerPositionLocal(mc, nx, ny, nz)) {
+                LOCAL_TP_STATE.queue.clear();
+                return;
+            }
+            mc.player.setVelocity(0.0, 0.0, 0.0);
+            LOCAL_TP_STATE.nextMs = now + 300L;
+        }
+    }
+
+    private static boolean setPlayerPositionLocal(MinecraftClient mc, double x, double y, double z) {
+        if (mc == null || mc.player == null) {
+            return false;
+        }
+        try {
+            mc.player.setPosition(x, y, z);
+            return true;
+        } catch (Exception ignore) {
+        }
+        try {
+            java.lang.reflect.Method m = mc.player.getClass().getMethod("updatePosition", double.class, double.class, double.class);
+            m.invoke(mc.player, x, y, z);
+            return true;
+        } catch (Exception ignore) {
+        }
+        try {
+            java.lang.reflect.Method m = mc.player.getClass().getMethod("refreshPositionAndAngles", double.class, double.class, double.class, float.class, float.class);
+            m.invoke(mc.player, x, y, z, mc.player.getYaw(), mc.player.getPitch());
+            return true;
+        } catch (Exception ignore) {
+        }
+        return false;
     }
 }

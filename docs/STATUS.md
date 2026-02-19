@@ -339,6 +339,11 @@
   - menu-open ack/cursor gate follow-up (2026-02-19):
     - menu reopen/open stage now also enforces empty-cursor gate before issuing `openMenuAtEntryAnchor` retry, preventing duplicate legacy open clicks while previous interaction is still in-flight,
     - `fabric1165` accepted legacy block/menu clicks now report `AckState.ACKED` (instead of `PENDING`) to align with legacy sync expectation and reduce false retry churn into `RANDOM_EXHAUSTED`.
+  - adapter parity sync slice for 1.20/1.21 (2026-02-19):
+    - `fabric120/fabric121` legacy click primitive now mirrors `fabric1165` ack behavior (`sendUseItemOnBlock`/`clickBlockLegacy` -> `AckState.ACKED`, no fallback second interact when packet-like click already accepted),
+    - `fabric120/fabric121` now use local stepped TP-path queue (`enqueueTpPath` + `isTpPathBusy`) with settle waits in direct runtime (`WAIT_TP_SETTLE*`) instead of immediate `/tp` command dispatch,
+    - `fabric120/fabric121` direct runtime now handles control `newline/row/new_line` by switching to next free blue-glass row seed through shared `BlueGlassSearch` scan and resetting cursor on row change,
+    - `fabric120/fabric121` sign reads now include NBT fallback (`Text1..Text4`) with publish diagnostics (`SIGN_READ ... fallback=nbt`) to reduce false empty-sign parity failures.
   - legacy block-id compatibility slice (modern Fabric adapters):
     - added shared mapper `LegacyBlockIdCompat` in core for common 1.12->1.13+ renames (`planks -> oak_planks` and related defaults),
     - `fabric1165/fabric120/fabric121` placement path now normalizes legacy block ids before registry lookup and block-presence checks,
