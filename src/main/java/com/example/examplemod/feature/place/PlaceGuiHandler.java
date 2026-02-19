@@ -590,16 +590,8 @@ final class PlaceGuiHandler
                 // Don't proceed with a dirty cursor unless it's step 1 (we intentionally carry the item).
                 if (entry.tempItemSeqStage != 1)
                 {
-                    ItemStack carried = mc.player.inventory.getItemStack();
-                    if (carried != null && !carried.isEmpty())
+                    if (waitForCursorClear(host, state, entry, mc, nowMs, host.placeDelayMs(350L)))
                     {
-                        if (!tryClearCarriedToInventory(gui, mc))
-                        {
-                            host.setActionBar(false, "&c/placeadvanced: cursor not empty", 2500L);
-                            abort(host, state, "cursor_not_empty");
-                            return;
-                        }
-                        entry.pendingArgNextMs = nowMs + host.placeDelayMs(350L);
                         return;
                     }
                 }
@@ -694,28 +686,22 @@ final class PlaceGuiHandler
         if (entry.advancedArgs == null || entry.advancedArgs.isEmpty())
         {
             entry.awaitingArgs = false;
-            state.current = null;
+            completeAfterArgs(host, state, entry, nowMs);
             return;
         }
         if (entry.advancedArgIndex >= entry.advancedArgs.size())
         {
             try
             {
-                ItemStack carried = mc.player.inventory.getItemStack();
-                if (carried != null && !carried.isEmpty())
+                if (waitForCursorClear(host, state, entry, mc, nowMs, host.placeDelayMs(350L)))
                 {
-                    if (!tryClearCarriedToInventory(gui, mc))
-                    {
-                        host.setActionBar(false, "&c/placeadvanced: cursor not empty", 2500L);
-                        abort(host, state, "cursor_not_empty");
-                        return;
-                    }
+                    return;
                 }
             }
             catch (Exception ignore) { }
             entry.awaitingArgs = false;
             host.closeCurrentScreen();
-            state.current = null;
+            completeAfterArgs(host, state, entry, nowMs);
             return;
         }
         if (nowMs - entry.argsStartMs > 12000L)
@@ -967,8 +953,28 @@ final class PlaceGuiHandler
         {
             entry.awaitingArgs = false;
             host.closeCurrentScreen();
-            state.current = null;
+            completeAfterArgs(host, state, entry, nowMs);
         }
+    }
+
+    private static void completeAfterArgs(PlaceModuleHost host, PlaceState state, PlaceEntry entry, long nowMs)
+    {
+        if (entry != null && entry.negated)
+        {
+            entry.awaitingMenu = false;
+            entry.awaitingParamsChest = false;
+            entry.awaitingArgs = false;
+            entry.postPlaceKind = PlaceEntry.POST_PLACE_NEGATE;
+            entry.postPlaceStage = 0;
+            entry.postPlaceNextMs = nowMs + host.placeDelayMs(350L);
+            if (host.isDebugUi())
+            {
+                host.debugChat("placeadvanced: queued NOT-arrow toggle on action sign");
+            }
+            state.current = entry;
+            return;
+        }
+        state.current = null;
     }
 
     private static Slot findArgTargetSlot(PlaceModuleHost host, GuiContainer gui, PlaceArg arg, Set<Integer> used)
@@ -1104,6 +1110,41 @@ final class PlaceGuiHandler
         }
         catch (Exception ignore) { }
         return false;
+    }
+
+    private static boolean waitForCursorClear(
+        PlaceModuleHost host,
+        PlaceState state,
+        PlaceEntry entry,
+        Minecraft mc,
+        long nowMs,
+        long retryDelayMs)
+    {
+        if (entry == null || mc == null || mc.player == null || mc.player.inventory == null)
+        {
+            return false;
+        }
+        ItemStack carried = mc.player.inventory.getItemStack();
+        if (carried == null || carried.isEmpty())
+        {
+            entry.cursorNotEmptySinceMs = 0L;
+            return false;
+        }
+
+        if (entry.cursorNotEmptySinceMs == 0L)
+        {
+            entry.cursorNotEmptySinceMs = nowMs;
+        }
+        long waitedMs = nowMs - entry.cursorNotEmptySinceMs;
+        if (waitedMs < 5000L)
+        {
+            entry.pendingArgNextMs = nowMs + Math.max(100L, retryDelayMs);
+            return true;
+        }
+
+        host.setActionBar(false, "&c/placeadvanced: cursor not empty (5s)", 2500L);
+        abort(host, state, "cursor_not_empty");
+        return true;
     }
 
     private static Integer findContainerSlotForHotbar(net.minecraft.inventory.Container container, int hotbarSlot)

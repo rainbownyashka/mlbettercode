@@ -24,12 +24,17 @@ Notes:
 {
   "entries": [
     { "block": "diamond_block", "name": "вход", "args": "no" },
-    { "block": "cobblestone", "name": "Сообщение", "args": "slot(27)=text(Hello)" }
+    { "block": "cobblestone", "name": "Сообщение", "args": "slot(27)=text(Hello)" },
+    { "block": "cobblestone", "name": "Держит предмет||Игрок по условию", "args": "slot(9)=item(minecraft:stick)", "negated": true }
   ]
 }
 ```
 
 You can also use `"steps"` instead of `"entries"`.
+
+`negated` (optional, default `false`):
+- Works only for conditional action entries.
+- When `true`, printer applies the server-side `НЕТ` arrow toggle on the placed action sign.
 
 Special entry:
 - `{ "block": "air" }` inserts a pause (same as `air` in `/placeadvanced`).

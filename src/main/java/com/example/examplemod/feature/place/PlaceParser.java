@@ -402,15 +402,18 @@ final class PlaceParser
                 root = new NBTTagCompound();
                 stack.setTagCompound(root);
             }
-            NBTTagCompound display = root.getCompoundTag("display");
-            if (display == null)
-            {
-                display = new NBTTagCompound();
-            }
             if (name != null)
             {
-                display.setString("Name", applyColorCodes(name));
+                // Use ItemStack API so Name format matches vanilla expectations for this MC version.
+                stack.setStackDisplayName(applyColorCodes(name));
+                root = stack.getTagCompound();
+                if (root == null)
+                {
+                    root = new NBTTagCompound();
+                    stack.setTagCompound(root);
+                }
             }
+            NBTTagCompound display = root.getCompoundTag("display");
             if (description != null)
             {
                 NBTTagList lore = new NBTTagList();

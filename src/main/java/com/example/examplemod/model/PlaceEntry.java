@@ -13,10 +13,12 @@ public class PlaceEntry
     public static final int POST_PLACE_NONE = 0;
     public static final int POST_PLACE_SIGN_NAME = 1; // right-click sign with TEXT item
     public static final int POST_PLACE_CYCLE = 2; // sign name + tick period (NUMBER)
+    public static final int POST_PLACE_NEGATE = 3; // right-click sign with NOT arrow item
 
     public BlockPos pos;
     public Block block;
     public String searchKey;
+    public boolean negated;
     // Optional forced scope selector for "X по условию" menus.
     public String preferredMenuKey;
     public boolean preferredMenuResolved;
@@ -51,6 +53,7 @@ public class PlaceEntry
     public int pendingArgClickSlot;
     public int pendingArgClicks;
     public long pendingArgNextMs;
+    public long cursorNotEmptySinceMs;
     public int argsGuiPage;
     public boolean argsPageTurnPending;
     public long argsPageTurnStartMs;
@@ -102,6 +105,7 @@ public class PlaceEntry
         this.pos = pos;
         this.block = block;
         this.searchKey = null;
+        this.negated = false;
         this.preferredMenuKey = null;
         this.preferredMenuResolved = false;
         this.desiredSlotIndex = -1;
@@ -124,6 +128,7 @@ public class PlaceEntry
         this.pendingArgClickSlot = -1;
         this.pendingArgClicks = 0;
         this.pendingArgNextMs = 0L;
+        this.cursorNotEmptySinceMs = 0L;
         this.argsGuiPage = 0;
         this.argsPageTurnPending = false;
         this.argsPageTurnStartMs = 0L;
@@ -165,6 +170,7 @@ public class PlaceEntry
         this.pos = pos;
         this.block = block;
         this.searchKey = searchKey;
+        this.negated = false;
         this.preferredMenuKey = null;
         this.preferredMenuResolved = false;
         this.desiredSlotIndex = -1;
@@ -187,6 +193,7 @@ public class PlaceEntry
         this.pendingArgClickSlot = -1;
         this.pendingArgClicks = 0;
         this.pendingArgNextMs = 0L;
+        this.cursorNotEmptySinceMs = 0L;
         this.argsGuiPage = 0;
         this.argsPageTurnPending = false;
         this.argsPageTurnStartMs = 0L;

@@ -3,6 +3,7 @@ package com.example.examplemod.feature.place;
 import com.example.examplemod.model.PlaceEntry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.inventory.GuiContainer;
+import net.minecraft.init.Items;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.play.client.CPacketCreativeInventoryAction;
 import net.minecraft.network.play.client.CPacketHeldItemChange;
@@ -203,91 +204,14 @@ final class PlaceTickHandler
                 return;
             }
 
-            // Post-place sign interactions (functions/cycles). These don't use menus/containers.
+            // Post-place sign interactions. These don't use menus/containers.
             if (entry.postPlaceKind != PlaceEntry.POST_PLACE_NONE && entry.postPlaceStage < 3)
             {
-                if (nowMs < entry.postPlaceNextMs)
+                if (handlePostPlace(host, state, mc, entry, nowMs))
                 {
                     return;
                 }
-
-                BlockPos signPos = host.findSignAtZMinus1(mc.world, entry.pos);
-                BlockPos clickPos = signPos != null ? signPos : entry.pos;
-                if (clickPos == null)
-                {
-                    host.setActionBar(false, "&c/placeadvanced: no sign pos", 2500L);
-                    state.reset();
-                    return;
-                }
-
-                if (entry.postPlaceStage == 0)
-                {
-                    if (entry.postPlaceName == null || entry.postPlaceName.trim().isEmpty())
-                    {
-                        host.setActionBar(false, "&c/placeadvanced: missing name", 2500L);
-                        state.reset();
-                        return;
-                    }
-                    int slot = host.giveQuickInputItemToHotbar(PlaceModule.INPUT_MODE_TEXT, entry.postPlaceName, false);
-                    if (slot >= 0 && slot < 9 && mc.player.inventory.currentItem != slot)
-                    {
-                        mc.player.inventory.currentItem = slot;
-                        if (mc.playerController != null)
-                        {
-                            mc.playerController.updateController();
-                        }
-                        if (mc.player != null && mc.player.connection != null)
-                        {
-                            mc.player.connection.sendPacket(new CPacketHeldItemChange(slot));
-                        }
-                    }
-                    try
-                    {
-                        Vec3d hit = new Vec3d(0.5, 0.5, 0.5);
-                        runPlaceClick(mc, clickPos, hit);
-                        mc.player.swingArm(EnumHand.MAIN_HAND);
-                    }
-                    catch (Exception ignore) { }
-
-                    entry.postPlaceStage = 1;
-                    entry.postPlaceNextMs = nowMs + host.placeDelayMs(550L);
-                    return;
-                }
-
-                if (entry.postPlaceStage == 1 && entry.postPlaceKind == PlaceEntry.POST_PLACE_CYCLE)
-                {
-                    int ticks = Math.max(5, entry.postPlaceCycleTicks);
-                    int slot = host.giveQuickInputItemToHotbar(PlaceModule.INPUT_MODE_NUMBER, String.valueOf(ticks), false);
-                    if (slot >= 0 && slot < 9 && mc.player.inventory.currentItem != slot)
-                    {
-                        mc.player.inventory.currentItem = slot;
-                        if (mc.playerController != null)
-                        {
-                            mc.playerController.updateController();
-                        }
-                        if (mc.player != null && mc.player.connection != null)
-                        {
-                            mc.player.connection.sendPacket(new CPacketHeldItemChange(slot));
-                        }
-                    }
-                    try
-                    {
-                        Vec3d hit = new Vec3d(0.5, 0.5, 0.5);
-                        runPlaceClick(mc, clickPos, hit);
-                        mc.player.swingArm(EnumHand.MAIN_HAND);
-                    }
-                    catch (Exception ignore) { }
-
-                    entry.postPlaceStage = 2;
-                    entry.postPlaceNextMs = nowMs + host.placeDelayMs(550L);
-                    return;
-                }
-
-                // Done: advance to next entry.
-                entry.awaitingMenu = false;
-                entry.awaitingParamsChest = false;
-                entry.awaitingArgs = false;
-                state.current = null;
+                finishEntry(state, entry);
                 return;
             }
 
@@ -459,6 +383,183 @@ final class PlaceTickHandler
         host.buildTpPathQueue(mc.world, mc.player.posX, mc.player.posY, mc.player.posZ, dx, dy, dz);
     }
 
+    private static boolean handlePostPlace(PlaceModuleHost host, PlaceState state, Minecraft mc, PlaceEntry entry, long nowMs)
+    {
+        if (host == null || state == null || mc == null || entry == null)
+        {
+            return false;
+        }
+        if (nowMs < entry.postPlaceNextMs)
+        {
+            return true;
+        }
+
+        BlockPos signPos = host.findSignAtZMinus1(mc.world, entry.pos);
+        BlockPos clickPos = signPos != null ? signPos : entry.pos;
+        if (clickPos == null)
+        {
+            host.setActionBar(false, "&c/placeadvanced: no sign pos", 2500L);
+            state.reset();
+            return true;
+        }
+
+        switch (entry.postPlaceKind)
+        {
+            case PlaceEntry.POST_PLACE_NEGATE:
+                return handlePostPlaceNegate(host, state, mc, entry, nowMs, clickPos);
+            case PlaceEntry.POST_PLACE_SIGN_NAME:
+                return handlePostPlaceSignName(host, state, mc, entry, nowMs, clickPos);
+            case PlaceEntry.POST_PLACE_CYCLE:
+                return handlePostPlaceCycle(host, state, mc, entry, nowMs, clickPos);
+            default:
+                host.setActionBar(false, "&c/placeadvanced: unknown post-place kind", 2500L);
+                state.reset();
+                return true;
+        }
+    }
+
+    private static boolean handlePostPlaceSignName(
+        PlaceModuleHost host,
+        PlaceState state,
+        Minecraft mc,
+        PlaceEntry entry,
+        long nowMs,
+        BlockPos clickPos)
+    {
+        if (entry.postPlaceStage != 0)
+        {
+            return false;
+        }
+        if (entry.postPlaceName == null || entry.postPlaceName.trim().isEmpty())
+        {
+            host.setActionBar(false, "&c/placeadvanced: missing name", 2500L);
+            state.reset();
+            return true;
+        }
+        int slot = host.giveQuickInputItemToHotbar(PlaceModule.INPUT_MODE_TEXT, entry.postPlaceName, false);
+        selectHotbarSlot(mc, slot);
+        try
+        {
+            Vec3d hit = new Vec3d(0.5, 0.5, 0.5);
+            runPlaceClick(mc, clickPos, hit);
+            mc.player.swingArm(EnumHand.MAIN_HAND);
+        }
+        catch (Exception ignore) { }
+
+        entry.postPlaceStage = 1;
+        entry.postPlaceNextMs = nowMs + host.placeDelayMs(550L);
+        return true;
+    }
+
+    private static boolean handlePostPlaceCycle(
+        PlaceModuleHost host,
+        PlaceState state,
+        Minecraft mc,
+        PlaceEntry entry,
+        long nowMs,
+        BlockPos clickPos)
+    {
+        if (entry.postPlaceStage == 0)
+        {
+            return handlePostPlaceSignName(host, state, mc, entry, nowMs, clickPos);
+        }
+        if (entry.postPlaceStage != 1)
+        {
+            return false;
+        }
+        int ticks = Math.max(5, entry.postPlaceCycleTicks);
+        int slot = host.giveQuickInputItemToHotbar(PlaceModule.INPUT_MODE_NUMBER, String.valueOf(ticks), false);
+        selectHotbarSlot(mc, slot);
+        try
+        {
+            Vec3d hit = new Vec3d(0.5, 0.5, 0.5);
+            runPlaceClick(mc, clickPos, hit);
+            mc.player.swingArm(EnumHand.MAIN_HAND);
+        }
+        catch (Exception ignore) { }
+
+        entry.postPlaceStage = 2;
+        entry.postPlaceNextMs = nowMs + host.placeDelayMs(550L);
+        return true;
+    }
+
+    private static boolean handlePostPlaceNegate(
+        PlaceModuleHost host,
+        PlaceState state,
+        Minecraft mc,
+        PlaceEntry entry,
+        long nowMs,
+        BlockPos clickPos)
+    {
+        if (entry.postPlaceStage != 0)
+        {
+            return false;
+        }
+        int slot = ensureArrowInHand(mc);
+        if (slot < 0)
+        {
+            host.setActionBar(false, "&c/placeadvanced: NOT arrow not available", 2500L);
+            System.err.println("[printer-debug] PLACE_NEGATE_FAILED reason=no_arrow");
+            state.reset();
+            return true;
+        }
+        selectHotbarSlot(mc, slot);
+        try
+        {
+            System.out.println("[printer-debug] PLACE_NEGATE_START pos=" + clickPos);
+            Vec3d hit = new Vec3d(0.5, 0.5, 0.5);
+            runPlaceClick(mc, clickPos, hit);
+            mc.player.swingArm(EnumHand.MAIN_HAND);
+        }
+        catch (Exception e)
+        {
+            System.err.println("[printer-debug] PLACE_NEGATE_FAILED reason=click_exception msg=" + e.getMessage());
+            host.setActionBar(false, "&c/placeadvanced: NOT apply failed", 2500L);
+            state.reset();
+            return true;
+        }
+
+        entry.postPlaceStage = 2;
+        entry.postPlaceNextMs = nowMs + host.placeDelayMs(550L);
+        System.out.println("[printer-debug] PLACE_NEGATE_OK pos=" + clickPos);
+        return true;
+    }
+
+    private static void finishEntry(PlaceState state, PlaceEntry entry)
+    {
+        if (entry != null)
+        {
+            entry.awaitingMenu = false;
+            entry.awaitingParamsChest = false;
+            entry.awaitingArgs = false;
+        }
+        if (state != null)
+        {
+            state.current = null;
+        }
+    }
+
+    private static void selectHotbarSlot(Minecraft mc, int slot)
+    {
+        if (mc == null || mc.player == null || slot < 0 || slot >= 9)
+        {
+            return;
+        }
+        if (mc.player.inventory.currentItem == slot)
+        {
+            return;
+        }
+        mc.player.inventory.currentItem = slot;
+        if (mc.playerController != null)
+        {
+            mc.playerController.updateController();
+        }
+        if (mc.player.connection != null)
+        {
+            mc.player.connection.sendPacket(new CPacketHeldItemChange(slot));
+        }
+    }
+
     private static void startAfterPlaced(PlaceEntry entry, long nowMs, PlaceModuleHost host)
     {
         if (entry == null)
@@ -511,6 +612,62 @@ final class PlaceTickHandler
             }
         }
         return -1;
+    }
+
+    private static int findHotbarArrowSlot(Minecraft mc)
+    {
+        if (mc == null || mc.player == null)
+        {
+            return -1;
+        }
+        for (int h = 0; h < 9; h++)
+        {
+            ItemStack stack = mc.player.inventory.getStackInSlot(h);
+            if (!stack.isEmpty() && stack.getItem() == Items.ARROW)
+            {
+                return h;
+            }
+        }
+        return -1;
+    }
+
+    private static int giveArrowToHotbar(Minecraft mc)
+    {
+        if (mc == null || mc.player == null || !mc.player.capabilities.isCreativeMode)
+        {
+            return -1;
+        }
+        int slot = -1;
+        for (int i = 0; i < 9; i++)
+        {
+            ItemStack stack = mc.player.inventory.getStackInSlot(i);
+            if (stack.isEmpty())
+            {
+                slot = i;
+                break;
+            }
+        }
+        if (slot == -1)
+        {
+            slot = mc.player.inventory.currentItem;
+        }
+        ItemStack stack = new ItemStack(Items.ARROW);
+        mc.player.inventory.setInventorySlotContents(slot, stack);
+        if (mc.player.connection != null)
+        {
+            mc.player.connection.sendPacket(new CPacketCreativeInventoryAction(36 + slot, stack));
+        }
+        return slot;
+    }
+
+    private static int ensureArrowInHand(Minecraft mc)
+    {
+        int slot = findHotbarArrowSlot(mc);
+        if (slot < 0)
+        {
+            slot = giveArrowToHotbar(mc);
+        }
+        return slot;
     }
 
     private static int giveBlockToHotbar(Minecraft mc, net.minecraft.block.Block block)

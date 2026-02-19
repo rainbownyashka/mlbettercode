@@ -28,6 +28,7 @@ public final class MlDslModule
 {
     private static final Gson GSON = new Gson();
     private static final long MAX_PLAN_BYTES = 800L * 1024L;
+    private static final String NEGATED_NAME_PREFIX = "__MLDSL_NEGATED__::";
 
     private final MlDslHost host;
     private final PlaceModule placeModule;
@@ -418,7 +419,7 @@ public final class MlDslModule
             // Option A: {"placeadvanced":[...tokens...]}
             if (obj.has("placeadvanced") && obj.get("placeadvanced").isJsonArray())
             {
-                return readStringArray(obj.getAsJsonArray("placeadvanced"));
+                return normalizePlaceAdvancedTokens(readStringArray(obj.getAsJsonArray("placeadvanced")));
             }
 
             // Option B: {"entries":[{"block":"diamond_block","name":"вход","args":"no"}, ...]}
@@ -477,6 +478,19 @@ public final class MlDslModule
             if (name == null)
             {
                 name = "";
+            }
+            boolean negated = false;
+            if (e.has("negated") && e.get("negated").isJsonPrimitive())
+            {
+                try
+                {
+                    negated = e.get("negated").getAsBoolean();
+                }
+                catch (Exception ignore) { }
+            }
+            if (negated)
+            {
+                name = NEGATED_NAME_PREFIX + name;
             }
 
             String args = getString(e, "args");
@@ -570,6 +584,79 @@ public final class MlDslModule
         return out;
     }
 
+    private static String normalizedTokenKey(String token)
+    {
+        if (token == null)
+        {
+            return "";
+        }
+        String t = stripOuterQuotes(token).trim().toLowerCase();
+        if ("minecraft:air".equals(t))
+        {
+            return "air";
+        }
+        if ("row".equals(t))
+        {
+            return "newline";
+        }
+        return t;
+    }
+
+    private static boolean isSingleControlToken(String token)
+    {
+        String k = normalizedTokenKey(token);
+        return "air".equals(k) || "skip".equals(k) || "newline".equals(k);
+    }
+
+    private static List<String> normalizePlaceAdvancedTokens(List<String> tokens)
+    {
+        List<String> out = new ArrayList<>();
+        if (tokens == null || tokens.isEmpty())
+        {
+            return out;
+        }
+        int i = 0;
+        while (i < tokens.size())
+        {
+            String tok = tokens.get(i);
+            String key = normalizedTokenKey(tok);
+            if ("newline".equals(key))
+            {
+                out.add("newline");
+                i++;
+                continue;
+            }
+            if ("air".equals(key) || "skip".equals(key))
+            {
+                out.add(key);
+                // Old payload variant can contain triplet for control token, e.g. ["skip", "", "no"].
+                // Consume the two tail tokens if they look like that legacy form.
+                if (i + 2 < tokens.size())
+                {
+                    String t1 = stripOuterQuotes(tokens.get(i + 1) == null ? "" : tokens.get(i + 1)).trim();
+                    String t2 = normalizedTokenKey(tokens.get(i + 2));
+                    if (t1.isEmpty() && ("no".equals(t2) || t2.isEmpty()))
+                    {
+                        i += 3;
+                        continue;
+                    }
+                }
+                i++;
+                continue;
+            }
+
+            if (i + 2 >= tokens.size())
+            {
+                break;
+            }
+            out.add(quoteIfNeeded(stripOuterQuotes(tokens.get(i)).trim()));
+            out.add(quoteIfNeeded(stripOuterQuotes(tokens.get(i + 1)).trim()));
+            out.add(quoteIfNeeded(stripOuterQuotes(tokens.get(i + 2)).trim()));
+            i += 3;
+        }
+        return out;
+    }
+
     private static String quoteIfNeeded(String s)
     {
         if (s == null)
@@ -602,7 +689,7 @@ public final class MlDslModule
         while (i < args.size())
         {
             String tok = args.get(i);
-            if (tok != null && ("air".equalsIgnoreCase(tok) || "\"air\"".equalsIgnoreCase(tok) || "minecraft:air".equalsIgnoreCase(tok)))
+            if (isSingleControlToken(tok))
             {
                 count++;
                 i++;
@@ -629,7 +716,7 @@ public final class MlDslModule
         while (i < args.size() && skipped < skip)
         {
             String tok = args.get(i);
-            if (tok != null && ("air".equalsIgnoreCase(tok) || "\"air\"".equalsIgnoreCase(tok) || "minecraft:air".equalsIgnoreCase(tok)))
+            if (isSingleControlToken(tok))
             {
                 i++;
             }

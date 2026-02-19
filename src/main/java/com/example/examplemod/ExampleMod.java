@@ -265,6 +265,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private static final String HUB_BASE_URL_PRIMARY = "https://mldsl-hub.vercel.app";
     private static final String HUB_BASE_URL_MIRROR = "https://mldsl-hub.duckdns.org";
     private static boolean hubSwitchToMirror = false;
+    private static String customMlDslCompilerPath = "";
     // --- Auto chest cache settings (config) ---
     private static boolean chestCacheEnabled = true;
     private static boolean autoCacheEnabled = true;
@@ -546,6 +547,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private String modulePublishWarmupName = null;
     private File modulePublishTraceFile = null;
     private long modulePublishTraceSeq = 0L;
+    private long modulePublishWarmupWaitLogMs = 0L;
+    private String modulePublishWarmupWaitLogReason = "";
     private boolean lastEditorModeActive = false;
     private boolean chestIdDirty = false;
     private long lastChestIdSaveMs = 0L;
@@ -3538,11 +3541,13 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             modulePublishWarmupSettleUntilMs = 0L;
             modulePublishWarmupDir = dir;
             modulePublishWarmupName = name;
+            modulePublishWarmupWaitLogMs = 0L;
+            modulePublishWarmupWaitLogReason = "";
             publishTrace(mc, "publish.nocache.warmup.start", "chests=" + chests.size() + " dim=" + dim
                 + " forcedByCacheDisabled=" + (!chestCacheEnabled));
 
             mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
-                + "/module publish nocache: прогрев сундуков (tp/open) перед экспортом: " + chests.size()));
+                + "/module publish nocache: прогрев сундуков (open) перед экспортом: " + chests.size()));
             setActionBar(true, "&e/module publish nocache: прогрев " + chests.size() + " сундуков...", 3500L);
             return;
         }
@@ -3596,10 +3601,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     modulePublishWarmupSettleUntilMs = 0L;
                     modulePublishWarmupDir = dir;
                     modulePublishWarmupName = name;
+                    modulePublishWarmupWaitLogMs = 0L;
+                    modulePublishWarmupWaitLogReason = "";
                     publishTrace(mc, "publish.cache.warmup.start", "missing=" + missing.size() + " pagedRefresh=" + pagedRefreshCount + " dim=" + dim);
 
                     mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW
-                        + "/module publish: прогрев сундуков (tp/open): " + missing.size()
+                        + "/module publish: прогрев сундуков (open): " + missing.size()
                         + (pagedRefreshCount > 0 ? (" (paged refresh: " + pagedRefreshCount + ")") : "")));
                     setActionBar(true, "&e/module publish: прогрев " + missing.size() + " сундуков...", 3500L);
                     return;
@@ -3643,7 +3650,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             publishTrace(mc, "publish.abort", "reason=compiler_not_found");
             setActionBar(false, "&c/module publish: компилятор mldsl не найден", 4500L);
             mc.player.sendMessage(new TextComponentString(TextFormatting.RED
-                + "Компилятор mldsl не найден. Ожидается: PATH (mldsl) или %LOCALAPPDATA%\\MLDSL\\mldsl.exe"));
+                + "Компилятор mldsl не найден. Проверь /modsettings -> mldsl.customMlDslCompilerPath "
+                + "или dev путь Documents\\mlctmodified\\mldsl_cli.py"));
             return;
         }
 
@@ -4254,6 +4262,33 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
     private String resolveMlDslCompilerPath()
     {
+        String custom = customMlDslCompilerPath == null ? "" : customMlDslCompilerPath.trim();
+        if (!custom.isEmpty())
+        {
+            File cf = new File(custom);
+            if (cf.isFile())
+            {
+                return cf.getAbsolutePath();
+            }
+            if (isCommandAvailable(custom))
+            {
+                return custom;
+            }
+        }
+
+        // Prefer dev compiler (workspace pycli) by default.
+        File[] devCandidates = new File[]{
+            new File(System.getProperty("user.home"), "Documents\\mlctmodified\\mldsl_cli.py"),
+            new File("C:\\Users\\ASUS\\Documents\\mlctmodified\\mldsl_cli.py")
+        };
+        for (File c : devCandidates)
+        {
+            if (c.isFile())
+            {
+                return c.getAbsolutePath();
+            }
+        }
+
         String local = System.getenv("LOCALAPPDATA");
         if (local != null && !local.trim().isEmpty())
         {
@@ -5147,19 +5182,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             ensureChestCaches(dim);
             String key = chestKey(dim, chestPos);
             ChestCache cached = chestCaches.get(key);
-            boolean usedIdFallbackLookup = false;
-            if ((cached == null || cached.items == null || !containsAnyNonEmpty(cached.items)))
-            {
-                // Fallback: sometimes runtime chestCaches can be cleared/replaced between warmup and export.
-                // In that case, recover the latest non-empty snapshot by position from id-scoped caches.
-                cached = findBestChestIdCacheByPos(dim, chestPos);
-                usedIdFallbackLookup = true;
-            }
             boolean liveHasAny = containsAnyNonEmpty(liveItems);
             if (!liveHasAny && cached != null && cached.items != null && containsAnyNonEmpty(cached.items))
             {
                 bestItems = cached.items;
-                chestExportSource = usedIdFallbackLookup ? "id_cache_fallback" : "runtime_cache";
+                chestExportSource = "runtime_cache";
                 if ((title == null || title.trim().isEmpty()) && cached.label != null)
                 {
                     title = cached.label;
@@ -5171,7 +5198,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
             else if (!liveHasAny)
             {
-                chestExportSource = usedIdFallbackLookup ? "id_cache_fallback_miss" : "runtime_cache_miss";
+                chestExportSource = "runtime_cache_miss";
             }
             if (logger != null)
             {
@@ -7817,6 +7844,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 chestPageScanKey = key;
                 chestPageScanSize = size;
                 chestPageSessionAllowed = pageTurnAllowed;
+                chestCaches.remove(key);
+                chestPageLastMergedHash.entrySet().removeIf(e -> e != null && e.getKey() != null && e.getKey().startsWith(key + "#"));
             }
             if (pageTurnAllowed)
             {
@@ -7890,7 +7919,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 boolean hasMergedPage = mergedExisting != null
                     && mergedExisting.items != null
                     && mergedExisting.items.size() >= (pageBase + size);
-                boolean needMerge = hashChanged || !hasMergedPage;
+                // Freshness-first policy:
+                // - page 0 is authoritative for a current GUI snapshot and must truncate stale tail pages;
+                // - any stale pages from previous snapshots must be dropped even if hash of page 0 matches.
+                boolean hasStaleTailPages = chestPageScanIndex == 0
+                    && mergedExisting != null
+                    && mergedExisting.items != null
+                    && mergedExisting.items.size() > size;
+                boolean needMerge = hashChanged || !hasMergedPage || hasStaleTailPages;
                 if (needMerge)
                 {
                     mergeChestPageToCache(chestDim, chestPos, size, chestPageScanIndex, items, chestLabel);
@@ -8405,6 +8441,17 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
 
     private void publishTrace(Minecraft mc, String stage, String details)
     {
+        if ("warmup.wait".equals(stage))
+        {
+            long now = System.currentTimeMillis();
+            String reason = details == null ? "" : details;
+            if (reason.equals(modulePublishWarmupWaitLogReason) && (now - modulePublishWarmupWaitLogMs) < 1000L)
+            {
+                return;
+            }
+            modulePublishWarmupWaitLogReason = reason;
+            modulePublishWarmupWaitLogMs = now;
+        }
         String ts = String.valueOf(System.currentTimeMillis());
         long seq = ++modulePublishTraceSeq;
         String line = "PUBLISH_TRACE seq=" + seq + " ts=" + ts + " stage=" + stage + " " + (details == null ? "" : details);
@@ -8546,13 +8593,16 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             return;
         }
-        ChestCache prev = chestCaches.get(key);
         List<ItemStack> merged = new ArrayList<>();
-        if (prev != null && prev.items != null)
+        if (pageIndex > 0)
         {
-            for (ItemStack st : prev.items)
+            ChestCache prev = chestCaches.get(key);
+            if (prev != null && prev.items != null)
             {
-                merged.add(st == null || st.isEmpty() ? ItemStack.EMPTY : st.copy());
+                for (ItemStack st : prev.items)
+                {
+                    merged.add(st == null || st.isEmpty() ? ItemStack.EMPTY : st.copy());
+                }
             }
         }
         int offset = pageIndex * pageSize;
@@ -14219,6 +14269,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                     + "This makes /mldsl skip-check work even after chunks unload (as long as you flew by at least once).");
             autoCodeCacheMaxSteps = config.getInt("autoCodeCacheMaxSteps", "code", 256, 32, 1024,
                 "CODE CACHE: Max blocks to scan per row (x step = -2). Stops earlier on 2 empty slots.");
+            customMlDslCompilerPath = config.getString("customMlDslCompilerPath", "mldsl", "",
+                "Optional custom MLDSL compiler path/command.\n"
+                    + "Leave empty to use default priority:\n"
+                    + "1) dev mldsl_cli.py (Documents\\\\mlctmodified)\n"
+                    + "2) installed mldsl.exe\n"
+                    + "3) PATH command 'mldsl'.");
 
             autoCacheEnabled = config.getBoolean("autoCacheEnabled", "chest", true,
                 "AUTO-CACHE CHESTS: Automatically open and cache nearby trapped chests in DEV mode.\n"
@@ -14467,6 +14523,10 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         pendingChestUntilMs = now + 5000L;
         lastClickedLabel = getChestLabel(mc.world, pos);
 
+        // Use the same robust open sequence as runtime place flow:
+        // rotate to target + explicit TryUse packet + controller interaction.
+        sendLookPacket(mc, pos);
+        sendTryUsePacket(mc, pos, new Vec3d(0.5, 0.5, 0.5));
         mc.playerController.processRightClickBlock(
             mc.player, mc.world, pos,
             EnumFacing.UP, new Vec3d(0.5, 0.5, 0.5),
@@ -14771,6 +14831,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             modulePublishWarmupDir = null;
             modulePublishWarmupName = null;
             modulePublishWarmupSettleUntilMs = 0L;
+            modulePublishWarmupWaitLogMs = 0L;
+            modulePublishWarmupWaitLogReason = "";
             return;
         }
         if (mc.world.provider.getDimension() != modulePublishWarmupDim)
@@ -14804,6 +14866,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             modulePublishWarmupCurrent = null;
             setActionBar(false, "&c/module publish: nocache warmup timeout", 3500L);
             modulePublishWarmupSettleUntilMs = 0L;
+            modulePublishWarmupWaitLogMs = 0L;
+            modulePublishWarmupWaitLogReason = "";
             return;
         }
 
@@ -14868,11 +14932,14 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 modulePublishWarmupDir = null;
                 modulePublishWarmupName = null;
                 modulePublishWarmupSettleUntilMs = 0L;
+                modulePublishWarmupWaitLogMs = 0L;
+                modulePublishWarmupWaitLogReason = "";
                 runModulePublishCommandWithDir(name, false, dir);
                 return;
             }
-            // Nocache warmup movement rule:
-            // TP/path goes to -2Z from the action entry block (entry = chest.down()).
+
+            // Warmup movement rule:
+            // approach to -2Z from the action entry block (entry = chest.down()).
             BlockPos entryPos = modulePublishWarmupCurrent.down();
             double targetX = entryPos.getX() + 0.5;
             double targetY = entryPos.getY() + 0.5;
@@ -16466,7 +16533,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             signLinesCacheByDimPos.put(key2, lines);
             codeCacheDirty = true;
         }
-        if (logger != null && (newScope || newDim || changedScope || changedDim))
+        if (logger != null && debugUi && (newScope || newDim || changedScope || changedDim))
         {
             logger.info("SIGN_CACHE_STORE scopeKey={} dimKey={} newScope={} changedScope={} newDim={} changedDim={} lines={}",
                 key1, key2, newScope, changedScope, newDim, changedDim, formatSignLinesForLog(lines));

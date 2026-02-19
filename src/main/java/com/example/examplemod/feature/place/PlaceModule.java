@@ -28,6 +28,7 @@ public final class PlaceModule
     public static final int INPUT_MODE_LOCATION = 4;
     public static final int INPUT_MODE_APPLE = 5;
     public static final int INPUT_MODE_ITEM = 6;
+    private static final String NEGATED_NAME_PREFIX = "__MLDSL_NEGATED__::";
 
     private final PlaceModuleHost host;
     private final PlaceState state = new PlaceState();
@@ -40,6 +41,7 @@ public final class PlaceModule
         boolean isSkip;
         Block block;
         String name;
+        boolean negated;
         String expectedSign1;
         String expectedSign2;
         String argsRaw;
@@ -201,6 +203,54 @@ public final class PlaceModule
         host.setActionBar(true, "&a/placeadvanced queued=" + state.queue.size(), 2000L);
     }
 
+    private static String normPlanToken(String token)
+    {
+        if (token == null)
+        {
+            return "";
+        }
+        String t = token.trim();
+        if (t.length() >= 2)
+        {
+            char a = t.charAt(0);
+            char b = t.charAt(t.length() - 1);
+            if ((a == '"' && b == '"') || (a == '\'' && b == '\''))
+            {
+                t = t.substring(1, t.length() - 1).trim();
+            }
+        }
+        t = t.toLowerCase();
+        if ("minecraft:air".equals(t))
+        {
+            return "air";
+        }
+        if ("row".equals(t))
+        {
+            return "newline";
+        }
+        return t;
+    }
+
+    private static boolean isLegacyControlTripletTail(List<String> tokens, int i)
+    {
+        if (tokens == null || i + 2 >= tokens.size())
+        {
+            return false;
+        }
+        String t1 = tokens.get(i + 1) == null ? "" : tokens.get(i + 1).trim();
+        if (t1.length() >= 2)
+        {
+            char a = t1.charAt(0);
+            char b = t1.charAt(t1.length() - 1);
+            if ((a == '"' && b == '"') || (a == '\'' && b == '\''))
+            {
+                t1 = t1.substring(1, t1.length() - 1).trim();
+            }
+        }
+        String t2 = normPlanToken(tokens.get(i + 2));
+        return t1.isEmpty() && ("no".equals(t2) || t2.isEmpty());
+    }
+
     private static String[] splitSearchPath(String raw)
     {
         if (raw == null)
@@ -216,6 +266,20 @@ public final class PlaceModule
         String left = s.substring(0, idx).trim();
         String right = s.substring(idx + 2).trim();
         return new String[] { left, right };
+    }
+
+    private static boolean isNegatedNameToken(String raw)
+    {
+        return raw != null && raw.startsWith(NEGATED_NAME_PREFIX);
+    }
+
+    private static String stripNegatedNameToken(String raw)
+    {
+        if (!isNegatedNameToken(raw))
+        {
+            return raw;
+        }
+        return raw.substring(NEGATED_NAME_PREFIX.length());
     }
 
     private static String resolvePreferredScopeMenuKey(PlaceModuleHost host, String scopeHintRaw)
@@ -301,8 +365,9 @@ public final class PlaceModule
         int i = 0;
         while (i < tokens.size())
         {
-            String blockTok = tokens.get(i);
-            if ("newline".equalsIgnoreCase(blockTok) || "row".equalsIgnoreCase(blockTok))
+            String blockTokRaw = tokens.get(i);
+            String blockTok = normPlanToken(blockTokRaw);
+            if ("newline".equals(blockTok))
             {
                 if (!steps.isEmpty())
                 {
@@ -312,20 +377,34 @@ public final class PlaceModule
                 i++;
                 continue;
             }
-            if ("skip".equalsIgnoreCase(blockTok))
+            if ("skip".equals(blockTok))
             {
                 PlanStep s = new PlanStep();
                 s.isSkip = true;
                 steps.add(s);
-                i++;
+                if (isLegacyControlTripletTail(tokens, i))
+                {
+                    i += 3;
+                }
+                else
+                {
+                    i++;
+                }
                 continue;
             }
-            if ("air".equalsIgnoreCase(blockTok) || "minecraft:air".equalsIgnoreCase(blockTok))
+            if ("air".equals(blockTok))
             {
                 PlanStep s = new PlanStep();
                 s.isPause = true;
                 steps.add(s);
-                i++;
+                if (isLegacyControlTripletTail(tokens, i))
+                {
+                    i += 3;
+                }
+                else
+                {
+                    i++;
+                }
                 continue;
             }
             if (i + 2 >= tokens.size())
@@ -353,6 +432,8 @@ public final class PlaceModule
             s.isPause = false;
             s.block = b;
             String rawName = nameTok == null ? "" : nameTok.trim();
+            s.negated = isNegatedNameToken(rawName);
+            rawName = stripNegatedNameToken(rawName);
             if (rawName.contains("||"))
             {
                 String[] parts = rawName.split("\\Q||\\E", -1);
@@ -547,6 +628,8 @@ public final class PlaceModule
                 String name = s.name == null ? "" : s.name;
                 String norm = host.normalizeForMatch(name);
                 PlaceEntry entry = new PlaceEntry(target, s.block, norm);
+                entry.negated = s.negated;
+                entry.preferredMenuKey = resolvePreferredScopeMenuKey(host, s.expectedSign2);
 
                 if (s.block == Blocks.LAPIS_BLOCK)
                 {
@@ -612,8 +695,9 @@ public final class PlaceModule
         int i = 0;
         while (i < tokens.size())
         {
-            String blockTok = tokens.get(i);
-            if ("newline".equalsIgnoreCase(blockTok) || "row".equalsIgnoreCase(blockTok))
+            String blockTokRaw = tokens.get(i);
+            String blockTok = normPlanToken(blockTokRaw);
+            if ("newline".equals(blockTok))
             {
                 if (!steps.isEmpty())
                 {
@@ -623,20 +707,34 @@ public final class PlaceModule
                 i++;
                 continue;
             }
-            if ("skip".equalsIgnoreCase(blockTok))
+            if ("skip".equals(blockTok))
             {
                 PlanStep s = new PlanStep();
                 s.isSkip = true;
                 steps.add(s);
-                i++;
+                if (isLegacyControlTripletTail(tokens, i))
+                {
+                    i += 3;
+                }
+                else
+                {
+                    i++;
+                }
                 continue;
             }
-            if ("air".equalsIgnoreCase(blockTok) || "minecraft:air".equalsIgnoreCase(blockTok))
+            if ("air".equals(blockTok))
             {
                 PlanStep s = new PlanStep();
                 s.isPause = true;
                 steps.add(s);
-                i++;
+                if (isLegacyControlTripletTail(tokens, i))
+                {
+                    i += 3;
+                }
+                else
+                {
+                    i++;
+                }
                 continue;
             }
             if (i + 2 >= tokens.size())
@@ -661,6 +759,8 @@ public final class PlaceModule
             s.isPause = false;
             s.block = b;
             String rawName = nameTok == null ? "" : nameTok.trim();
+            s.negated = isNegatedNameToken(rawName);
+            rawName = stripNegatedNameToken(rawName);
                 if (rawName.contains("||"))
                 {
                     String[] parts = rawName.split("\\Q||\\E", -1);

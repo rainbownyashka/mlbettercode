@@ -33,6 +33,11 @@
     - unified helper added: `modern/core/src/main/java/com/rainbow_universe/bettercode/core/place/BlueGlassSearch.java`,
     - adapters now use legacy-style blue-glass scan graph (`z ±4`, `y ±10`, bounded BFS) to resolve nearest runtime seed,
     - selector glass resolve restored to legacy behavior (accept click on blue glass or block directly above it).
+  - adapter dedup/future-proofing slice:
+    - added shared selector store helper: `modern/core/src/main/java/com/rainbow_universe/bettercode/core/bridge/CodeSelectorStore.java`,
+    - `fabric1165` selector map migrated to shared `SelectedRow` model (`Map<String, SelectedRow>`) via `CodeSelectorStore.toggle(...)`,
+    - added shared reflection compatibility helper: `modern/core/src/main/java/com/rainbow_universe/bettercode/core/util/ReflectCompat.java`,
+    - sign-line reflection and look-spoof packet reflection paths now use `ReflectCompat` in `fabric1165/fabric120/fabric121` (reduced adapter drift).
 - `/mldsl run` plan execution path wired to place pipeline.
 - Chest page merge logic stores and reuses merged snapshot across pages.
 - `/loadmodule` supports explicit error reasons (timeout/http/ssl/etc.).
@@ -394,3 +399,5 @@
 
 ## Notes
 - This file is mod-only SoT. Do not put compiler/site operational details here.
+- Multi-agent coordination lock added in repo root:
+  - `agentslock/current-task.md` stores active task/owner/status timestamp for parallel agent sessions.
