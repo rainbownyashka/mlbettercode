@@ -1143,6 +1143,10 @@ public final class RuntimeCore {
         }
     }
 
+    public void stopActiveExecution(GameBridge bridge, String reason) {
+        stopActiveExecutionIfAny(bridge, reason == null || reason.trim().isEmpty() ? "external_stop" : reason.trim());
+    }
+
     private static final class FileItem {
         final String name;
         final long size;

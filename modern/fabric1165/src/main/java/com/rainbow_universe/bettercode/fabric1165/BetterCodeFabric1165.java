@@ -223,6 +223,11 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         );
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (isShutdownLikeState(client)) {
+                runtime().stopActiveExecution(new FabricBridge(null), "client_shutdown_state");
+                clearLocalTpQueue();
+                return;
+            }
             traceRuntimeTickProbe(client);
             handleLocalTpPath(client);
             refreshWorldLoadSeedHint(client);
@@ -2405,6 +2410,30 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
         LAST_LEGACY_CLICK_KEY = key;
         LAST_LEGACY_CLICK_MS = nowMs;
+    }
+
+    private static boolean isShutdownLikeState(MinecraftClient mc) {
+        if (mc == null) {
+            return true;
+        }
+        if (mc.world == null || mc.player == null) {
+            return true;
+        }
+        if (mc.currentScreen == null) {
+            return false;
+        }
+        String n = mc.currentScreen.getClass().getSimpleName().toLowerCase();
+        return n.contains("save") || n.contains("progress") || n.contains("downloading") || n.contains("disconnect");
+    }
+
+    private static void clearLocalTpQueue() {
+        synchronized (LOCAL_TP_STATE) {
+            if (!LOCAL_TP_STATE.queue.isEmpty()) {
+                System.out.println("[printer-debug] shutdown_tp_queue_cleared size=" + LOCAL_TP_STATE.queue.size());
+            }
+            LOCAL_TP_STATE.queue.clear();
+            LOCAL_TP_STATE.nextMs = 0L;
+        }
     }
 
     private static void resetSnapshotCache() {
