@@ -434,6 +434,13 @@ public final class PlaceRuntimeStepExecutor {
                     return fail(logger, "ARGS_CONTAINER_CLOSED", "container closed during pending clicks");
                 }
                 if (entry.argsWindowId() >= 0 && view.windowId() != entry.argsWindowId()) {
+                    if (entry.pendingArgClicks() == 0 && entry.advancedArgIndex() == 0 && entry.argsMisses() == 0) {
+                        logger.info("printer-debug",
+                            "runtime_state=ARGS_WINDOW_REBIND from=" + entry.argsWindowId() + " to=" + view.windowId());
+                        entry.setArgsWindowId(view.windowId());
+                        entry.setArgsMisses(1);
+                        return PlaceExecResult.inProgress(0, "ARGS_WINDOW_REBIND");
+                    }
                     return fail(logger, "ARGS_WINDOW_CHANGED", "args window changed during pending clicks");
                 }
                 if (countNonPlayerSlots(view) <= 0) {
@@ -488,6 +495,13 @@ public final class PlaceRuntimeStepExecutor {
             if (entry.argsWindowId() < 0) {
                 entry.setArgsWindowId(view.windowId());
             } else if (view.windowId() != entry.argsWindowId()) {
+                if (entry.advancedArgIndex() == 0 && entry.argsMisses() == 0) {
+                    logger.info("printer-debug",
+                        "runtime_state=ARGS_WINDOW_REBIND from=" + entry.argsWindowId() + " to=" + view.windowId());
+                    entry.setArgsWindowId(view.windowId());
+                    entry.setArgsMisses(1);
+                    return PlaceExecResult.inProgress(0, "ARGS_WINDOW_REBIND");
+                }
                 return fail(logger, "ARGS_WINDOW_CHANGED", "args window changed");
             }
             if (countNonPlayerSlots(view) <= 0) {

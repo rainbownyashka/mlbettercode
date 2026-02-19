@@ -852,6 +852,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
                 BlockPos entryPos = DIRECT_PLACE_STATE.seed.add(-2 * DIRECT_PLACE_STATE.cursor, 1, 0);
                 BlockPos target = entryPos.down();
+                double standX = entryPos.getX() + 0.5;
+                double standY = entryPos.getY();
+                double standZ = entryPos.getZ() - 2.0 + 0.5;
                 String expectedBlockId = String.valueOf(Registry.BLOCK.getId(block));
                 long now = System.currentTimeMillis();
                 System.out.println("[printer-debug] place_step begin cursor=" + DIRECT_PLACE_STATE.cursor
@@ -864,6 +867,18 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     + " pendingTarget=" + DIRECT_PLACE_STATE.pendingTarget
                     + " pendingBlock=" + DIRECT_PLACE_STATE.pendingBlockId
                     + " attempts=" + DIRECT_PLACE_STATE.placeAttempts);
+
+                if (mc.player.squaredDistanceTo(standX, standY, standZ) > 6.0D) {
+                    if (isTpPathBusy()) {
+                        return PlaceExecResult.inProgress(0, "WAIT_TP_PATH");
+                    }
+                    boolean tpQueued = enqueueTpPath(entryPos.getX(), entryPos.getY(), entryPos.getZ() - 2);
+                    if (!tpQueued) {
+                        return PlaceExecResult.fail(0, 0, "TP_PATH_FAILED",
+                            "cannot tp to entry.z-2 for place target=" + entryPos);
+                    }
+                    return PlaceExecResult.inProgress(0, "WAIT_TP_PATH");
+                }
 
                 if (isBlockPlaced(mc, target, block)) {
                     clearPendingPlaceState(DIRECT_PLACE_STATE);
@@ -1481,6 +1496,13 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 }
                 if (LOCAL_TP_STATE.queue.isEmpty()) {
                     return false;
+                }
+                if (setPlayerPositionLocal(mc, x + 0.5D, y, z + 0.5D)) {
+                    LOCAL_TP_STATE.queue.clear();
+                    LOCAL_TP_STATE.nextMs = 0L;
+                    System.out.println("[printer-debug] testcase_tp queued target=" + x + "," + y + "," + z
+                        + " steps=0 immediate=true");
+                    return true;
                 }
                 LOCAL_TP_STATE.nextMs = System.currentTimeMillis();
                 System.out.println("[printer-debug] testcase_tp queued target=" + x + "," + y + "," + z

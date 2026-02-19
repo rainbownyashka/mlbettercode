@@ -38,6 +38,10 @@
     - fixed runtime menu-anchor drift in adapters: menu/sign open anchor now resolves current step entry (and pending target), not `cursor-1` previous step,
     - `fabric1165` `/testcase tp` no longer depends on `/tp` command permissions: now uses local queued TP-path steps (legacy-like axis stepping, 10-block segments, 300ms tick cadence),
     - core menu random fallback is now bounded tighter (`MAX_RANDOM_ROUTE_CLICKS=40`) and detailed `menu_route_miss ... summary=` logging is throttled (every 8th miss) to reduce freeze spikes under route-miss loops.
+  - publish/place follow-up slice (2026-02-19, latest log):
+    - restored legacy-like auto-TP gate before block placement in modern Fabric adapters: if player is far from `entry + (0,0,-2)`, step returns `WAIT_TP_PATH` and queues TP toward `entry.z-2` before attempting place,
+    - `fabric1165` TP queue now performs immediate local position apply (`setPosition/updatePosition` reflection fallback) when possible, preventing publish warmup from failing on immediate `tp_path_busy`,
+    - args pipeline now tolerates one initial container window rebind (`runtime_state=ARGS_WINDOW_REBIND`) instead of hard-failing immediately with `ARGS_WINDOW_CHANGED` during params-chest transition races.
   - menu route transient unresolved guard:
     - unresolved route with no random candidates now enters bounded wait/reopen (`WAIT_MENU_ROUTE`) before final `NO_PATH_GUI`.
   - blue-glass search parity hardening:

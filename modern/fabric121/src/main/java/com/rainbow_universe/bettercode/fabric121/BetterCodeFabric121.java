@@ -1008,8 +1008,23 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
 
                 BlockPos entryPos = DIRECT_PLACE_STATE.seed.add(-2 * DIRECT_PLACE_STATE.cursor, 1, 0);
                 BlockPos target = entryPos.down();
+                double standX = entryPos.getX() + 0.5;
+                double standY = entryPos.getY();
+                double standZ = entryPos.getZ() - 2.0 + 0.5;
                 String expectedBlockId = String.valueOf(Registries.BLOCK.getId(block));
                 long now = System.currentTimeMillis();
+
+                if (mc.player.squaredDistanceTo(standX, standY, standZ) > 6.0D) {
+                    if (isTpPathBusy()) {
+                        return PlaceExecResult.inProgress(0, "WAIT_TP_PATH");
+                    }
+                    boolean tpQueued = enqueueTpPath(entryPos.getX(), entryPos.getY(), entryPos.getZ() - 2);
+                    if (!tpQueued) {
+                        return PlaceExecResult.fail(0, 0, "TP_PATH_FAILED",
+                            "cannot tp to entry.z-2 for place target=" + entryPos);
+                    }
+                    return PlaceExecResult.inProgress(0, "WAIT_TP_PATH");
+                }
 
                 if (isBlockPlaced(mc, target, block)) {
                     clearPendingPlaceState(DIRECT_PLACE_STATE);
