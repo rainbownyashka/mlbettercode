@@ -29,6 +29,10 @@
     - intended to prevent step drift and false `PLACE_CONFIRM_TIMEOUT` after `MENU_REPLACE`.
   - menu route transient unresolved guard:
     - unresolved route with no random candidates now enters bounded wait/reopen (`WAIT_MENU_ROUTE`) before final `NO_PATH_GUI`.
+  - blue-glass search parity hardening:
+    - unified helper added: `modern/core/src/main/java/com/rainbow_universe/bettercode/core/place/BlueGlassSearch.java`,
+    - adapters now use legacy-style blue-glass scan graph (`z ±4`, `y ±10`, bounded BFS) to resolve nearest runtime seed,
+    - selector glass resolve restored to legacy behavior (accept click on blue glass or block directly above it).
 - `/mldsl run` plan execution path wired to place pipeline.
 - Chest page merge logic stores and reuses merged snapshot across pages.
 - `/loadmodule` supports explicit error reasons (timeout/http/ssl/etc.).

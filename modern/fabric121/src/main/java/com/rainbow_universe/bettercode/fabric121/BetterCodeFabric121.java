@@ -22,6 +22,7 @@ import com.rainbow_universe.bettercode.core.bridge.CursorState;
 import com.rainbow_universe.bettercode.core.bridge.SelectedRow;
 import com.rainbow_universe.bettercode.core.bridge.SlotView;
 import com.rainbow_universe.bettercode.core.place.PlaceRuntimeEntry;
+import com.rainbow_universe.bettercode.core.place.BlueGlassSearch;
 import com.rainbow_universe.bettercode.core.settings.ModSettingsService;
 import com.rainbow_universe.bettercode.core.settings.SettingDef;
 import com.rainbow_universe.bettercode.core.settings.SettingType;
@@ -400,6 +401,9 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             return null;
         }
         try {
+            if (world.getBlockState(clicked).getBlock() == Blocks.LIGHT_BLUE_STAINED_GLASS) {
+                return clicked;
+            }
             BlockPos down = clicked.down();
             if (world.getBlockState(down).getBlock() == Blocks.LIGHT_BLUE_STAINED_GLASS) {
                 return down;
@@ -975,50 +979,74 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
         }
 
         private static BlockPos resolveSeed(MinecraftClient mc) {
-            String dim = mc.world == null ? "" : mc.world.getRegistryKey().getValue().toString();
-            BlockPos nearestSameDim = nearestSelectedEntry(mc, dim, true);
-            if (nearestSameDim != null) {
-                return nearestSameDim;
-            }
-            BlockPos nearestAny = nearestSelectedEntry(mc, dim, false);
-            if (nearestAny != null) {
-                return nearestAny;
-            }
-            // Strict legacy parity: do not use look-direction fallback when no valid row is resolved.
-            return null;
-        }
-
-        private static BlockPos nearestSelectedEntry(MinecraftClient mc, String dim, boolean sameDimOnly) {
             if (mc == null || mc.player == null || mc.world == null) {
                 return null;
             }
-            BlockPos best = null;
-            double bestDist = Double.MAX_VALUE;
+            String dim = mc.world.getRegistryKey().getValue().toString();
+            List<BlockPosView> seedGlasses = new ArrayList<BlockPosView>();
             for (SelectedBlock s : SELECTED.values()) {
                 if (s == null) {
                     continue;
                 }
-                if (sameDimOnly && !dim.equals(s.dimension())) {
+                if (!dim.equals(s.dimension())) {
                     continue;
                 }
-                BlockPos entry = new BlockPos(s.x(), s.y(), s.z());
-                if (!isValidSelectedEntry(mc, entry)) {
+                if (!isBlueGlass(mc, s.x(), s.y(), s.z())) {
                     continue;
                 }
-                double dist = mc.player.squaredDistanceTo(entry.getX() + 0.5, entry.getY() + 0.5, entry.getZ() + 0.5);
-                if (dist < bestDist) {
-                    bestDist = dist;
-                    best = entry;
-                }
+                seedGlasses.add(new BlockPosView(s.x(), s.y(), s.z()));
             }
-            return best;
+            if (seedGlasses.isEmpty()) {
+                return null;
+            }
+            BlueGlassSearch.Probe probe = new BlueGlassSearch.Probe() {
+                @Override
+                public boolean isBlueGlass(int x, int y, int z) {
+                    return BetterCodeFabric121.FabricBridge.isBlueGlass(mc, x, y, z);
+                }
+
+                @Override
+                public boolean isFree(int x, int y, int z) {
+                    return BetterCodeFabric121.FabricBridge.isFreeGlass(mc, x, y, z);
+                }
+            };
+            List<BlockPosView> scanned = BlueGlassSearch.scan(seedGlasses, probe);
+            if (scanned.isEmpty()) {
+                scanned = seedGlasses;
+            }
+            BlockPosView nearestFree = BlueGlassSearch.nearest(scanned, probe,
+                p -> mc.player.squaredDistanceTo(p.x() + 0.5, p.y() + 0.5, p.z() + 0.5), true);
+            if (nearestFree != null) {
+                return new BlockPos(nearestFree.x(), nearestFree.y(), nearestFree.z());
+            }
+            BlockPosView nearestAny = BlueGlassSearch.nearest(scanned, probe,
+                p -> mc.player.squaredDistanceTo(p.x() + 0.5, p.y() + 0.5, p.z() + 0.5), false);
+            return nearestAny == null ? null : new BlockPos(nearestAny.x(), nearestAny.y(), nearestAny.z());
         }
 
-        private static boolean isValidSelectedEntry(MinecraftClient mc, BlockPos entry) {
-            if (mc == null || mc.world == null || entry == null) {
+        private static boolean isBlueGlass(MinecraftClient mc, int x, int y, int z) {
+            if (mc == null || mc.world == null) {
                 return false;
             }
-            return mc.world.getBlockState(entry).getBlock() == Blocks.LIGHT_BLUE_STAINED_GLASS;
+            try {
+                BlockPos glass = new BlockPos(x, y, z);
+                return mc.world.isChunkLoaded(glass)
+                    && mc.world.getBlockState(glass).getBlock() == Blocks.LIGHT_BLUE_STAINED_GLASS;
+            } catch (Exception e) {
+                return false;
+            }
+        }
+
+        private static boolean isFreeGlass(MinecraftClient mc, int x, int y, int z) {
+            if (!isBlueGlass(mc, x, y, z)) {
+                return false;
+            }
+            try {
+                BlockPos glass = new BlockPos(x, y, z);
+                return mc.world.getBlockState(glass.up()).isAir();
+            } catch (Exception e) {
+                return false;
+            }
         }
 
         private static int findHotbarSlot(MinecraftClient mc, Item item) {
