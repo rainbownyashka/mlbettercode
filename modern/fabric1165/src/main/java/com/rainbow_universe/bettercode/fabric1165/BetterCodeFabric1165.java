@@ -88,6 +88,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static volatile ModSettingsService SETTINGS;
     private static final DirectPlaceState DIRECT_PLACE_STATE = new DirectPlaceState();
     private static final LocalTpState LOCAL_TP_STATE = new LocalTpState();
+    private static volatile String LAST_WORLD_SEED_HINT_DIM = "";
+    private static volatile BlockPos LAST_WORLD_SEED_HINT = null;
 
     @Override
     public void onInitializeClient() {
@@ -208,6 +210,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             handleLocalTpPath(client);
+            refreshWorldLoadSeedHint(client);
             runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis());
         });
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
@@ -1036,6 +1039,25 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             if (mc == null || mc.player == null || mc.world == null) {
                 return null;
             }
+            BlueGlassSearch.Probe probe = new BlueGlassSearch.Probe() {
+                @Override
+                public boolean isBlueGlass(int x, int y, int z) {
+                    return BetterCodeFabric1165.FabricBridge.isBlueGlass(mc, x, y, z);
+                }
+
+                @Override
+                public boolean isFree(int x, int y, int z) {
+                    return BetterCodeFabric1165.FabricBridge.isFreeGlass(mc, x, y, z);
+                }
+            };
+            BlockPos fromPlayerAnchor = resolveSeedFromPlayerAnchor(mc, probe);
+            if (fromPlayerAnchor != null) {
+                return fromPlayerAnchor;
+            }
+            BlockPos fromWorldHint = resolveSeedFromWorldHint(mc, probe);
+            if (fromWorldHint != null) {
+                return fromWorldHint;
+            }
             String dim = mc.world.getRegistryKey().getValue().toString();
             List<BlockPosView> seedGlasses = new ArrayList<BlockPosView>();
             for (SelectedRow s : SELECTED.values()) {
@@ -1062,20 +1084,74 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             if (seedGlasses.isEmpty()) {
                 return null;
             }
-            BlueGlassSearch.Probe probe = new BlueGlassSearch.Probe() {
-                @Override
-                public boolean isBlueGlass(int x, int y, int z) {
-                    return BetterCodeFabric1165.FabricBridge.isBlueGlass(mc, x, y, z);
-                }
-
-                @Override
-                public boolean isFree(int x, int y, int z) {
-                    return BetterCodeFabric1165.FabricBridge.isFreeGlass(mc, x, y, z);
-                }
-            };
             BlockPosView nearestAny = BlueGlassSearch.chooseNearestSeed(seedGlasses, probe,
                 p -> mc.player.squaredDistanceTo(p.x() + 0.5, p.y() + 0.5, p.z() + 0.5));
             return nearestAny == null ? null : new BlockPos(nearestAny.x(), nearestAny.y(), nearestAny.z());
+        }
+
+        private static BlockPos resolveSeedFromPlayerAnchor(MinecraftClient mc, BlueGlassSearch.Probe probe) {
+            if (mc == null || mc.player == null || probe == null) {
+                return null;
+            }
+            BlockPos playerPos = mc.player.getBlockPos();
+            int sx = playerPos.getX() - 2;
+            int sy = playerPos.getY() - 1;
+            int sz = playerPos.getZ() - 2;
+            BlockPosView anchor = null;
+            String source = "offset(-2,-1,-2)";
+            if (probe.isBlueGlass(sx, sy, sz)) {
+                anchor = new BlockPosView(sx, sy, sz);
+            } else {
+                source = "offset_fallbacks";
+                anchor = BlueGlassSearch.resolveClickedGlass(
+                    new BlockPosView(playerPos.getX(), playerPos.getY(), playerPos.getZ()),
+                    probe
+                );
+            }
+            if (anchor == null) {
+                System.out.println("[printer-debug] seed_player_anchor_miss player=" + playerPos + " offsetHint=-2,-1,-2");
+                return null;
+            }
+            java.util.ArrayList<BlockPosView> seeds = new java.util.ArrayList<BlockPosView>();
+            seeds.add(anchor);
+            BlockPosView nearest = BlueGlassSearch.chooseNearestSeed(seeds, probe,
+                p -> mc.player.squaredDistanceTo(p.x() + 0.5, p.y() + 0.5, p.z() + 0.5));
+            if (nearest == null) {
+                return null;
+            }
+            System.out.println("[printer-debug] seed_player_anchor_hit player=" + playerPos
+                + " source=" + source
+                + " anchor=" + anchor.x() + "," + anchor.y() + "," + anchor.z()
+                + " chosen=" + nearest.x() + "," + nearest.y() + "," + nearest.z());
+            return new BlockPos(nearest.x(), nearest.y(), nearest.z());
+        }
+
+        private static BlockPos resolveSeedFromWorldHint(MinecraftClient mc, BlueGlassSearch.Probe probe) {
+            if (mc == null || mc.player == null || mc.world == null || probe == null) {
+                return null;
+            }
+            BlockPos hint = LAST_WORLD_SEED_HINT;
+            if (hint == null) {
+                return null;
+            }
+            String dim = mc.world.getRegistryKey().getValue().toString();
+            if (!dim.equals(LAST_WORLD_SEED_HINT_DIM)) {
+                return null;
+            }
+            if (!probe.isBlueGlass(hint.getX(), hint.getY(), hint.getZ())) {
+                return null;
+            }
+            ArrayList<BlockPosView> seeds = new ArrayList<BlockPosView>();
+            seeds.add(new BlockPosView(hint.getX(), hint.getY(), hint.getZ()));
+            BlockPosView nearest = BlueGlassSearch.chooseNearestSeed(seeds, probe,
+                p -> mc.player.squaredDistanceTo(p.x() + 0.5, p.y() + 0.5, p.z() + 0.5));
+            if (nearest == null) {
+                return null;
+            }
+            System.out.println("[printer-debug] seed_world_hint_hit dim=" + dim
+                + " hint=" + hint
+                + " chosen=" + nearest.x() + "," + nearest.y() + "," + nearest.z());
+            return new BlockPos(nearest.x(), nearest.y(), nearest.z());
         }
 
         private static boolean isBlueGlass(MinecraftClient mc, int x, int y, int z) {
@@ -2220,6 +2296,31 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             mc.player.setVelocity(0.0, 0.0, 0.0);
             LOCAL_TP_STATE.nextMs = now + 300L;
         }
+    }
+
+    private static void refreshWorldLoadSeedHint(MinecraftClient mc) {
+        if (mc == null || mc.player == null || mc.world == null) {
+            return;
+        }
+        String dim = mc.world.getRegistryKey().getValue().toString();
+        if (dim.equals(LAST_WORLD_SEED_HINT_DIM)) {
+            return;
+        }
+        LAST_WORLD_SEED_HINT_DIM = dim;
+        BlockPos feet = mc.player.getBlockPos();
+        BlockPos candidate = feet.add(-2, -1, -2);
+        boolean hit = false;
+        try {
+            hit = mc.world.isChunkLoaded(candidate)
+                && mc.world.getBlockState(candidate).getBlock() == Blocks.LIGHT_BLUE_STAINED_GLASS;
+        } catch (Exception ignore) {
+            hit = false;
+        }
+        LAST_WORLD_SEED_HINT = hit ? candidate : null;
+        System.out.println("[printer-debug] world_load_seed_probe dim=" + dim
+            + " playerFeet=" + feet
+            + " candidate=" + candidate
+            + " hit=" + hit);
     }
 
     private static boolean setPlayerPositionLocal(MinecraftClient mc, double x, double y, double z) {

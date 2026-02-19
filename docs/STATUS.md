@@ -76,6 +76,9 @@
     - adapters now use legacy-style blue-glass scan graph (`z ±4`, `y ±10`, bounded BFS) to resolve nearest runtime seed,
     - selector glass resolve restored to legacy behavior (accept click on blue glass or block directly above it),
     - selector/code-mode anchor resolve now also checks migration offsets around click (`-2x`, `-2z`, `-1y` and combinations) before scan traversal, to match live 1.12.2 layout offsets.
+  - fabric1165 code-entry seed trigger hardening (2026-02-19):
+    - direct runtime seed resolve now checks player-feet offset first (`x-2,y-1,z-2`) on code-entry start path (no click dependency),
+    - added world-load seed probe with the same offset and explicit trace (`world_load_seed_probe`) used as fallback hint when start-time probe misses.
   - adapter dedup/future-proofing slice:
     - added shared selector store helper: `modern/core/src/main/java/com/rainbow_universe/bettercode/core/bridge/CodeSelectorStore.java`,
     - `fabric1165` selector map migrated to shared `SelectedRow` model (`Map<String, SelectedRow>`) via `CodeSelectorStore.toggle(...)`,
