@@ -57,6 +57,7 @@ public final class RuntimeCore {
     private volatile PendingExecution pendingExecution;
     private long publishTraceSeq;
     private volatile String lastScoreboardIdLine;
+    private volatile String persistedScoreboardIdLine;
     private static final long IN_PROGRESS_LOG_GAP_MS = 1200L;
     private static final long SLOW_STEP_WARN_MS = 120L;
     private static final long SLOW_STEP_WARN_GAP_MS = 1000L;
@@ -461,16 +462,56 @@ public final class RuntimeCore {
     }
 
     private ScopeResolution resolveScopeForPublish(GameBridge bridge) {
+        Path runDir = bridge == null ? null : bridge.runDirectory();
         String liveIdLine = ScoreboardScopeResolver.extractScoreboardIdLine(bridge == null ? null : bridge.scoreboardLines());
         if (liveIdLine != null && !liveIdLine.trim().isEmpty()) {
             lastScoreboardIdLine = liveIdLine;
+            persistedScoreboardIdLine = liveIdLine;
+            savePersistedScoreboardIdLine(runDir, liveIdLine);
             return new ScopeResolution(liveIdLine, ScoreboardScopeResolver.normalizeScopeId(liveIdLine), "scoreboard_live");
         }
         String remembered = lastScoreboardIdLine;
+        if ((remembered == null || remembered.trim().isEmpty()) && persistedScoreboardIdLine != null && !persistedScoreboardIdLine.trim().isEmpty()) {
+            remembered = persistedScoreboardIdLine;
+        }
+        if (remembered == null || remembered.trim().isEmpty()) {
+            String loaded = loadPersistedScoreboardIdLine(runDir);
+            if (loaded != null && !loaded.trim().isEmpty()) {
+                remembered = loaded;
+                persistedScoreboardIdLine = loaded;
+            }
+        }
         if (remembered != null && !remembered.trim().isEmpty()) {
             return new ScopeResolution(remembered, ScoreboardScopeResolver.normalizeScopeId(remembered), "scoreboard_cached");
         }
         return new ScopeResolution("-", ScoreboardScopeResolver.normalizeScopeId(null), "default");
+    }
+
+    private void savePersistedScoreboardIdLine(Path runDirectory, String idLine) {
+        if (runDirectory == null || idLine == null || idLine.trim().isEmpty()) {
+            return;
+        }
+        try {
+            Path cacheDir = runDirectory.resolve("mldsl_cache");
+            Files.createDirectories(cacheDir);
+            Files.writeString(cacheDir.resolve("last_scoreboard_id.txt"), idLine.trim(), StandardCharsets.UTF_8);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String loadPersistedScoreboardIdLine(Path runDirectory) {
+        if (runDirectory == null) {
+            return "";
+        }
+        try {
+            Path f = runDirectory.resolve("mldsl_cache").resolve("last_scoreboard_id.txt");
+            if (!Files.exists(f)) {
+                return "";
+            }
+            return Files.readString(f, StandardCharsets.UTF_8).trim();
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 
     private static RuntimeErrorCode mapPublishErrorCode(String raw) {

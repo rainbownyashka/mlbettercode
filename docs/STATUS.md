@@ -372,6 +372,9 @@
     - core `randomSlot < 0` route branch now matches legacy logic:
       - if no menu clicks were made in the current window, fail fast as true dead-end (`NO_PATH_GUI`),
       - otherwise close/reopen menu and continue route search, instead of timing out/failing early.
+  - publish scope persistence follow-up (2026-02-19):
+    - modern core now persists last known scoreboard ID line to `mldsl_cache/last_scoreboard_id.txt`,
+    - publish scope resolver now restores cached ID on scoreboard-late/empty frames before falling back to `default`, reducing false scope drift in sign-cache keys.
   - legacy block-id compatibility slice (modern Fabric adapters):
     - added shared mapper `LegacyBlockIdCompat` in core for common 1.12->1.13+ renames (`planks -> oak_planks` and related defaults),
     - `fabric1165/fabric120/fabric121` placement path now normalizes legacy block ids before registry lookup and block-presence checks,
