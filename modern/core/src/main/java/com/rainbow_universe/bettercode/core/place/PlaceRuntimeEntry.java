@@ -38,6 +38,7 @@ public final class PlaceRuntimeEntry {
     private int menuNonEmptyWindowId;
     private String menuRouteLastHash;
     private int menuRouteSameHashMisses;
+    private final Set<Integer> triedMenuSlots;
 
     private boolean awaitingArgs;
     private int advancedArgIndex;
@@ -104,6 +105,7 @@ public final class PlaceRuntimeEntry {
         this.menuNonEmptyWindowId = -1;
         this.menuRouteLastHash = "";
         this.menuRouteSameHashMisses = 0;
+        this.triedMenuSlots = new HashSet<Integer>();
         this.awaitingArgs = false;
         this.advancedArgIndex = 0;
         this.argsStartMs = 0L;
@@ -210,6 +212,9 @@ public final class PlaceRuntimeEntry {
     public void setMenuRouteLastHash(String menuRouteLastHash) { this.menuRouteLastHash = menuRouteLastHash == null ? "" : menuRouteLastHash; }
     public int menuRouteSameHashMisses() { return menuRouteSameHashMisses; }
     public void setMenuRouteSameHashMisses(int menuRouteSameHashMisses) { this.menuRouteSameHashMisses = menuRouteSameHashMisses; }
+    public void clearTriedMenuSlots() { this.triedMenuSlots.clear(); }
+    public boolean isTriedMenuSlot(int slotNumber) { return this.triedMenuSlots.contains(Integer.valueOf(slotNumber)); }
+    public void markTriedMenuSlot(int slotNumber) { this.triedMenuSlots.add(Integer.valueOf(slotNumber)); }
     public boolean awaitingArgs() { return awaitingArgs; }
     public void setAwaitingArgs(boolean awaitingArgs) { this.awaitingArgs = awaitingArgs; }
     public int advancedArgIndex() { return advancedArgIndex; }

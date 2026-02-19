@@ -319,6 +319,7 @@ public final class PlaceRuntimeStepExecutor {
             if (entry.triedWindowId() != view.windowId()) {
                 entry.setTriedWindowId(view.windowId());
                 entry.setMenuClicksSinceOpen(0);
+                entry.clearTriedMenuSlots();
             }
             if (entry.lastMenuWindowId() == view.windowId()
                 && entry.lastMenuClickMs() > 0L
@@ -341,6 +342,7 @@ public final class PlaceRuntimeStepExecutor {
                     return fail(logger, "SCOPE_MENU_CLICK_FAILED", scopeClick.reason());
                 }
                 entry.setMenuClicksSinceOpen(1);
+                entry.markTriedMenuSlot(scopeSlot);
                 entry.setLastMenuWindowId(view.windowId());
                 entry.setLastMenuClickMs(now);
                 // Reset scope wait timeout from the actual scope click moment.
@@ -407,7 +409,7 @@ public final class PlaceRuntimeStepExecutor {
                 if (entry.randomClicks() >= MAX_RANDOM_ROUTE_CLICKS) {
                     return fail(logger, "RANDOM_EXHAUSTED", "random search exhausted");
                 }
-                int randomSlot = findRandomMenuSlot(view, entry.randomClicks());
+                int randomSlot = findRandomMenuSlot(view, entry);
                 if (randomSlot < 0) {
                     // Transient unresolved menu state: wait/reopen before hard failing route.
                     if (now - entry.menuStartMs() < MENU_TIMEOUT_MS) {
@@ -424,6 +426,7 @@ public final class PlaceRuntimeStepExecutor {
                 }
                 entry.setRandomClicks(entry.randomClicks() + 1);
                 entry.setMenuClicksSinceOpen(entry.menuClicksSinceOpen() + 1);
+                entry.markTriedMenuSlot(randomSlot);
                 entry.setLastMenuWindowId(view.windowId());
                 entry.setLastMenuClickMs(now);
                 entry.setMenuStartMs(now);
@@ -436,6 +439,7 @@ public final class PlaceRuntimeStepExecutor {
             if (!click.accepted()) {
                 return fail(logger, "MENU_CLICK_FAILED", click.reason());
             }
+            entry.markTriedMenuSlot(slot);
             entry.setMenuRouteSameHashMisses(0);
             entry.setMenuRouteLastHash("");
             if (!hasAdvancedArgs(entry)) {
@@ -831,6 +835,7 @@ public final class PlaceRuntimeStepExecutor {
         entry.setArgsMisses(0);
         entry.setMenuClicksSinceOpen(0);
         entry.setTriedWindowId(-1);
+        entry.clearTriedMenuSlots();
         entry.setMenuNonEmptySinceMs(0L);
         entry.setMenuNonEmptyWindowId(-1);
         entry.setRandomClicks(0);
@@ -1550,7 +1555,7 @@ public final class PlaceRuntimeStepExecutor {
         return null;
     }
 
-    private static int findRandomMenuSlot(ContainerView view, int randomClicks) {
+    private static int findRandomMenuSlot(ContainerView view, PlaceRuntimeEntry entry) {
         if (view == null || view.slots() == null) {
             return -1;
         }
@@ -1558,6 +1563,9 @@ public final class PlaceRuntimeStepExecutor {
         java.util.ArrayList<Integer> arrow = new java.util.ArrayList<Integer>();
         for (SlotView s : view.slots()) {
             if (s == null || s.playerInventory() || s.empty()) {
+                continue;
+            }
+            if (entry != null && entry.isTriedMenuSlot(s.slotNumber())) {
                 continue;
             }
             if (isArrowItem(s)) {
@@ -1572,7 +1580,7 @@ public final class PlaceRuntimeStepExecutor {
         if (candidates.isEmpty()) {
             return -1;
         }
-        int seed = randomClicks < 0 ? 0 : randomClicks;
+        int seed = entry == null || entry.randomClicks() < 0 ? 0 : entry.randomClicks();
         int idx = seed % candidates.size();
         return candidates.get(idx).intValue();
     }

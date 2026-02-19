@@ -324,6 +324,9 @@
   - shutdown freeze guard slice (2026-02-19):
     - `fabric1165` end-tick driver now stops active runtime immediately on shutdown-like client state (`save/progress/disconnect` screens or missing world/player),
     - local tp queue is cleared on shutdown guard (`shutdown_tp_queue_cleared`) to avoid continued movement work during close.
+  - menu random-path de-loop slice (2026-02-19):
+    - core runtime now tracks tried menu slots per open window and excludes them from random route picks,
+    - tried-slot set resets on window change/re-place, preventing repeated clicks on the same slot during unresolved GUI routing.
   - legacy block-id compatibility slice (modern Fabric adapters):
     - added shared mapper `LegacyBlockIdCompat` in core for common 1.12->1.13+ renames (`planks -> oak_planks` and related defaults),
     - `fabric1165/fabric120/fabric121` placement path now normalizes legacy block ids before registry lookup and block-presence checks,
