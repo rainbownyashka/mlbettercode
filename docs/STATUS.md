@@ -330,6 +330,9 @@
   - menu random fallback pacing hardening (2026-02-19):
     - reduced maximum random-route attempts per step (`12` instead of `40`),
     - added explicit random-route action gap floor (`>=320ms`) plus next-action gate to avoid burst-clicking unresolved menus.
+  - menu scan cadence + tried-slot routing guard (2026-02-19):
+    - menu routing now respects a strict next-action gate before heavy route checks/clicks,
+    - random fallback excludes already-clicked slots in current menu window, reducing useless repeated route passes and tick pressure.
   - legacy block-id compatibility slice (modern Fabric adapters):
     - added shared mapper `LegacyBlockIdCompat` in core for common 1.12->1.13+ renames (`planks -> oak_planks` and related defaults),
     - `fabric1165/fabric120/fabric121` placement path now normalizes legacy block ids before registry lookup and block-presence checks,
