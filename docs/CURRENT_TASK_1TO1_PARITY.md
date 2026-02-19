@@ -101,6 +101,12 @@
    - modern publish scope key now derives from scoreboard `ID` line (legacy contract: score `12` line containing `ID`) with normalization `trim -> default`,
    - adapters now expose sidebar rows as scored lines (`[score] text`) so core can resolve score-12 `ID` deterministically,
    - when scoreboard rows are temporarily unavailable, modern reuses last known valid `ID` line (`scoreboard_cached`) instead of immediate blind reset.
+13. Re-place cursor parity slice (run):
+   - core placement stage for menu-payload steps now calls adapter with original `PlaceRuntimeEntry` (not temporary clone),
+   - adapters now consume `forceRePlaceRequested` and roll cursor back by one slot before re-place,
+   - prevents re-place drift to next row/step target after menu-timeout force-replace cycle.
+14. Menu route transient guard slice:
+   - when route key is temporarily unresolved and random path is unavailable, runtime now waits/reopen-cycles (`WAIT_MENU_ROUTE`) before hard `NO_PATH_GUI`.
 
 ### Verified Now
 1. Compile gates passed:
@@ -123,6 +129,9 @@
 4. Scoreboard-late-load publish parity:
    - verify logs show `stage=publish.scope source=scoreboard_live|scoreboard_cached`,
    - verify `publish.sign.cache_hit key=` uses scoreboard-based scope, not only coord-derived fallback.
+5. Run re-place/menu gate:
+   - verify step0 no longer drifts to wrong target after `MENU_REPLACE`,
+   - verify reduced false `NO_PATH_GUI` (transient unresolved route should retry before fail).
 
 ## Required Trace Gates (must be visible in logs)
 

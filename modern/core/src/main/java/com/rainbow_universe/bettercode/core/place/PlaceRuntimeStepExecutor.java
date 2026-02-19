@@ -61,10 +61,9 @@ public final class PlaceRuntimeStepExecutor {
         }
 
         if (!entry.placedBlock()) {
-            PlaceRuntimeEntry blockOnly = new PlaceRuntimeEntry(
-                false, false, entry.blockId(), "", "no", java.util.Collections.<PlaceArgSpec>emptyList()
-            );
-            PlaceExecResult placed = bridge.executePlaceStep(blockOnly, false);
+            // Use the original runtime entry so adapter can observe re-place intent flags
+            // and keep position parity for force-replace cycles.
+            PlaceExecResult placed = bridge.executePlaceStep(entry, false);
             if (!placed.ok()) {
                 return placed;
             }
@@ -299,6 +298,13 @@ public final class PlaceRuntimeStepExecutor {
                 }
                 int randomSlot = findRandomMenuSlot(view, entry.randomClicks());
                 if (randomSlot < 0) {
+                    // Transient unresolved menu state: wait/reopen before hard failing route.
+                    if (now - entry.menuStartMs() < MENU_TIMEOUT_MS) {
+                        entry.setNeedOpenMenu(true);
+                        entry.setMenuRetrySinceMs(now);
+                        entry.setNextMenuActionMs(now + Math.max(120, delay));
+                        return PlaceExecResult.inProgress(0, "WAIT_MENU_ROUTE");
+                    }
                     return fail(logger, "NO_PATH_GUI", "menu key not found and random path unavailable: " + routeKey);
                 }
                 ClickResult rndClick = bridge.clickSlot(view.windowId(), randomSlot, 0, "PICKUP");

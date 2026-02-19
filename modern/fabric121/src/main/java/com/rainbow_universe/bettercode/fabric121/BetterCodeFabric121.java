@@ -899,11 +899,10 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                     return PlaceExecResult.ok(1);
                 }
 
-                String rawName = entry.name() == null ? "" : entry.name().trim();
-                String rawArgs = entry.argsRaw() == null ? "" : entry.argsRaw().trim();
-                if (!rawName.isEmpty() || (!rawArgs.isEmpty() && !"no".equalsIgnoreCase(rawArgs))) {
-                    return PlaceExecResult.fail(0, 0, "DIRECT_MENU_RUNTIME_CORE_OWNED",
-                        "name/args path is handled by core step executor");
+                // Core owns menu/args flow, but adapter must still place/re-place the block for the same entry.
+                if (entry.forceRePlaceRequested() && DIRECT_PLACE_STATE.cursor > 0) {
+                    DIRECT_PLACE_STATE.cursor--;
+                    entry.setForceRePlaceRequested(false);
                 }
 
                 String blockId = entry.blockId() == null ? "" : entry.blockId().trim();

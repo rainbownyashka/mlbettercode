@@ -22,6 +22,12 @@
     - adapters now export sidebar score rows via `scoreboardLines()` (`[score] text`),
     - core resolves scope from score `12` line containing `ID` (fallback: cached last valid ID, then `default`),
     - publish trace includes `stage=publish.scope source=scoreboard_live|scoreboard_cached|default`.
+  - run re-place cursor parity hardening:
+    - core placement call now uses original runtime entry for menu-payload steps (keeps re-place flags intact),
+    - adapters consume `forceRePlaceRequested` and rewind one cursor step before re-place,
+    - intended to prevent step drift and false `PLACE_CONFIRM_TIMEOUT` after `MENU_REPLACE`.
+  - menu route transient unresolved guard:
+    - unresolved route with no random candidates now enters bounded wait/reopen (`WAIT_MENU_ROUTE`) before final `NO_PATH_GUI`.
 - `/mldsl run` plan execution path wired to place pipeline.
 - Chest page merge logic stores and reuses merged snapshot across pages.
 - `/loadmodule` supports explicit error reasons (timeout/http/ssl/etc.).
