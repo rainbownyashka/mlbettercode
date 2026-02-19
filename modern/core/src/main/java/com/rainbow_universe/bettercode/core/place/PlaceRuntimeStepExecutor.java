@@ -28,8 +28,8 @@ public final class PlaceRuntimeStepExecutor {
     private static final int MAX_ARG_MISSES = 60;
     private static final int MAX_MENU_OPEN_ATTEMPTS = 8;
     private static final int MAX_MENU_REPLACE_CYCLES = 2;
-    private static final int MAX_RANDOM_ROUTE_CLICKS = 12;
-    private static final int MAX_RANDOM_SAME_HASH_MISSES = 6;
+    private static final int MAX_RANDOM_ROUTE_CLICKS = 250;
+    private static final int MAX_RANDOM_SAME_HASH_MISSES = 250;
     private static final long RANDOM_ROUTE_MIN_GAP_MS = 220L;
     private static final long MENU_CLICK_MIN_GAP_MS = 300L;
     private static final long MENU_NEXT_ACTION_MIN_GAP_MS = 220L;

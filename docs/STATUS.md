@@ -362,6 +362,9 @@
     - core menu-stage pacing aligned closer to legacy cadence (`300ms` per-window click gap, `220ms` next-action gate) to reduce burst-click pressure in unresolved GUI states,
     - modern Fabric adapters (`1165/120/121`) now skip duplicate `END_CLIENT_TICK` passes within the same world tick/dimension, preventing double step execution/click bursts when client tick callback fires twice,
     - `fabric1165` hot-loop place diagnostics deduped (removed duplicate per-attempt print; kept structured `PLACE_CLICK_RESULT`) to reduce logger-induced frame/tick pressure during retries.
+  - random-route parity realignment follow-up (2026-02-19):
+    - random menu fallback pacing now uses legacy-aligned floor (`>=220ms`),
+    - random fallback attempt budget restored to legacy-scale limit (`250`) to avoid early `RANDOM_EXHAUSTED` drift on deep/unusual GUI chains.
   - legacy block-id compatibility slice (modern Fabric adapters):
     - added shared mapper `LegacyBlockIdCompat` in core for common 1.12->1.13+ renames (`planks -> oak_planks` and related defaults),
     - `fabric1165/fabric120/fabric121` placement path now normalizes legacy block ids before registry lookup and block-presence checks,
