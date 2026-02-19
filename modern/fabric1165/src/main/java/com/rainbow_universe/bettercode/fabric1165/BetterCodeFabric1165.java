@@ -841,6 +841,11 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 if (glass == null) {
                     continue;
                 }
+                if (glass.getY() != s.y()) {
+                    System.out.println("[printer-debug] seed_normalized source=selected_entry_to_glass dim=" + s.dimension()
+                        + " from=" + s.x() + "," + s.y() + "," + s.z()
+                        + " to=" + glass.getX() + "," + glass.getY() + "," + glass.getZ());
+                }
                 seedGlasses.add(new BlockPosView(glass.getX(), glass.getY(), glass.getZ()));
             }
             if (seedGlasses.isEmpty()) {
@@ -1297,6 +1302,11 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 BlockPos glass = normalizeSelectedGlassPos(mc, s.x(), s.y(), s.z());
                 if (glass == null) {
                     continue;
+                }
+                if (glass.getY() != s.y()) {
+                    System.out.println("[publish-debug] selected_row_normalized source=entry_to_glass dim=" + s.dimension()
+                        + " from=" + s.x() + "," + s.y() + "," + s.z()
+                        + " to=" + glass.getX() + "," + glass.getY() + "," + glass.getZ());
                 }
                 out.add(new SelectedRow(s.dimension(), glass.getX(), glass.getY(), glass.getZ()));
             }
