@@ -312,6 +312,10 @@
   - event/lead no-args + tick-spam stabilization slice:
     - params chest stage now follows legacy `1.12.2` guard: when parsed args are empty (`args=no`), runtime skips params-open branch and marks step done (`runtime_state=SKIP_PARAMS_NO_ARGS`) instead of waiting/retrying chest open that should not exist,
     - high-frequency in-progress/verbose tick traces are now rate-limited in core runtime and step executor to reduce periodic client freezes during stuck menu/params loops while keeping state-transition logs.
+  - fabric1165 tick-load + menu-route stall guard slice (2026-02-19):
+    - added per-tick container snapshot cache in adapter (`getContainerSnapshot`) to avoid repeated slot+NBT rebuilds during one client tick,
+    - slot NBT in snapshots is now capped (512 chars) to reduce hot-loop string/regex cost under heavy GUI retries,
+    - core menu route now detects stagnant unresolved GUI hash and forces bounded reopen (`ROUTE_MENU_STAGNANT`) instead of long random-click loops.
   - legacy block-id compatibility slice (modern Fabric adapters):
     - added shared mapper `LegacyBlockIdCompat` in core for common 1.12->1.13+ renames (`planks -> oak_planks` and related defaults),
     - `fabric1165/fabric120/fabric121` placement path now normalizes legacy block ids before registry lookup and block-presence checks,

@@ -90,6 +90,10 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static final LocalTpState LOCAL_TP_STATE = new LocalTpState();
     private static volatile String LAST_WORLD_SEED_HINT_DIM = "";
     private static volatile BlockPos LAST_WORLD_SEED_HINT = null;
+    private static long SNAPSHOT_CACHE_TICK = Long.MIN_VALUE;
+    private static int SNAPSHOT_CACHE_SYNC_ID = -1;
+    private static int SNAPSHOT_CACHE_SCREEN_ID = -1;
+    private static ContainerView SNAPSHOT_CACHE_VIEW = ContainerView.empty();
 
     @Override
     public void onInitializeClient() {
@@ -1547,12 +1551,22 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         public ContainerView getContainerSnapshot() {
             MinecraftClient mc = MinecraftClient.getInstance();
             if (!(mc.currentScreen instanceof HandledScreen) || mc.player == null) {
+                resetSnapshotCache();
                 return ContainerView.empty();
             }
             HandledScreen<?> hs = (HandledScreen<?>) mc.currentScreen;
             try {
+                long tick = mc.world == null ? Long.MIN_VALUE : mc.world.getTime();
+                int syncId = hs.getScreenHandler().syncId;
+                int screenId = System.identityHashCode(hs);
+                if (tick == SNAPSHOT_CACHE_TICK
+                    && syncId == SNAPSHOT_CACHE_SYNC_ID
+                    && screenId == SNAPSHOT_CACHE_SCREEN_ID
+                    && SNAPSHOT_CACHE_VIEW != null) {
+                    return SNAPSHOT_CACHE_VIEW;
+                }
                 List<SlotView> out = new ArrayList<>();
-                int windowId = hs.getScreenHandler().syncId;
+                int windowId = syncId;
                 String title = textToString(hs.getTitle());
                 List<Slot> slots = hs.getScreenHandler().slots;
                 for (int i = 0; i < slots.size(); i++) {
@@ -1568,15 +1582,21 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     if (!empty) {
                         itemId = st.getItem() == null ? "" : String.valueOf(Registry.ITEM.getId(st.getItem()));
                         display = textToString(st.getName());
-                        nbt = readNbtString(st);
+                        nbt = readNbtStringCapped(st, 512);
                     }
                     boolean playerInv = s.inventory == mc.player.inventory;
                     int slotId = readSlotId(s, i);
                     int slotIndex = readSlotIndex(s, slotId);
                     out.add(new SlotView(slotId, slotIndex, playerInv, empty, itemId, display, nbt));
                 }
-                return new ContainerView(windowId, title, hs.getScreenHandler().slots.size(), out);
+                ContainerView built = new ContainerView(windowId, title, hs.getScreenHandler().slots.size(), out);
+                SNAPSHOT_CACHE_TICK = tick;
+                SNAPSHOT_CACHE_SYNC_ID = syncId;
+                SNAPSHOT_CACHE_SCREEN_ID = screenId;
+                SNAPSHOT_CACHE_VIEW = built;
+                return built;
             } catch (Exception e) {
+                resetSnapshotCache();
                 return ContainerView.empty();
             }
         }
@@ -2205,6 +2225,15 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             return "";
         }
 
+        private static String readNbtStringCapped(ItemStack st, int maxLen) {
+            String raw = readNbtString(st);
+            int limit = maxLen <= 0 ? 0 : maxLen;
+            if (limit == 0 || raw == null || raw.length() <= limit) {
+                return raw == null ? "" : raw;
+            }
+            return raw.substring(0, limit);
+        }
+
         private static void applyNbt(ItemStack st, String raw) {
             try {
                 Object parsed = StringNbtReader.class.getMethod("parse", String.class).invoke(null, raw);
@@ -2321,6 +2350,13 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             + " playerFeet=" + feet
             + " candidate=" + candidate
             + " hit=" + hit);
+    }
+
+    private static void resetSnapshotCache() {
+        SNAPSHOT_CACHE_TICK = Long.MIN_VALUE;
+        SNAPSHOT_CACHE_SYNC_ID = -1;
+        SNAPSHOT_CACHE_SCREEN_ID = -1;
+        SNAPSHOT_CACHE_VIEW = ContainerView.empty();
     }
 
     private static boolean setPlayerPositionLocal(MinecraftClient mc, double x, double y, double z) {

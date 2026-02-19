@@ -29,6 +29,7 @@ public final class PlaceRuntimeStepExecutor {
     private static final int MAX_MENU_OPEN_ATTEMPTS = 8;
     private static final int MAX_MENU_REPLACE_CYCLES = 2;
     private static final int MAX_RANDOM_ROUTE_CLICKS = 40;
+    private static final int MAX_RANDOM_SAME_HASH_MISSES = 6;
     private static final int MAX_PLACED_LOST_COUNT = 6;
     private static final long BLOCK_RECHECK_MIN_ELAPSED_MS = 1200L;
     private static final int BLOCK_RECHECK_MISS_REQUIRED = 3;
@@ -345,6 +346,8 @@ public final class PlaceRuntimeStepExecutor {
                 // Reset scope wait timeout from the actual scope click moment.
                 entry.setMenuStartMs(now);
                 entry.setNextMenuActionMs(now + delay);
+                entry.setMenuRouteSameHashMisses(0);
+                entry.setMenuRouteLastHash("");
                 logger.info("printer-debug", "runtime_state=ROUTE_SCOPE slot=" + scopeSlot + " key=" + route.scopeKey);
                 return PlaceExecResult.inProgress(0, "ROUTE_SCOPE");
             }
@@ -362,6 +365,15 @@ public final class PlaceRuntimeStepExecutor {
             String routeKey = route.baseKey;
             int slot = findSlotByAnyKey(view, routeKey, false);
             if (slot < 0) {
+                String menuHash = buildNonPlayerHash(view);
+                if (!menuHash.isEmpty()) {
+                    if (menuHash.equals(entry.menuRouteLastHash())) {
+                        entry.setMenuRouteSameHashMisses(entry.menuRouteSameHashMisses() + 1);
+                    } else {
+                        entry.setMenuRouteLastHash(menuHash);
+                        entry.setMenuRouteSameHashMisses(1);
+                    }
+                }
                 boolean detailedMissLog = verboseTrace && (entry.randomClicks() % 8 == 0);
                 if (detailedMissLog) {
                     logger.info("printer-debug",
@@ -375,6 +387,22 @@ public final class PlaceRuntimeStepExecutor {
                 }
                 if (!route.scopeKey.isEmpty()) {
                     return fail(logger, "SCOPE_TARGET_NOT_FOUND", "menu key not found: " + routeKey);
+                }
+                if (entry.menuRouteSameHashMisses() > MAX_RANDOM_SAME_HASH_MISSES) {
+                    int stagnantMisses = entry.menuRouteSameHashMisses();
+                    if (now - entry.menuStartMs() < MENU_TIMEOUT_MS) {
+                        entry.setNeedOpenMenu(true);
+                        entry.setMenuRetrySinceMs(now);
+                        entry.setNextMenuActionMs(now + Math.max(120, delay));
+                        entry.setMenuClicksSinceOpen(0);
+                        entry.setMenuRouteSameHashMisses(0);
+                        entry.setMenuRouteLastHash("");
+                        logger.info("printer-debug",
+                            "runtime_state=ROUTE_MENU_STAGNANT reopen=1 misses=" + stagnantMisses);
+                        return PlaceExecResult.inProgress(0, "WAIT_MENU_ROUTE_REOPEN");
+                    }
+                    return fail(logger, "NO_PATH_GUI",
+                        "menu route stagnant hash misses=" + stagnantMisses + " key=" + routeKey);
                 }
                 if (entry.randomClicks() >= MAX_RANDOM_ROUTE_CLICKS) {
                     return fail(logger, "RANDOM_EXHAUSTED", "random search exhausted");
@@ -408,6 +436,8 @@ public final class PlaceRuntimeStepExecutor {
             if (!click.accepted()) {
                 return fail(logger, "MENU_CLICK_FAILED", click.reason());
             }
+            entry.setMenuRouteSameHashMisses(0);
+            entry.setMenuRouteLastHash("");
             if (!hasAdvancedArgs(entry)) {
                 entry.setAwaitingMenu(false);
                 entry.setAwaitingParamsChest(false);
