@@ -151,6 +151,12 @@ public final class PlaceRuntimeStepExecutor {
             int expectedWindowId = entry.lastMenuWindowId();
             AckState ack = bridge.waitForWindowChange(expectedWindowId, 0L);
             boolean switched = view.windowId() >= 0 && expectedWindowId >= 0 && view.windowId() != expectedWindowId;
+            logger.info("printer-debug",
+                "params_snapshot expectedWindow=" + expectedWindowId
+                    + " window=" + view.windowId()
+                    + " ack=" + ack
+                    + " needOpenParams=" + entry.needOpenParamsChest()
+                    + " paramsAttempts=" + entry.paramsOpenAttempts());
             if (switched || ack == AckState.ACKED) {
                 entry.setAwaitingParamsChest(false);
                 entry.setAwaitingArgs(true);
@@ -174,11 +180,18 @@ public final class PlaceRuntimeStepExecutor {
                 return fail(logger, "PARAMS_CHEST_TIMEOUT", "params chest did not open in time");
             }
             boolean sameWindow = view.windowId() >= 0 && expectedWindowId >= 0 && view.windowId() == expectedWindowId;
+            boolean noWindow = view.windowId() < 0;
             if (sameWindow && !entry.needOpenParamsChest() && now - entry.paramsStartMs() >= PARAMS_REOPEN_AFTER_MS) {
                 bridge.closeScreen();
                 entry.setNeedOpenParamsChest(true);
                 entry.setNextParamsActionMs(now + Math.max(120, delay));
                 logger.info("printer-debug", "runtime_state=WAIT_PARAMS_CHEST action=close_for_reopen");
+                return PlaceExecResult.inProgress(0, "WAIT_PARAMS_CHEST");
+            }
+            if (noWindow && !entry.needOpenParamsChest() && now - entry.paramsStartMs() >= PARAMS_REOPEN_AFTER_MS) {
+                entry.setNeedOpenParamsChest(true);
+                entry.setNextParamsActionMs(now + Math.max(120, delay));
+                logger.info("printer-debug", "runtime_state=WAIT_PARAMS_CHEST action=reopen_no_window");
                 return PlaceExecResult.inProgress(0, "WAIT_PARAMS_CHEST");
             }
             if (entry.needOpenParamsChest() && now >= entry.nextParamsActionMs()) {

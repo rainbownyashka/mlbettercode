@@ -260,6 +260,9 @@
   - fabric1165 gui/sign extraction hotfix slice:
     - container snapshot slot mapping in `fabric1165` now uses stable slot id/index extraction (direct slot fields + declared/super reflection fallback) and no longer emits `slot=-1/index=-1` in normal GUI snapshots,
     - sign read in `fabric1165` now keeps reflection as first pass but adds NBT fallback (`Text1..Text4`, `fallback=nbt` trace) to avoid false-empty `publish.sign.invalid reason=sign_empty` on valid wall signs.
+  - params/sign live follow-up hardening slice:
+    - params-open stage now emits explicit `params_snapshot` trace (`expectedWindow/window/ack/needOpenParams/attempts`) and actively reopens params target when menu window drops to `-1` (prevents silent `WAIT_PARAMS_CHEST` stall until timeout),
+    - sign reflection fallback in core no longer relies on component class-name containing `text`; it now accepts 4-line array fields on obfuscated runtimes (`array_fallback:<field>`) to reduce `method=none` false empties.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,

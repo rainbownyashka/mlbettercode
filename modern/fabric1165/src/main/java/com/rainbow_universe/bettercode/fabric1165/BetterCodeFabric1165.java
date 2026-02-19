@@ -1596,38 +1596,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 return null;
             }
             try {
-                NbtCompound tag = null;
-                try {
-                    Object v = be.getClass().getMethod("createNbt").invoke(be);
-                    if (v instanceof NbtCompound) {
-                        tag = (NbtCompound) v;
-                    }
-                } catch (Exception ignore) {
-                }
-                if (tag == null) {
-                    NbtCompound tmp = new NbtCompound();
-                    try {
-                        Object v = be.getClass().getMethod("toTag", NbtCompound.class).invoke(be, tmp);
-                        if (v instanceof NbtCompound) {
-                            tag = (NbtCompound) v;
-                        } else {
-                            tag = tmp;
-                        }
-                    } catch (Exception ignore) {
-                    }
-                }
-                if (tag == null) {
-                    NbtCompound tmp = new NbtCompound();
-                    try {
-                        Object v = be.getClass().getMethod("writeNbt", NbtCompound.class).invoke(be, tmp);
-                        if (v instanceof NbtCompound) {
-                            tag = (NbtCompound) v;
-                        } else {
-                            tag = tmp;
-                        }
-                    } catch (Exception ignore) {
-                    }
-                }
+                NbtCompound tag = createBlockEntityNbtReflect(be);
                 if (tag == null) {
                     return null;
                 }
@@ -1650,6 +1619,58 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     out[i] = value == null ? "" : value;
                 }
                 return any ? out : null;
+            } catch (Exception ignore) {
+            }
+            return null;
+        }
+
+        private static NbtCompound createBlockEntityNbtReflect(BlockEntity be) {
+            if (be == null) {
+                return null;
+            }
+            // Prefer no-arg NBT producer methods that return a compound.
+            try {
+                java.lang.reflect.Method[] methods = be.getClass().getMethods();
+                for (java.lang.reflect.Method m : methods) {
+                    if (m == null || m.getParameterCount() != 0) {
+                        continue;
+                    }
+                    if (!NbtCompound.class.isAssignableFrom(m.getReturnType())) {
+                        continue;
+                    }
+                    try {
+                        m.setAccessible(true);
+                        Object out = m.invoke(be);
+                        if (out instanceof NbtCompound) {
+                            return (NbtCompound) out;
+                        }
+                    } catch (Exception ignore) {
+                    }
+                }
+            } catch (Exception ignore) {
+            }
+            // Fallback to writer-style methods with one NbtCompound arg, including obfuscated names.
+            try {
+                java.lang.reflect.Method[] methods = be.getClass().getMethods();
+                for (java.lang.reflect.Method m : methods) {
+                    if (m == null || m.getParameterCount() != 1) {
+                        continue;
+                    }
+                    Class<?> p = m.getParameterTypes()[0];
+                    if (p == null || !p.isAssignableFrom(NbtCompound.class)) {
+                        continue;
+                    }
+                    NbtCompound tmp = new NbtCompound();
+                    try {
+                        m.setAccessible(true);
+                        Object out = m.invoke(be, tmp);
+                        if (out instanceof NbtCompound) {
+                            return (NbtCompound) out;
+                        }
+                        return tmp;
+                    } catch (Exception ignore) {
+                    }
+                }
             } catch (Exception ignore) {
             }
             return null;

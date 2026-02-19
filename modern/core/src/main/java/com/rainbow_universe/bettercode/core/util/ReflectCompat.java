@@ -58,22 +58,24 @@ public final class ReflectCompat {
                 if (f == null || f.getType() == null || !f.getType().isArray()) {
                     continue;
                 }
-                Class<?> c = f.getType().getComponentType();
-                if (c == null || !c.getName().toLowerCase().contains("text")) {
-                    continue;
-                }
                 f.setAccessible(true);
                 Object raw = f.get(be);
                 if (!(raw instanceof Object[])) {
                     continue;
                 }
                 Object[] arr = (Object[]) raw;
+                // Signs should expose exactly 4 rows; this keeps fallback narrow
+                // while still working on obfuscated runtimes where Text class names are remapped.
+                if (arr.length < 4) {
+                    continue;
+                }
                 if (line < 0 || line >= arr.length) {
                     continue;
                 }
-                String s = safe(textToString.apply(arr[line])).trim();
+                Object cell = arr[line];
+                String s = safe(textToString.apply(cell)).trim();
                 if (!s.isEmpty()) {
-                    System.out.println("[publish-debug] SIGN_READ line=" + line + " method=array_fallback value=" + crop(s));
+                    System.out.println("[publish-debug] SIGN_READ line=" + line + " method=array_fallback:" + f.getName() + " value=" + crop(s));
                     return s;
                 }
             }
