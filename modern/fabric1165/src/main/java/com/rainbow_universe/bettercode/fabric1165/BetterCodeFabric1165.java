@@ -32,11 +32,13 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
+import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.StringNbtReader;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardObjective;
@@ -48,6 +50,7 @@ import net.minecraft.text.ClickEvent;
 import net.minecraft.text.LiteralText;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Style;
+import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
@@ -1156,7 +1159,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 List<SlotView> out = new ArrayList<>();
                 int windowId = hs.getScreenHandler().syncId;
                 String title = textToString(hs.getTitle());
-                for (Slot s : hs.getScreenHandler().slots) {
+                List<Slot> slots = hs.getScreenHandler().slots;
+                for (int i = 0; i < slots.size(); i++) {
+                    Slot s = slots.get(i);
                     if (s == null) {
                         continue;
                     }
@@ -1171,7 +1176,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                         nbt = readNbtString(st);
                     }
                     boolean playerInv = s.inventory == mc.player.inventory;
-                    out.add(new SlotView(readIntField(s, "id", -1), readIntField(s, "index", -1), playerInv, empty, itemId, display, nbt));
+                    int slotId = readSlotId(s, i);
+                    int slotIndex = readSlotIndex(s, slotId);
+                    out.add(new SlotView(slotId, slotIndex, playerInv, empty, itemId, display, nbt));
                 }
                 return new ContainerView(windowId, title, hs.getScreenHandler().slots.size(), out);
             } catch (Exception e) {
@@ -1398,7 +1405,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     blockId = String.valueOf(Registry.BLOCK.getId(mc.world.getBlockState(new BlockPos(x, y, z)).getBlock()));
                 } catch (Exception ignore) {
                 }
-                Object be = mc.world.getBlockEntity(new BlockPos(x, y, z));
+                BlockEntity be = mc.world.getBlockEntity(new BlockPos(x, y, z));
                 if (be == null) {
                     System.out.println("[publish-debug] SIGN_READ be_null pos=" + x + "," + y + "," + z + " block=" + blockId);
                     return null;
@@ -1406,6 +1413,16 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 String[] out = new String[4];
                 for (int i = 0; i < 4; i++) {
                     out[i] = readSignLineReflect(be, i);
+                }
+                if (!hasAnySignText(out)) {
+                    String[] fromNbt = readSignLinesFromNbt(be);
+                    if (hasAnySignText(fromNbt)) {
+                        System.out.println("[publish-debug] SIGN_READ adapter=1165 pos=" + x + "," + y + "," + z
+                            + " block=" + blockId
+                            + " fallback=nbt"
+                            + " lines=" + formatLines(fromNbt));
+                        return fromNbt;
+                    }
                 }
                 System.out.println("[publish-debug] SIGN_READ adapter=1165 pos=" + x + "," + y + "," + z
                     + " block=" + blockId
@@ -1480,13 +1497,65 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 return fallback;
             }
             try {
-                java.lang.reflect.Field f = target.getClass().getField(field);
-                f.setAccessible(true);
-                Object v = f.get(target);
+                Class<?> c = target.getClass();
+                while (c != null) {
+                    try {
+                        java.lang.reflect.Field f = c.getDeclaredField(field);
+                        f.setAccessible(true);
+                        Object v = f.get(target);
+                        if (v instanceof Integer) {
+                            return ((Integer) v).intValue();
+                        }
+                    } catch (NoSuchFieldException ignore) {
+                    }
+                    c = c.getSuperclass();
+                }
+            } catch (Exception ignore) {
+            }
+            return fallback;
+        }
+
+        private static int readSlotId(Slot slot, int fallback) {
+            if (slot == null) {
+                return fallback;
+            }
+            try {
+                return slot.id;
+            } catch (Exception ignore) {
+            }
+            int reflected = readIntField(slot, "id", Integer.MIN_VALUE);
+            if (reflected != Integer.MIN_VALUE) {
+                return reflected;
+            }
+            reflected = readIntField(slot, "field_7874", Integer.MIN_VALUE);
+            if (reflected != Integer.MIN_VALUE) {
+                return reflected;
+            }
+            return fallback;
+        }
+
+        private static int readSlotIndex(Slot slot, int fallback) {
+            if (slot == null) {
+                return fallback;
+            }
+            try {
+                Object v = slot.getClass().getMethod("getIndex").invoke(slot);
                 if (v instanceof Integer) {
                     return ((Integer) v).intValue();
                 }
             } catch (Exception ignore) {
+            }
+            int reflected = readIntField(slot, "index", Integer.MIN_VALUE);
+            if (reflected != Integer.MIN_VALUE) {
+                return reflected;
+            }
+            reflected = readIntField(slot, "invSlot", Integer.MIN_VALUE);
+            if (reflected != Integer.MIN_VALUE) {
+                return reflected;
+            }
+            reflected = readIntField(slot, "field_7875", Integer.MIN_VALUE);
+            if (reflected != Integer.MIN_VALUE) {
+                return reflected;
             }
             return fallback;
         }
@@ -1508,6 +1577,82 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
         private static String readSignLineReflect(Object be, int line) {
             return ReflectCompat.readSignLineReflect(be, line, FabricBridge::textToString);
+        }
+
+        private static boolean hasAnySignText(String[] lines) {
+            if (lines == null) {
+                return false;
+            }
+            for (String line : lines) {
+                if (line != null && !line.trim().isEmpty()) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static String[] readSignLinesFromNbt(BlockEntity be) {
+            if (be == null) {
+                return null;
+            }
+            try {
+                NbtCompound tag = null;
+                try {
+                    Object v = be.getClass().getMethod("createNbt").invoke(be);
+                    if (v instanceof NbtCompound) {
+                        tag = (NbtCompound) v;
+                    }
+                } catch (Exception ignore) {
+                }
+                if (tag == null) {
+                    NbtCompound tmp = new NbtCompound();
+                    try {
+                        Object v = be.getClass().getMethod("toTag", NbtCompound.class).invoke(be, tmp);
+                        if (v instanceof NbtCompound) {
+                            tag = (NbtCompound) v;
+                        } else {
+                            tag = tmp;
+                        }
+                    } catch (Exception ignore) {
+                    }
+                }
+                if (tag == null) {
+                    NbtCompound tmp = new NbtCompound();
+                    try {
+                        Object v = be.getClass().getMethod("writeNbt", NbtCompound.class).invoke(be, tmp);
+                        if (v instanceof NbtCompound) {
+                            tag = (NbtCompound) v;
+                        } else {
+                            tag = tmp;
+                        }
+                    } catch (Exception ignore) {
+                    }
+                }
+                if (tag == null) {
+                    return null;
+                }
+                String[] out = new String[4];
+                boolean any = false;
+                for (int i = 0; i < 4; i++) {
+                    String key = "Text" + (i + 1);
+                    String raw = tag.getString(key);
+                    String value = raw == null ? "" : raw;
+                    if (!value.trim().isEmpty()) {
+                        try {
+                            Text parsed = Text.Serializer.fromJson(value);
+                            value = textToString(parsed);
+                        } catch (Exception ignore) {
+                        }
+                    }
+                    if (value != null && !value.trim().isEmpty()) {
+                        any = true;
+                    }
+                    out[i] = value == null ? "" : value;
+                }
+                return any ? out : null;
+            } catch (Exception ignore) {
+            }
+            return null;
         }
 
         private static String formatLines(String[] lines) {

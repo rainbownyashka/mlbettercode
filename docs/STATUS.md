@@ -257,6 +257,9 @@
     - `PublishSignResolver` now logs sign resolve stages (`begin/sign_found/sign_missing/unresolved/ok`) with raw lines and keys,
     - `ReflectCompat` now logs per-line successful sign-read method path (or explicit `method=none`),
     - `fabric1165` adapter now logs direct place-step coordinate tuple (`seed/entry/target`) and click result details (`accepted/reason/ack`), plus sign tile read payload by position.
+  - fabric1165 gui/sign extraction hotfix slice:
+    - container snapshot slot mapping in `fabric1165` now uses stable slot id/index extraction (direct slot fields + declared/super reflection fallback) and no longer emits `slot=-1/index=-1` in normal GUI snapshots,
+    - sign read in `fabric1165` now keeps reflection as first pass but adds NBT fallback (`Text1..Text4`, `fallback=nbt` trace) to avoid false-empty `publish.sign.invalid reason=sign_empty` on valid wall signs.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,
