@@ -33,6 +33,8 @@ public final class PlaceRuntimeStepExecutor {
     private static final int BLOCK_RECHECK_MISS_REQUIRED = 3;
     private static final long PAGE_TURN_TIMEOUT_MS = 1500L;
     private static final int PAGE_TURN_MAX_RETRIES = 5;
+    private static final long VERBOSE_TRACE_GAP_MS = 350L;
+    private static long lastVerboseTraceMs = 0L;
 
     private PlaceRuntimeStepExecutor() {
     }
@@ -59,17 +61,20 @@ public final class PlaceRuntimeStepExecutor {
         if (delay < 0) {
             delay = 0;
         }
-        logger.info("printer-debug",
-            "runtime_tick placed=" + entry.placedBlock()
-                + " awaitingMenu=" + entry.awaitingMenu()
-                + " needOpenMenu=" + entry.needOpenMenu()
-                + " awaitingParams=" + entry.awaitingParamsChest()
-                + " awaitingArgs=" + entry.awaitingArgs()
-                + " menuAttempts=" + entry.menuOpenAttempts()
-                + " menuClicks=" + entry.menuClicksSinceOpen()
-                + " randomClicks=" + entry.randomClicks()
-                + " blockId=" + safe(entry.blockId())
-                + " nameRaw=" + safe(entry.name()));
+        boolean verboseTrace = shouldEmitVerboseTrace(now);
+        if (verboseTrace) {
+            logger.info("printer-debug",
+                "runtime_tick placed=" + entry.placedBlock()
+                    + " awaitingMenu=" + entry.awaitingMenu()
+                    + " needOpenMenu=" + entry.needOpenMenu()
+                    + " awaitingParams=" + entry.awaitingParamsChest()
+                    + " awaitingArgs=" + entry.awaitingArgs()
+                    + " menuAttempts=" + entry.menuOpenAttempts()
+                    + " menuClicks=" + entry.menuClicksSinceOpen()
+                    + " randomClicks=" + entry.randomClicks()
+                    + " blockId=" + safe(entry.blockId())
+                    + " nameRaw=" + safe(entry.name()));
+        }
 
         if (!entry.placedBlock()) {
             // Use the original runtime entry so adapter can observe re-place intent flags
@@ -147,16 +152,26 @@ public final class PlaceRuntimeStepExecutor {
         }
 
         if (entry.awaitingParamsChest()) {
+            if (!hasAdvancedArgs(entry)) {
+                entry.setAwaitingParamsChest(false);
+                entry.setNeedOpenParamsChest(false);
+                entry.setAwaitingArgs(false);
+                entry.setArgsWindowId(-1);
+                logger.info("printer-debug", "runtime_state=SKIP_PARAMS_NO_ARGS");
+                return PlaceExecResult.ok(1);
+            }
             ContainerView view = bridge.getContainerSnapshot();
             int expectedWindowId = entry.lastMenuWindowId();
             AckState ack = bridge.waitForWindowChange(expectedWindowId, 0L);
             boolean switched = view.windowId() >= 0 && expectedWindowId >= 0 && view.windowId() != expectedWindowId;
-            logger.info("printer-debug",
-                "params_snapshot expectedWindow=" + expectedWindowId
-                    + " window=" + view.windowId()
-                    + " ack=" + ack
-                    + " needOpenParams=" + entry.needOpenParamsChest()
-                    + " paramsAttempts=" + entry.paramsOpenAttempts());
+            if (verboseTrace) {
+                logger.info("printer-debug",
+                    "params_snapshot expectedWindow=" + expectedWindowId
+                        + " window=" + view.windowId()
+                        + " ack=" + ack
+                        + " needOpenParams=" + entry.needOpenParamsChest()
+                        + " paramsAttempts=" + entry.paramsOpenAttempts());
+            }
             if (switched || ack == AckState.ACKED) {
                 entry.setAwaitingParamsChest(false);
                 entry.setAwaitingArgs(true);
@@ -210,10 +225,12 @@ public final class PlaceRuntimeStepExecutor {
         if (entry.awaitingMenu()) {
             ContainerView view = bridge.getContainerSnapshot();
             if (view.windowId() < 0) {
-                logger.info("printer-debug",
-                    "menu_snapshot window=-1 attempts=" + entry.menuOpenAttempts()
-                        + " needOpenMenu=" + entry.needOpenMenu()
-                        + " menuStartMs=" + entry.menuStartMs());
+                if (verboseTrace) {
+                    logger.info("printer-debug",
+                        "menu_snapshot window=-1 attempts=" + entry.menuOpenAttempts()
+                            + " needOpenMenu=" + entry.needOpenMenu()
+                            + " menuStartMs=" + entry.menuStartMs());
+                }
                 if (!entry.needOpenMenu()
                     && entry.lastMenuWindowId() == -1
                     && entry.menuRetrySinceMs() > 0L
@@ -258,12 +275,14 @@ public final class PlaceRuntimeStepExecutor {
                 }
                 return PlaceExecResult.inProgress(0, "WAIT_MENU_ACK");
             }
-            logger.info("printer-debug",
-                "menu_snapshot window=" + view.windowId()
-                    + " nonPlayerSlots=" + countNonPlayerSlots(view)
-                    + " nonPlayerItems=" + hasNonPlayerItems(view)
-                    + " hash=" + buildNonPlayerHash(view)
-                    + " summary=" + summarizeNonPlayerSlots(view, 12));
+            if (verboseTrace) {
+                logger.info("printer-debug",
+                    "menu_snapshot window=" + view.windowId()
+                        + " nonPlayerSlots=" + countNonPlayerSlots(view)
+                        + " nonPlayerItems=" + hasNonPlayerItems(view)
+                        + " hash=" + buildNonPlayerHash(view)
+                        + " summary=" + summarizeNonPlayerSlots(view, 12));
+            }
             if (!hasNonPlayerItems(view)) {
                 entry.setMenuNonEmptySinceMs(0L);
                 entry.setMenuNonEmptyWindowId(-1);
@@ -328,10 +347,16 @@ public final class PlaceRuntimeStepExecutor {
             String routeKey = route.baseKey;
             int slot = findSlotByAnyKey(view, routeKey, false);
             if (slot < 0) {
-                logger.info("printer-debug",
-                    "menu_route_miss key=" + routeKey
-                        + " normalized=" + norm(routeKey)
-                        + " summary=" + summarizeNonPlayerSlots(view, 20));
+                if (verboseTrace) {
+                    logger.info("printer-debug",
+                        "menu_route_miss key=" + routeKey
+                            + " normalized=" + norm(routeKey)
+                            + " summary=" + summarizeNonPlayerSlots(view, 20));
+                } else {
+                    logger.info("printer-debug",
+                        "menu_route_miss key=" + routeKey
+                            + " normalized=" + norm(routeKey));
+                }
                 if (!route.scopeKey.isEmpty()) {
                     return fail(logger, "SCOPE_TARGET_NOT_FOUND", "menu key not found: " + routeKey);
                 }
@@ -366,6 +391,18 @@ public final class PlaceRuntimeStepExecutor {
             ClickResult click = bridge.clickSlot(view.windowId(), slot, 0, "PICKUP");
             if (!click.accepted()) {
                 return fail(logger, "MENU_CLICK_FAILED", click.reason());
+            }
+            if (!hasAdvancedArgs(entry)) {
+                entry.setAwaitingMenu(false);
+                entry.setAwaitingParamsChest(false);
+                entry.setNeedOpenParamsChest(false);
+                entry.setAwaitingArgs(false);
+                entry.setArgsWindowId(-1);
+                entry.setLastMenuWindowId(view.windowId());
+                entry.setLastMenuClickMs(now);
+                entry.setMenuClicksSinceOpen(0);
+                logger.info("printer-debug", "runtime_state=SKIP_PARAMS_NO_ARGS");
+                return PlaceExecResult.ok(1);
             }
             entry.setAwaitingMenu(false);
             entry.setAwaitingParamsChest(true);
@@ -601,6 +638,23 @@ public final class PlaceRuntimeStepExecutor {
         }
 
         return PlaceExecResult.ok(1);
+    }
+
+    private static boolean shouldEmitVerboseTrace(long now) {
+        if (now <= 0L) {
+            return true;
+        }
+        synchronized (PlaceRuntimeStepExecutor.class) {
+            if (now - lastVerboseTraceMs < VERBOSE_TRACE_GAP_MS) {
+                return false;
+            }
+            lastVerboseTraceMs = now;
+            return true;
+        }
+    }
+
+    private static boolean hasAdvancedArgs(PlaceRuntimeEntry entry) {
+        return entry != null && entry.args() != null && !entry.args().isEmpty();
     }
 
     private static PlaceExecResult fail(CoreLogger logger, String code, String detail) {

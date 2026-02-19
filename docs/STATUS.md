@@ -263,6 +263,9 @@
   - params/sign live follow-up hardening slice:
     - params-open stage now emits explicit `params_snapshot` trace (`expectedWindow/window/ack/needOpenParams/attempts`) and actively reopens params target when menu window drops to `-1` (prevents silent `WAIT_PARAMS_CHEST` stall until timeout),
     - sign reflection fallback in core no longer relies on component class-name containing `text`; it now accepts 4-line array fields on obfuscated runtimes (`array_fallback:<field>`) to reduce `method=none` false empties.
+  - event/lead no-args + tick-spam stabilization slice:
+    - params chest stage now follows legacy `1.12.2` guard: when parsed args are empty (`args=no`), runtime skips params-open branch and marks step done (`runtime_state=SKIP_PARAMS_NO_ARGS`) instead of waiting/retrying chest open that should not exist,
+    - high-frequency in-progress/verbose tick traces are now rate-limited in core runtime and step executor to reduce periodic client freezes during stuck menu/params loops while keeping state-transition logs.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,

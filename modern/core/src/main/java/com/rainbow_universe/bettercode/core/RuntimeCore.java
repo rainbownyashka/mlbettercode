@@ -271,10 +271,17 @@ public final class RuntimeCore {
                 delay = 0;
             }
             exec.nextStepAtMs = nowMs + delay;
-            logger.info("printer-debug", "tick step in_progress source=" + exec.source
-                + " step=" + exec.state.executedCount()
-                + "/" + exec.state.totalCount()
-                + " reason=" + (step.errorMessage() == null ? "-" : step.errorMessage()));
+            String reason = step.errorMessage() == null ? "-" : step.errorMessage();
+            boolean logNow = !reason.equals(exec.lastInProgressReason)
+                || nowMs - exec.lastInProgressLogMs >= 500L;
+            if (logNow) {
+                logger.info("printer-debug", "tick step in_progress source=" + exec.source
+                    + " step=" + exec.state.executedCount()
+                    + "/" + exec.state.totalCount()
+                    + " reason=" + reason);
+                exec.lastInProgressReason = reason;
+                exec.lastInProgressLogMs = nowMs;
+            }
             return;
         }
         exec.state.markCurrentDone();
@@ -1127,6 +1134,8 @@ public final class RuntimeCore {
         final String config;
         final String path;
         long nextStepAtMs;
+        long lastInProgressLogMs;
+        String lastInProgressReason;
 
         PendingExecution(List<PlaceEntrySpec> specs, String source, String postId, String config, String path) {
             this.source = source == null ? "unknown" : source;
@@ -1135,6 +1144,8 @@ public final class RuntimeCore {
             this.path = path;
             this.state.loadFromSpecs(specs);
             this.nextStepAtMs = System.currentTimeMillis();
+            this.lastInProgressLogMs = 0L;
+            this.lastInProgressReason = "";
         }
     }
 }
