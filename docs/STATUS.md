@@ -348,6 +348,9 @@
     - common row-switch seed selection moved to shared core helper `modern/core/src/main/java/com/rainbow_universe/bettercode/core/place/RowSeedSelector.java`,
     - common stepped TP-path segment builder moved to shared core helper `modern/core/src/main/java/com/rainbow_universe/bettercode/core/util/TpPathPlanner.java`,
     - `fabric120/fabric121` now consume those shared helpers instead of local duplicated algorithms (reduced adapter drift and maintenance overhead without behavior change).
+  - core gui parity follow-up (2026-02-19):
+    - args page-route mismatch vs legacy fixed: when GUI page routing cannot progress, runtime now skips only the current arg (`ARGS_PAGE_ROUTE_SKIP`) instead of hard-failing whole step (`ARGS_PAGE_ROUTE_FAILED`),
+    - menu key fallback aliases expanded in core route matcher (`alternateMenuKeys`) with normalized token stripping (`событие/действие/условие/при`) and extra common action synonyms to reduce residual `NO_PATH_GUI` on server-specific labels.
   - legacy block-id compatibility slice (modern Fabric adapters):
     - added shared mapper `LegacyBlockIdCompat` in core for common 1.12->1.13+ renames (`planks -> oak_planks` and related defaults),
     - `fabric1165/fabric120/fabric121` placement path now normalizes legacy block ids before registry lookup and block-presence checks,

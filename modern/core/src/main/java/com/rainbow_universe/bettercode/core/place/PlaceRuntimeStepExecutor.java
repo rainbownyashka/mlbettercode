@@ -593,7 +593,13 @@ public final class PlaceRuntimeStepExecutor {
                     return PlaceExecResult.inProgress(0, "ARGS_PAGE_WAIT");
                 }
                 if (route.skipArg) {
-                    return fail(logger, "ARGS_PAGE_ROUTE_FAILED", route.reason);
+                    logger.info("printer-debug",
+                        "runtime_state=ARGS_PAGE_ROUTE_SKIP reason=" + safe(route.reason)
+                            + " key=" + safe(arg.keyRaw())
+                            + " idx=" + entry.advancedArgIndex());
+                    entry.setAdvancedArgIndex(entry.advancedArgIndex() + 1);
+                    entry.setLastArgsActionMs(now);
+                    return PlaceExecResult.inProgress(0, "ARGS_PAGE_ROUTE_SKIP");
                 }
                 routedIndex = route.resolvedSlotIndex;
             }
@@ -1139,6 +1145,22 @@ public final class PlaceRuntimeStepExecutor {
         String base = norm(key);
         if (!base.isEmpty()) {
             out.add(base);
+            String stripped = stripMenuNoiseTokens(base);
+            if (!stripped.isEmpty() && !stripped.equals(base)) {
+                out.add(stripped);
+            }
+            if (base.startsWith("событие ")) {
+                out.add(base.substring("событие ".length()).trim());
+            }
+            if (base.startsWith("действие ")) {
+                out.add(base.substring("действие ".length()).trim());
+            }
+            if (base.startsWith("условие ")) {
+                out.add(base.substring("условие ".length()).trim());
+            }
+            if (base.startsWith("при ")) {
+                out.add(base.substring("при ".length()).trim());
+            }
             if (base.contains("вход игрока")) {
                 out.add("событие входа");
                 out.add("событие входа игрока");
@@ -1153,8 +1175,39 @@ public final class PlaceRuntimeStepExecutor {
                 out.add("при входе");
                 out.add("вход");
             }
+            if (base.contains("выдать предмет")) {
+                out.add("выдать");
+                out.add("предмет");
+            }
+            if (base.contains("запустить функцию")) {
+                out.add("запустить");
+                out.add("функцию");
+                out.add("функция");
+            }
         }
-        return out;
+        ArrayList<String> dedup = new ArrayList<String>();
+        java.util.HashSet<String> seen = new java.util.HashSet<String>();
+        for (String s : out) {
+            String n = norm(s);
+            if (n.isEmpty() || !seen.add(n)) {
+                continue;
+            }
+            dedup.add(n);
+        }
+        return dedup;
+    }
+
+    private static String stripMenuNoiseTokens(String s) {
+        String v = norm(s);
+        if (v.isEmpty()) {
+            return "";
+        }
+        v = v.replace("событие ", " ")
+            .replace("действие ", " ")
+            .replace("условие ", " ")
+            .replace("при ", " ");
+        v = v.replaceAll("\\s+", " ").trim();
+        return v;
     }
 
     private static int findSlotByTokenMatch(ContainerView view, String key, boolean skipPlayer) {
