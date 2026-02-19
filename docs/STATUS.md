@@ -58,6 +58,9 @@
     - added tp settle gates before place/skip actions (`WAIT_TP_SETTLE*`) to reduce server-side interact rejects right after movement,
     - added structured place diagnostics (`PLACE_WORLD_STATE`, `PLACE_CLICK_RESULT`) with block ids at `down/target/up`, player position and tp-busy state,
     - reduced `block_id_compat` trace spam via rate-limit/last-key dedupe to lower tick pressure during place loops.
+  - force-replace cursor drift fix (2026-02-19):
+    - removed adapter cursor rollback on `forceRePlaceRequested` in `fabric1165/120/121`,
+    - re-place now stays on the same runtime step anchor (prevents step-1 `planks` from being retried at step-0 `diamond_block` coords after `menu_sign_missing`).
   - menu route transient unresolved guard:
     - unresolved route with no random candidates now enters bounded wait/reopen (`WAIT_MENU_ROUTE`) before final `NO_PATH_GUI`.
   - blue-glass search parity hardening:

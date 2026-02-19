@@ -847,10 +847,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 }
 
                 // Core owns menu/args flow, but adapter must still place/re-place the block for the same entry.
-                if (entry.forceRePlaceRequested() && DIRECT_PLACE_STATE.cursor > 0) {
-                    DIRECT_PLACE_STATE.cursor--;
-                }
                 if (entry.forceRePlaceRequested()) {
+                    // Re-place must stay on the same runtime step index.
+                    // Cursor rollback here causes drift to previous block (legacy mismatch).
                     clearPendingPlaceState(DIRECT_PLACE_STATE);
                     entry.setForceRePlaceRequested(false);
                 }
