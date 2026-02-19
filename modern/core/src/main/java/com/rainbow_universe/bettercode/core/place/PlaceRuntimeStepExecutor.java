@@ -28,6 +28,7 @@ public final class PlaceRuntimeStepExecutor {
     private static final int MAX_ARG_MISSES = 60;
     private static final int MAX_MENU_OPEN_ATTEMPTS = 8;
     private static final int MAX_MENU_REPLACE_CYCLES = 2;
+    private static final int MAX_RANDOM_ROUTE_CLICKS = 40;
     private static final int MAX_PLACED_LOST_COUNT = 6;
     private static final long BLOCK_RECHECK_MIN_ELAPSED_MS = 1200L;
     private static final int BLOCK_RECHECK_MISS_REQUIRED = 3;
@@ -347,7 +348,8 @@ public final class PlaceRuntimeStepExecutor {
             String routeKey = route.baseKey;
             int slot = findSlotByAnyKey(view, routeKey, false);
             if (slot < 0) {
-                if (verboseTrace) {
+                boolean detailedMissLog = verboseTrace && (entry.randomClicks() % 8 == 0);
+                if (detailedMissLog) {
                     logger.info("printer-debug",
                         "menu_route_miss key=" + routeKey
                             + " normalized=" + norm(routeKey)
@@ -360,7 +362,7 @@ public final class PlaceRuntimeStepExecutor {
                 if (!route.scopeKey.isEmpty()) {
                     return fail(logger, "SCOPE_TARGET_NOT_FOUND", "menu key not found: " + routeKey);
                 }
-                if (entry.randomClicks() > 250) {
+                if (entry.randomClicks() >= MAX_RANDOM_ROUTE_CLICKS) {
                     return fail(logger, "RANDOM_EXHAUSTED", "random search exhausted");
                 }
                 int randomSlot = findRandomMenuSlot(view, entry.randomClicks());

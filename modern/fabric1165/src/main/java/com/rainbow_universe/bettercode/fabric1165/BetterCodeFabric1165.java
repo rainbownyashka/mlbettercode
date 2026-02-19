@@ -65,8 +65,10 @@ import net.minecraft.util.registry.Registry;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -79,6 +81,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static volatile RuntimeCore RUNTIME;
     private static volatile ModSettingsService SETTINGS;
     private static final DirectPlaceState DIRECT_PLACE_STATE = new DirectPlaceState();
+    private static final LocalTpState LOCAL_TP_STATE = new LocalTpState();
 
     @Override
     public void onInitializeClient() {
@@ -197,8 +200,10 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     .executes(ctx -> testcaseTp(ctx.getSource())))
         );
 
-        ClientTickEvents.END_CLIENT_TICK.register(client ->
-            runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis()));
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            handleLocalTpPath(client);
+            runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis());
+        });
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
             if (hand != Hand.MAIN_HAND || player == null || world == null || hitResult == null) {
                 return ActionResult.PASS;
@@ -996,8 +1001,11 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 if (!DIRECT_PLACE_STATE.active || DIRECT_PLACE_STATE.seed == null) {
                     return null;
                 }
-                int lastPlacedCursor = Math.max(0, DIRECT_PLACE_STATE.cursor - 1);
-                return DIRECT_PLACE_STATE.seed.add(-2 * lastPlacedCursor, 1, 0);
+                if (DIRECT_PLACE_STATE.pendingTarget != null) {
+                    return DIRECT_PLACE_STATE.pendingTarget.up();
+                }
+                int currentCursor = Math.max(0, DIRECT_PLACE_STATE.cursor);
+                return DIRECT_PLACE_STATE.seed.add(-2 * currentCursor, 1, 0);
             }
         }
 
@@ -1429,13 +1437,63 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
         @Override
         public boolean enqueueTpPath(int x, int y, int z) {
-            return executeClientCommand("tp " + x + " " + y + " " + z)
-                || executeClientCommand("/tp " + x + " " + y + " " + z);
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc == null || mc.player == null || mc.world == null) {
+                return false;
+            }
+            if (y < -64 || y > 320) {
+                return false;
+            }
+            BlockPos target = new BlockPos(x, y, z);
+            if (mc.world.getWorldBorder() != null && !mc.world.getWorldBorder().contains(target)) {
+                return false;
+            }
+            double sx = mc.player.getX();
+            double sy = mc.player.getY();
+            double sz = mc.player.getZ();
+            double dx = x - sx;
+            double dy = y - sy;
+            double dz = z - sz;
+            synchronized (LOCAL_TP_STATE) {
+                LOCAL_TP_STATE.queue.clear();
+                int safety = 0;
+                for (int axis = 0; axis < 3; axis++) {
+                    double delta = axis == 0 ? dx : axis == 1 ? dy : dz;
+                    while (Math.abs(delta) >= 0.001D && safety < 5000) {
+                        double step = Math.min(10.0D, Math.abs(delta)) * Math.signum(delta);
+                        double[] move = new double[] {0.0D, 0.0D, 0.0D};
+                        if (axis == 0) {
+                            move[0] = step;
+                            dx -= step;
+                            delta = dx;
+                        } else if (axis == 1) {
+                            move[1] = step;
+                            dy -= step;
+                            delta = dy;
+                        } else {
+                            move[2] = step;
+                            dz -= step;
+                            delta = dz;
+                        }
+                        LOCAL_TP_STATE.queue.addLast(move);
+                        safety++;
+                    }
+                }
+                if (LOCAL_TP_STATE.queue.isEmpty()) {
+                    return false;
+                }
+                LOCAL_TP_STATE.nextMs = System.currentTimeMillis();
+                System.out.println("[printer-debug] testcase_tp queued target=" + x + "," + y + "," + z
+                    + " steps=" + LOCAL_TP_STATE.queue.size());
+                return true;
+            }
         }
 
         @Override
         public boolean isTpPathBusy() {
-            return false;
+            synchronized (LOCAL_TP_STATE) {
+                return !LOCAL_TP_STATE.queue.isEmpty();
+            }
         }
 
         @Override
@@ -1882,5 +1940,69 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             ReflectCompat.sendLookPacketReflect(mc.player.networkHandler, yaw, pitch, onGround);
         }
 
+    }
+
+    private static final class LocalTpState {
+        final Deque<double[]> queue = new ArrayDeque<double[]>();
+        long nextMs;
+    }
+
+    private static void handleLocalTpPath(MinecraftClient mc) {
+        synchronized (LOCAL_TP_STATE) {
+            if (LOCAL_TP_STATE.queue.isEmpty()) {
+                return;
+            }
+            if (mc == null || mc.player == null || mc.world == null) {
+                LOCAL_TP_STATE.queue.clear();
+                return;
+            }
+            long now = System.currentTimeMillis();
+            if (now < LOCAL_TP_STATE.nextMs) {
+                return;
+            }
+            try {
+                mc.player.abilities.allowFlying = true;
+                mc.player.abilities.flying = true;
+                mc.player.sendAbilitiesUpdate();
+            } catch (Exception ignore) {
+            }
+            double[] step = LOCAL_TP_STATE.queue.pollFirst();
+            if (step == null) {
+                return;
+            }
+            double nx = mc.player.getX() + step[0];
+            double ny = mc.player.getY() + step[1];
+            double nz = mc.player.getZ() + step[2];
+            if (!setPlayerPositionLocal(mc, nx, ny, nz)) {
+                LOCAL_TP_STATE.queue.clear();
+                return;
+            }
+            mc.player.setVelocity(0.0, 0.0, 0.0);
+            LOCAL_TP_STATE.nextMs = now + 300L;
+        }
+    }
+
+    private static boolean setPlayerPositionLocal(MinecraftClient mc, double x, double y, double z) {
+        if (mc == null || mc.player == null) {
+            return false;
+        }
+        try {
+            mc.player.setPosition(x, y, z);
+            return true;
+        } catch (Exception ignore) {
+        }
+        try {
+            java.lang.reflect.Method m = mc.player.getClass().getMethod("updatePosition", double.class, double.class, double.class);
+            m.invoke(mc.player, x, y, z);
+            return true;
+        } catch (Exception ignore) {
+        }
+        try {
+            java.lang.reflect.Method m = mc.player.getClass().getMethod("refreshPositionAndAngles", double.class, double.class, double.class, float.class, float.class);
+            m.invoke(mc.player, x, y, z, mc.player.yaw, mc.player.pitch);
+            return true;
+        } catch (Exception ignore) {
+        }
+        return false;
     }
 }

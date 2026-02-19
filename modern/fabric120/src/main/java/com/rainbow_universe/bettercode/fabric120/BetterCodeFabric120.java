@@ -1064,8 +1064,11 @@ public final class BetterCodeFabric120 implements ClientModInitializer {
                 if (!DIRECT_PLACE_STATE.active || DIRECT_PLACE_STATE.seed == null) {
                     return null;
                 }
-                int lastPlacedCursor = Math.max(0, DIRECT_PLACE_STATE.cursor - 1);
-                return DIRECT_PLACE_STATE.seed.add(-2 * lastPlacedCursor, 1, 0);
+                if (DIRECT_PLACE_STATE.pendingTarget != null) {
+                    return DIRECT_PLACE_STATE.pendingTarget.up();
+                }
+                int currentCursor = Math.max(0, DIRECT_PLACE_STATE.cursor);
+                return DIRECT_PLACE_STATE.seed.add(-2 * currentCursor, 1, 0);
             }
         }
 

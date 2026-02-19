@@ -34,6 +34,10 @@
       - `/testcase setpos` stores current crosshair block (fallback player block) with dimension,
       - `/testcase rightclick` performs legacy-style right click at saved position,
       - `/testcase tp` queues local TP path to saved position.
+  - follow-up hotfix slice (2026-02-19, log-driven):
+    - fixed runtime menu-anchor drift in adapters: menu/sign open anchor now resolves current step entry (and pending target), not `cursor-1` previous step,
+    - `fabric1165` `/testcase tp` no longer depends on `/tp` command permissions: now uses local queued TP-path steps (legacy-like axis stepping, 10-block segments, 300ms tick cadence),
+    - core menu random fallback is now bounded tighter (`MAX_RANDOM_ROUTE_CLICKS=40`) and detailed `menu_route_miss ... summary=` logging is throttled (every 8th miss) to reduce freeze spikes under route-miss loops.
   - menu route transient unresolved guard:
     - unresolved route with no random candidates now enters bounded wait/reopen (`WAIT_MENU_ROUTE`) before final `NO_PATH_GUI`.
   - blue-glass search parity hardening:
