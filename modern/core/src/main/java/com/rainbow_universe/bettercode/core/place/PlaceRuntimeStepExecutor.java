@@ -13,8 +13,10 @@ import com.rainbow_universe.bettercode.core.settings.SettingsProvider;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public final class PlaceRuntimeStepExecutor {
     private static final long MENU_TIMEOUT_MS = 6000L;
@@ -40,6 +42,8 @@ public final class PlaceRuntimeStepExecutor {
     private static final int PAGE_TURN_MAX_RETRIES = 5;
     private static final long VERBOSE_TRACE_GAP_MS = 1600L;
     private static long lastVerboseTraceMs = 0L;
+    private static final int MAX_MENU_HINT_KEYS = 512;
+    private static final Map<String, Set<String>> MENU_SUBMENU_HINTS = new HashMap<String, Set<String>>();
 
     private PlaceRuntimeStepExecutor() {
     }
@@ -332,6 +336,7 @@ public final class PlaceRuntimeStepExecutor {
                 return PlaceExecResult.inProgress(0, "WAIT_MENU_CONTENT_STABLE");
             }
             if (entry.triedWindowId() != view.windowId()) {
+                rememberLearnedMenuFromWindow(entry, view);
                 entry.setTriedWindowId(view.windowId());
                 entry.setMenuClicksSinceOpen(0);
                 entry.clearTriedMenuSlots();
@@ -367,6 +372,7 @@ public final class PlaceRuntimeStepExecutor {
                 }
                 entry.setMenuClicksSinceOpen(1);
                 entry.markTriedMenuSlot(scopeSlot);
+                entry.setLastMenuClickedKey(menuSlotKey(view, scopeSlot));
                 entry.setLastMenuWindowId(view.windowId());
                 entry.setLastMenuClickMs(now);
                 // Reset scope wait timeout from the actual scope click moment.
@@ -390,6 +396,13 @@ public final class PlaceRuntimeStepExecutor {
 
             String routeKey = route.baseKey;
             int slot = findSlotByAnyKey(view, routeKey, false);
+            if (slot < 0) {
+                int learned = findSlotByLearnedMenuHints(view, routeKey);
+                if (learned >= 0) {
+                    slot = learned;
+                    logger.info("printer-debug", "menu_route_learned_fallback key=" + routeKey + " slot=" + slot);
+                }
+            }
             if (slot < 0) {
                 String menuHash = buildNonPlayerHash(view);
                 if (!menuHash.isEmpty()) {
@@ -464,6 +477,7 @@ public final class PlaceRuntimeStepExecutor {
                 entry.setRandomClicks(entry.randomClicks() + 1);
                 entry.setMenuClicksSinceOpen(entry.menuClicksSinceOpen() + 1);
                 entry.markTriedMenuSlot(randomSlot);
+                entry.setLastMenuClickedKey(menuSlotKey(view, randomSlot));
                 entry.setLastMenuWindowId(view.windowId());
                 entry.setLastMenuClickMs(now);
                 entry.setMenuStartMs(now);
@@ -483,6 +497,7 @@ public final class PlaceRuntimeStepExecutor {
                 return fail(logger, "MENU_CLICK_FAILED", click.reason());
             }
             entry.markTriedMenuSlot(slot);
+            entry.setLastMenuClickedKey(menuSlotKey(view, slot));
             entry.setMenuRouteSameHashMisses(0);
             entry.setMenuRouteLastHash("");
             if (!hasAdvancedArgs(entry)) {
@@ -1829,6 +1844,93 @@ public final class PlaceRuntimeStepExecutor {
             }
         }
         return sb.length() == 0 ? "-" : sb.toString();
+    }
+
+    private static void rememberLearnedMenuFromWindow(PlaceRuntimeEntry entry, ContainerView view) {
+        if (entry == null || view == null) {
+            return;
+        }
+        String clickKey = norm(entry.lastMenuClickedKey());
+        if (clickKey.isEmpty() || view.windowId() < 0 || !hasNonPlayerItems(view)) {
+            return;
+        }
+        HashSet<String> learned = new HashSet<String>();
+        for (SlotView s : view.slots()) {
+            if (s == null || s.playerInventory() || s.empty()) {
+                continue;
+            }
+            String dn = norm(s.displayName());
+            if (!dn.isEmpty()) {
+                learned.add(dn);
+            }
+            String nn = norm(s.nbt());
+            if (!nn.isEmpty()) {
+                learned.add(nn);
+            }
+        }
+        if (learned.isEmpty()) {
+            return;
+        }
+        if (MENU_SUBMENU_HINTS.size() > MAX_MENU_HINT_KEYS && !MENU_SUBMENU_HINTS.containsKey(clickKey)) {
+            MENU_SUBMENU_HINTS.clear();
+        }
+        Set<String> existing = MENU_SUBMENU_HINTS.get(clickKey);
+        if (existing == null) {
+            existing = new HashSet<String>();
+            MENU_SUBMENU_HINTS.put(clickKey, existing);
+        }
+        existing.addAll(learned);
+        entry.setLastMenuClickedKey("");
+    }
+
+    private static int findSlotByLearnedMenuHints(ContainerView view, String routeKey) {
+        if (view == null || view.slots() == null) {
+            return -1;
+        }
+        String wanted = norm(routeKey);
+        if (wanted.isEmpty()) {
+            return -1;
+        }
+        for (SlotView s : view.slots()) {
+            if (s == null || s.playerInventory() || s.empty()) {
+                continue;
+            }
+            String k = norm(s.displayName());
+            if (k.isEmpty()) {
+                continue;
+            }
+            Set<String> hints = MENU_SUBMENU_HINTS.get(k);
+            if (hints == null || hints.isEmpty()) {
+                continue;
+            }
+            for (String h : hints) {
+                String hh = norm(h);
+                if (hh.isEmpty()) {
+                    continue;
+                }
+                if (hh.equals(wanted) || hh.contains(wanted)) {
+                    return s.slotNumber();
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static String menuSlotKey(ContainerView view, int slotNumber) {
+        SlotView s = findSlotBySlotNumber(view, slotNumber);
+        return s == null ? "" : norm(s.displayName());
+    }
+
+    private static SlotView findSlotBySlotNumber(ContainerView view, int slotNumber) {
+        if (view == null || view.slots() == null) {
+            return null;
+        }
+        for (SlotView s : view.slots()) {
+            if (s != null && s.slotNumber() == slotNumber) {
+                return s;
+            }
+        }
+        return null;
     }
 
     private static String safe(String v) {
