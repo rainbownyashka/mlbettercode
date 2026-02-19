@@ -337,6 +337,12 @@ public final class PlaceRuntimeStepExecutor {
                     + " base=" + route.baseKey
                     + " scope=" + route.scopeKey);
             if (!route.scopeKey.isEmpty() && entry.menuClicksSinceOpen() == 0) {
+                if (!ensureCursorClear(entry, bridge, now)) {
+                    if (isCursorTimeout(entry, now)) {
+                        return fail(logger, "CURSOR_NOT_EMPTY", "cursor not empty during menu scope click");
+                    }
+                    return PlaceExecResult.inProgress(0, "MENU_CURSOR_WAIT");
+                }
                 int scopeSlot = findSlotByKey(view, route.scopeKey, false);
                 if (scopeSlot < 0) {
                     return fail(logger, "SCOPE_MENU_NOT_FOUND", "scope menu not found: " + route.scopeKey);
@@ -424,6 +430,12 @@ public final class PlaceRuntimeStepExecutor {
                     }
                     return fail(logger, "NO_PATH_GUI", "menu key not found and random path unavailable: " + routeKey);
                 }
+                if (!ensureCursorClear(entry, bridge, now)) {
+                    if (isCursorTimeout(entry, now)) {
+                        return fail(logger, "CURSOR_NOT_EMPTY", "cursor not empty during random menu click");
+                    }
+                    return PlaceExecResult.inProgress(0, "MENU_CURSOR_WAIT");
+                }
                 ClickResult rndClick = bridge.clickSlot(view.windowId(), randomSlot, 0, "PICKUP");
                 if (!rndClick.accepted()) {
                     return fail(logger, "MENU_CLICK_FAILED", rndClick.reason());
@@ -438,6 +450,12 @@ public final class PlaceRuntimeStepExecutor {
                 logger.info("printer-debug",
                     "runtime_state=ROUTE_MENU_RANDOM slot=" + randomSlot + " randomClicks=" + entry.randomClicks());
                 return PlaceExecResult.inProgress(0, "ROUTE_MENU_RANDOM");
+            }
+            if (!ensureCursorClear(entry, bridge, now)) {
+                if (isCursorTimeout(entry, now)) {
+                    return fail(logger, "CURSOR_NOT_EMPTY", "cursor not empty during menu target click");
+                }
+                return PlaceExecResult.inProgress(0, "MENU_CURSOR_WAIT");
             }
             ClickResult click = bridge.clickSlot(view.windowId(), slot, 0, "PICKUP");
             if (!click.accepted()) {

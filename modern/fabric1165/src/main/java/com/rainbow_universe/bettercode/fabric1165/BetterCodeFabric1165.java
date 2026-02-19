@@ -1720,7 +1720,10 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             }
             ClickResult packetLike = sendUseItemOnBlock(x, y, z);
             boolean accepted = packetLike != null && packetLike.accepted();
-            boolean interactAccepted = useBlockAt(x, y, z, purpose == null ? "legacy_click_interact" : purpose + "_interact");
+            boolean interactAccepted = false;
+            if (!accepted) {
+                interactAccepted = useBlockAt(x, y, z, purpose == null ? "legacy_click_interact" : purpose + "_interact");
+            }
             if (accepted || interactAccepted) {
                 return ClickResult.accepted(AckState.PENDING);
             }
