@@ -15,6 +15,7 @@ import com.rainbow_universe.bettercode.core.bridge.BlockPosView;
 import com.rainbow_universe.bettercode.core.bridge.ClickResult;
 import com.rainbow_universe.bettercode.core.bridge.ContainerView;
 import com.rainbow_universe.bettercode.core.bridge.CursorState;
+import com.rainbow_universe.bettercode.core.bridge.CodeSelectorStore;
 import com.rainbow_universe.bettercode.core.bridge.SelectedRow;
 import com.rainbow_universe.bettercode.core.bridge.SlotView;
 import com.rainbow_universe.bettercode.core.place.PlaceRuntimeEntry;
@@ -22,6 +23,7 @@ import com.rainbow_universe.bettercode.core.place.BlueGlassSearch;
 import com.rainbow_universe.bettercode.core.settings.ModSettingsService;
 import com.rainbow_universe.bettercode.core.settings.SettingDef;
 import com.rainbow_universe.bettercode.core.settings.SettingType;
+import com.rainbow_universe.bettercode.core.util.ReflectCompat;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v1.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v1.FabricClientCommandSource;
@@ -67,7 +69,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static final String CODE_SELECTOR_TAG = "mldsl_code_selector";
     private static final long CODE_SELECTOR_TOGGLE_COOLDOWN_MS = 180L;
     private static long lastCodeSelectorToggleMs = 0L;
-    private static final Map<String, SelectedBlock> SELECTED = new LinkedHashMap<>();
+    private static final Map<String, SelectedRow> SELECTED = new LinkedHashMap<>();
     private static volatile RuntimeCore RUNTIME;
     private static volatile ModSettingsService SETTINGS;
     private static final DirectPlaceState DIRECT_PLACE_STATE = new DirectPlaceState();
@@ -336,17 +338,15 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             return false;
         }
         String dim = world.getRegistryKey().getValue().toString();
-        String key = dim + ":" + glassPos.toShortString();
-        if (SELECTED.containsKey(key)) {
-            SELECTED.remove(key);
-            if (showActionBar) {
-                player.sendMessage(new LiteralText("§eУбрано строк: " + SELECTED.size()), true);
-            }
-            return true;
-        }
-        SELECTED.put(key, new SelectedBlock(dim, glassPos.getX(), glassPos.getY(), glassPos.getZ()));
+        CodeSelectorStore.ToggleResult toggled = CodeSelectorStore.toggle(
+            SELECTED,
+            dim,
+            glassPos.getX(),
+            glassPos.getY(),
+            glassPos.getZ()
+        );
         if (showActionBar) {
-            player.sendMessage(new LiteralText("§aВыбрано строк: " + SELECTED.size()), true);
+            player.sendMessage(new LiteralText((toggled.added() ? "§aВыбрано строк: " : "§eУбрано строк: ") + toggled.selectedCount()), true);
         }
         return true;
     }
@@ -412,8 +412,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             return 1;
         }
         source.sendFeedback(new LiteralText("Selected rows: " + SELECTED.size()));
-        for (SelectedBlock block : SELECTED.values()) {
-            source.sendFeedback(new LiteralText(" - " + block.dimension + " [" + block.x + "," + block.y + "," + block.z + "]"));
+        for (SelectedRow block : SELECTED.values()) {
+            source.sendFeedback(new LiteralText(" - " + block.dimension() + " [" + block.x() + "," + block.y() + "," + block.z() + "]"));
         }
         return 1;
     }
@@ -561,20 +561,6 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
     private static String formatValue(Object v) {
         return v == null ? "<null>" : String.valueOf(v);
-    }
-
-    private static final class SelectedBlock {
-        private final String dimension;
-        private final int x;
-        private final int y;
-        private final int z;
-
-        private SelectedBlock(String dimension, int x, int y, int z) {
-            this.dimension = dimension;
-            this.x = x;
-            this.y = y;
-            this.z = z;
-        }
     }
 
     private static final class DirectPlaceState {
@@ -841,17 +827,17 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             }
             String dim = mc.world.getRegistryKey().getValue().toString();
             List<BlockPosView> seedGlasses = new ArrayList<BlockPosView>();
-            for (SelectedBlock s : SELECTED.values()) {
+            for (SelectedRow s : SELECTED.values()) {
                 if (s == null) {
                     continue;
                 }
-                if (!dim.equals(s.dimension)) {
+                if (!dim.equals(s.dimension())) {
                     continue;
                 }
-                if (!isBlueGlass(mc, s.x, s.y, s.z)) {
+                if (!isBlueGlass(mc, s.x(), s.y(), s.z())) {
                     continue;
                 }
-                seedGlasses.add(new BlockPosView(s.x, s.y, s.z));
+                seedGlasses.add(new BlockPosView(s.x(), s.y(), s.z()));
             }
             if (seedGlasses.isEmpty()) {
                 return null;
@@ -1288,14 +1274,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
         @Override
         public List<SelectedRow> selectedRows() {
-            List<SelectedRow> out = new ArrayList<SelectedRow>();
-            for (SelectedBlock s : SELECTED.values()) {
-                if (s == null) {
-                    continue;
-                }
-                out.add(new SelectedRow(s.dimension, s.x, s.y, s.z));
-            }
-            return out;
+            return new ArrayList<SelectedRow>(SELECTED.values());
         }
 
         @Override
@@ -1477,101 +1456,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
 
         private static String readSignLineReflect(Object be, int line) {
-            if (be == null) {
-                return "";
-            }
-            try {
-                Object text = be.getClass()
-                    .getMethod("getTextOnRow", int.class, boolean.class)
-                    .invoke(be, Integer.valueOf(line), Boolean.FALSE);
-                return textToString(text);
-            } catch (Exception ignore) {
-            }
-            try {
-                Object front = be.getClass().getMethod("getFrontText").invoke(be);
-                Object msg = front.getClass()
-                    .getMethod("getMessage", int.class, boolean.class)
-                    .invoke(front, Integer.valueOf(line), Boolean.FALSE);
-                return textToString(msg);
-            } catch (Exception ignore) {
-            }
-            try {
-                String fromField = readSignLineFromField(be, "text", line);
-                if (!fromField.isEmpty()) {
-                    return fromField;
-                }
-            } catch (Exception ignore) {
-            }
-            try {
-                String fromField = readSignLineFromField(be, "texts", line);
-                if (!fromField.isEmpty()) {
-                    return fromField;
-                }
-            } catch (Exception ignore) {
-            }
-            try {
-                String fromField = readSignLineFromField(be, "messages", line);
-                if (!fromField.isEmpty()) {
-                    return fromField;
-                }
-            } catch (Exception ignore) {
-            }
-            try {
-                java.lang.reflect.Field[] fields = be.getClass().getDeclaredFields();
-                for (java.lang.reflect.Field f : fields) {
-                    if (f == null) {
-                        continue;
-                    }
-                    Class<?> t = f.getType();
-                    if (t == null || !t.isArray()) {
-                        continue;
-                    }
-                    Class<?> component = t.getComponentType();
-                    if (component == null) {
-                        continue;
-                    }
-                    String cn = component.getName().toLowerCase();
-                    if (!cn.contains("text")) {
-                        continue;
-                    }
-                    f.setAccessible(true);
-                    Object raw = f.get(be);
-                    if (!(raw instanceof Object[])) {
-                        continue;
-                    }
-                    Object[] arr = (Object[]) raw;
-                    if (line >= 0 && line < arr.length) {
-                        String s = textToString(arr[line]).trim();
-                        if (!s.isEmpty()) {
-                            return s;
-                        }
-                    }
-                }
-            } catch (Exception ignore) {
-            }
-            return "";
-        }
-
-        private static String readSignLineFromField(Object be, String fieldName, int line) {
-            if (be == null || fieldName == null || fieldName.isEmpty()) {
-                return "";
-            }
-            try {
-                java.lang.reflect.Field f = be.getClass().getDeclaredField(fieldName);
-                f.setAccessible(true);
-                Object raw = f.get(be);
-                if (!(raw instanceof Object[])) {
-                    return "";
-                }
-                Object[] arr = (Object[]) raw;
-                if (line < 0 || line >= arr.length) {
-                    return "";
-                }
-                String s = textToString(arr[line]).trim();
-                return s == null ? "" : s;
-            } catch (Exception ignore) {
-                return "";
-            }
+            return ReflectCompat.readSignLineReflect(be, line, FabricBridge::textToString);
         }
 
         private static String readNbtString(ItemStack st) {
@@ -1631,44 +1516,15 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
 
         private static void sendLookPacketReflect(MinecraftClient mc, float yaw, float pitch) {
-            if (mc == null || mc.player == null || mc.player.networkHandler == null) {
+            if (mc == null || mc.player == null) {
                 return;
             }
-            Object packet = null;
             boolean onGround = false;
             try {
                 onGround = mc.player.isOnGround();
             } catch (Exception ignore) {
             }
-            String[] candidates = new String[] {
-                "net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket$LookAndOnGround",
-                "net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket$LookOnly"
-            };
-            for (String cn : candidates) {
-                try {
-                    Class<?> c = Class.forName(cn);
-                    java.lang.reflect.Constructor<?> ctor = c.getDeclaredConstructor(float.class, float.class, boolean.class);
-                    ctor.setAccessible(true);
-                    packet = ctor.newInstance(Float.valueOf(yaw), Float.valueOf(pitch), Boolean.valueOf(onGround));
-                    if (packet != null) {
-                        break;
-                    }
-                } catch (Exception ignore) {
-                }
-            }
-            if (packet == null) {
-                return;
-            }
-            try {
-                for (java.lang.reflect.Method m : mc.player.networkHandler.getClass().getMethods()) {
-                    if (!"sendPacket".equals(m.getName()) || m.getParameterCount() != 1) {
-                        continue;
-                    }
-                    m.invoke(mc.player.networkHandler, packet);
-                    return;
-                }
-            } catch (Exception ignore) {
-            }
+            ReflectCompat.sendLookPacketReflect(mc.player.networkHandler, yaw, pitch, onGround);
         }
 
     }
