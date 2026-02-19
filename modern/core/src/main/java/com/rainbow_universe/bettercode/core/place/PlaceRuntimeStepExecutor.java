@@ -920,6 +920,10 @@ public final class PlaceRuntimeStepExecutor {
             if (slot >= 0) {
                 return slot;
             }
+            slot = findSlotByCombinedTokenMatch(view, candidate, skipPlayer);
+            if (slot >= 0) {
+                return slot;
+            }
         }
         return -1;
     }
@@ -932,11 +936,15 @@ public final class PlaceRuntimeStepExecutor {
             if (base.contains("вход игрока")) {
                 out.add("событие входа");
                 out.add("событие входа игрока");
+                out.add("при входе игрока");
+                out.add("при входе");
                 out.add("вход");
             }
             if (base.contains("событие входа")) {
                 out.add("вход игрока");
                 out.add("входа игрока");
+                out.add("при входе игрока");
+                out.add("при входе");
                 out.add("вход");
             }
         }
@@ -997,6 +1005,43 @@ public final class PlaceRuntimeStepExecutor {
                 continue;
             }
             String hay = norm(s.nbt());
+            if (hay.isEmpty()) {
+                continue;
+            }
+            boolean all = true;
+            for (String t : wanted) {
+                if (t == null || t.isEmpty()) {
+                    continue;
+                }
+                if (!hay.contains(t)) {
+                    all = false;
+                    break;
+                }
+            }
+            if (all) {
+                return s.slotNumber();
+            }
+        }
+        return -1;
+    }
+
+    private static int findSlotByCombinedTokenMatch(ContainerView view, String key, boolean skipPlayer) {
+        if (view == null) {
+            return -1;
+        }
+        String normKey = norm(key);
+        if (normKey.isEmpty()) {
+            return -1;
+        }
+        String[] wanted = normKey.split(" ");
+        for (SlotView s : view.slots()) {
+            if (s == null) {
+                continue;
+            }
+            if (skipPlayer && s.playerInventory()) {
+                continue;
+            }
+            String hay = (norm(s.displayName()) + " " + norm(s.nbt())).trim();
             if (hay.isEmpty()) {
                 continue;
             }

@@ -242,6 +242,9 @@
   - sign-read reflection compatibility hardening (modern core):
     - `ReflectCompat.readSignLineReflect(...)` now tries additional public/legacy access paths (`getTextOnRow(int)`, public field lookup, superclass declared-field scan),
     - intended to reduce false-empty sign reads on obfuscated/variant sign implementations before `PUBLISH_SIGN_INVALID`.
+  - route-matching parity hardening (modern core):
+    - menu resolver now includes combined token matching over `displayName + nbt` after direct/contains/token paths (closer to legacy click-map intent),
+    - event-route aliases expanded (`при входе игрока` / `при входе`) to reduce residual `NO_PATH_GUI` mismatches on server-specific GUI labels.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,
