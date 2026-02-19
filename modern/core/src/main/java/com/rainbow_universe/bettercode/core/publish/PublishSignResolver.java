@@ -47,6 +47,9 @@ public final class PublishSignResolver {
         int signX = ctx.signX();
         int signY = ctx.signY();
         int signZ = ctx.signZ();
+        System.out.println("[publish-debug] SIGN_RESOLVE begin dim=" + dim
+            + " entry=" + entryX + "," + entryY + "," + entryZ
+            + " sign_hint=" + signX + "," + signY + "," + signZ);
 
         // Legacy parity: find sign at z-1 from entry across y offsets [-2..0].
         int[] signPos = findLegacySignPos(bridge, entryX, entryY, entryZ);
@@ -58,6 +61,12 @@ public final class PublishSignResolver {
             signZ = signPos[2];
             signPresent = true;
             liveLines = bridge.readSignLinesAt(signX, signY, signZ);
+            System.out.println("[publish-debug] SIGN_RESOLVE sign_found pos="
+                + signX + "," + signY + "," + signZ
+                + " liveLines=" + formatLines(liveLines));
+        } else {
+            System.out.println("[publish-debug] SIGN_RESOLVE sign_missing_at_zminus1 entry="
+                + entryX + "," + entryY + "," + entryZ);
         }
 
         String scopeBase = (scopeCacheKey == null || scopeCacheKey.trim().isEmpty()) ? "default:" + dim : scopeCacheKey.trim() + ":" + dim;
@@ -67,6 +76,11 @@ public final class PublishSignResolver {
         String signPosKey = dim + ":" + signX + ":" + signY + ":" + signZ;
         PublishCacheView.ResolvedSign resolved = cacheView.resolve(scopeKey, dimPosKey, entryKey, signPosKey, liveLines);
         if (resolved == null || PublishCacheView.isInvalid(resolved.lines)) {
+            System.out.println("[publish-debug] SIGN_RESOLVE unresolved reason="
+                + (resolved == null ? "resolved_null" : "resolved_invalid")
+                + " signPresent=" + signPresent
+                + " liveLines=" + formatLines(liveLines)
+                + " keys scope=" + scopeKey + " dimPos=" + dimPosKey + " entry=" + entryKey);
             if (!signPresent) {
                 return Result.fail("sign_missing");
             }
@@ -75,6 +89,8 @@ public final class PublishSignResolver {
             }
             return Result.fail("cache_miss");
         }
+        System.out.println("[publish-debug] SIGN_RESOLVE ok source=" + resolved.source + " key=" + resolved.key
+            + " lines=" + formatLines(resolved.lines));
         return Result.ok(resolved.source, resolved.key, resolved.lines);
     }
 
@@ -110,5 +126,24 @@ public final class PublishSignResolver {
         String[] out = new String[src.length];
         System.arraycopy(src, 0, out, 0, src.length);
         return out;
+    }
+
+    private static String formatLines(String[] lines) {
+        if (lines == null) {
+            return "null";
+        }
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) {
+                sb.append(" | ");
+            }
+            String v = lines[i] == null ? "" : lines[i].trim();
+            if (v.length() > 64) {
+                v = v.substring(0, 64) + "...";
+            }
+            sb.append(i).append('=').append(v);
+        }
+        sb.append(']');
+        return sb.toString();
     }
 }

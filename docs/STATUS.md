@@ -252,6 +252,11 @@
     - introduced shared helper `modern/core/src/main/java/com/rainbow_universe/bettercode/core/bridge/SelectedRowNormalizer.java`,
     - `fabric1165`/`fabric120`/`fabric121` now reuse core normalization for `selectedRows()` export and runtime seed preparation (`entry -> glass` correction),
     - removes duplicated adapter-only normalization branches while keeping the same strict behavior/logging.
+  - deep printer/publish diagnostics slice (test build, focused on live root-cause capture):
+    - `PlaceRuntimeStepExecutor` now logs per-tick runtime state and menu snapshots (window/hash/non-player slot summary, route raw/base/scope, route misses),
+    - `PublishSignResolver` now logs sign resolve stages (`begin/sign_found/sign_missing/unresolved/ok`) with raw lines and keys,
+    - `ReflectCompat` now logs per-line successful sign-read method path (or explicit `method=none`),
+    - `fabric1165` adapter now logs direct place-step coordinate tuple (`seed/entry/target`) and click result details (`accepted/reason/ack`), plus sign tile read payload by position.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,

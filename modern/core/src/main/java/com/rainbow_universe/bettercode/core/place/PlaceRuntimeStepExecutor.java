@@ -59,6 +59,17 @@ public final class PlaceRuntimeStepExecutor {
         if (delay < 0) {
             delay = 0;
         }
+        logger.info("printer-debug",
+            "runtime_tick placed=" + entry.placedBlock()
+                + " awaitingMenu=" + entry.awaitingMenu()
+                + " needOpenMenu=" + entry.needOpenMenu()
+                + " awaitingParams=" + entry.awaitingParamsChest()
+                + " awaitingArgs=" + entry.awaitingArgs()
+                + " menuAttempts=" + entry.menuOpenAttempts()
+                + " menuClicks=" + entry.menuClicksSinceOpen()
+                + " randomClicks=" + entry.randomClicks()
+                + " blockId=" + safe(entry.blockId())
+                + " nameRaw=" + safe(entry.name()));
 
         if (!entry.placedBlock()) {
             // Use the original runtime entry so adapter can observe re-place intent flags
@@ -186,6 +197,10 @@ public final class PlaceRuntimeStepExecutor {
         if (entry.awaitingMenu()) {
             ContainerView view = bridge.getContainerSnapshot();
             if (view.windowId() < 0) {
+                logger.info("printer-debug",
+                    "menu_snapshot window=-1 attempts=" + entry.menuOpenAttempts()
+                        + " needOpenMenu=" + entry.needOpenMenu()
+                        + " menuStartMs=" + entry.menuStartMs());
                 if (!entry.needOpenMenu()
                     && entry.lastMenuWindowId() == -1
                     && entry.menuRetrySinceMs() > 0L
@@ -230,6 +245,12 @@ public final class PlaceRuntimeStepExecutor {
                 }
                 return PlaceExecResult.inProgress(0, "WAIT_MENU_ACK");
             }
+            logger.info("printer-debug",
+                "menu_snapshot window=" + view.windowId()
+                    + " nonPlayerSlots=" + countNonPlayerSlots(view)
+                    + " nonPlayerItems=" + hasNonPlayerItems(view)
+                    + " hash=" + buildNonPlayerHash(view)
+                    + " summary=" + summarizeNonPlayerSlots(view, 12));
             if (!hasNonPlayerItems(view)) {
                 entry.setMenuNonEmptySinceMs(0L);
                 entry.setMenuNonEmptyWindowId(-1);
@@ -258,6 +279,10 @@ public final class PlaceRuntimeStepExecutor {
             }
 
             NameRoute route = parseNameRoute(entry.name(), menuRouteResolver.resolvePrimaryMenuKey(entry));
+            logger.info("printer-debug",
+                "menu_route raw=" + safe(entry.name())
+                    + " base=" + route.baseKey
+                    + " scope=" + route.scopeKey);
             if (!route.scopeKey.isEmpty() && entry.menuClicksSinceOpen() == 0) {
                 int scopeSlot = findSlotByKey(view, route.scopeKey, false);
                 if (scopeSlot < 0) {
@@ -290,6 +315,10 @@ public final class PlaceRuntimeStepExecutor {
             String routeKey = route.baseKey;
             int slot = findSlotByAnyKey(view, routeKey, false);
             if (slot < 0) {
+                logger.info("printer-debug",
+                    "menu_route_miss key=" + routeKey
+                        + " normalized=" + norm(routeKey)
+                        + " summary=" + summarizeNonPlayerSlots(view, 20));
                 if (!route.scopeKey.isEmpty()) {
                     return fail(logger, "SCOPE_TARGET_NOT_FOUND", "menu key not found: " + routeKey);
                 }
@@ -1479,6 +1508,36 @@ public final class PlaceRuntimeStepExecutor {
             }
         }
         return false;
+    }
+
+    private static String summarizeNonPlayerSlots(ContainerView view, int limit) {
+        if (view == null || view.slots() == null) {
+            return "-";
+        }
+        StringBuilder sb = new StringBuilder();
+        int count = 0;
+        for (SlotView s : view.slots()) {
+            if (s == null || s.playerInventory()) {
+                continue;
+            }
+            if (count > 0) {
+                sb.append(" | ");
+            }
+            sb.append('#').append(s.slotNumber())
+                .append(" idx=").append(s.index())
+                .append(" item=").append(safe(s.itemId()))
+                .append(" name=").append(safe(norm(s.displayName())));
+            count++;
+            if (count >= limit) {
+                sb.append(" ...");
+                break;
+            }
+        }
+        return sb.length() == 0 ? "-" : sb.toString();
+    }
+
+    private static String safe(String v) {
+        return v == null ? "" : v;
     }
 }
 

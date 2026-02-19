@@ -779,6 +779,15 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 BlockPos target = entryPos.down();
                 String expectedBlockId = String.valueOf(Registry.BLOCK.getId(block));
                 long now = System.currentTimeMillis();
+                System.out.println("[printer-debug] place_step begin cursor=" + DIRECT_PLACE_STATE.cursor
+                    + " seed=" + DIRECT_PLACE_STATE.seed
+                    + " entry=" + entryPos
+                    + " target=" + target
+                    + " block=" + blockId
+                    + " expected=" + expectedBlockId
+                    + " pendingTarget=" + DIRECT_PLACE_STATE.pendingTarget
+                    + " pendingBlock=" + DIRECT_PLACE_STATE.pendingBlockId
+                    + " attempts=" + DIRECT_PLACE_STATE.placeAttempts);
 
                 if (isBlockPlaced(mc, target, block)) {
                     clearPendingPlaceState(DIRECT_PLACE_STATE);
@@ -807,6 +816,12 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 ClickResult result = clickBlockLegacy(target.getX(), target.getY(), target.getZ(), "place_block", true);
                 DIRECT_PLACE_STATE.lastPlaceAttemptMs = now;
                 DIRECT_PLACE_STATE.placeAttempts++;
+                System.out.println("[printer-debug] place_step click result accepted="
+                    + (result != null && result.accepted())
+                    + " reason=" + (result == null ? "null" : result.reason())
+                    + " ack=" + (result == null ? "null" : result.ackState())
+                    + " target=" + target
+                    + " attempts=" + DIRECT_PLACE_STATE.placeAttempts);
                 if (result == null || !result.accepted()) {
                     if (DIRECT_PLACE_STATE.pendingSinceMs > 0L && now - DIRECT_PLACE_STATE.pendingSinceMs > 6000L) {
                         return PlaceExecResult.fail(0, 0, "PLACE_INTERACT_REJECTED",
@@ -1378,14 +1393,23 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 return null;
             }
             try {
+                String blockId = "";
+                try {
+                    blockId = String.valueOf(Registry.BLOCK.getId(mc.world.getBlockState(new BlockPos(x, y, z)).getBlock()));
+                } catch (Exception ignore) {
+                }
                 Object be = mc.world.getBlockEntity(new BlockPos(x, y, z));
                 if (be == null) {
+                    System.out.println("[publish-debug] SIGN_READ be_null pos=" + x + "," + y + "," + z + " block=" + blockId);
                     return null;
                 }
                 String[] out = new String[4];
                 for (int i = 0; i < 4; i++) {
                     out[i] = readSignLineReflect(be, i);
                 }
+                System.out.println("[publish-debug] SIGN_READ adapter=1165 pos=" + x + "," + y + "," + z
+                    + " block=" + blockId
+                    + " lines=" + formatLines(out));
                 return out;
             } catch (Exception ignore) {
             }
@@ -1484,6 +1508,25 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
         private static String readSignLineReflect(Object be, int line) {
             return ReflectCompat.readSignLineReflect(be, line, FabricBridge::textToString);
+        }
+
+        private static String formatLines(String[] lines) {
+            if (lines == null) {
+                return "null";
+            }
+            StringBuilder sb = new StringBuilder("[");
+            for (int i = 0; i < lines.length; i++) {
+                if (i > 0) {
+                    sb.append(" | ");
+                }
+                String v = lines[i] == null ? "" : lines[i].trim();
+                if (v.length() > 64) {
+                    v = v.substring(0, 64) + "...";
+                }
+                sb.append(i).append('=').append(v);
+            }
+            sb.append(']');
+            return sb.toString();
         }
 
         private static String readNbtString(ItemStack st) {
