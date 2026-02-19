@@ -1,9 +1,9 @@
 # Agent Lock
 
-task_id: MOD-091+MOD-092+MOD-094+MOD-095
+task_id: MOD-091+MOD-092+MOD-094+MOD-095+MOD-096
 owner: codex
 status: in_progress
-scope: 1:1 parity migration; run/publish parity with adapter pending-confirm reset, selected-row glass normalization, and sign-read compatibility hardening
+scope: 1:1 parity migration; run/publish parity with adapter pending-confirm reset, selected-row glass normalization, sign-read compatibility hardening, and safe adapter dedup
 files:
   - modern/core/src/main/java/com/rainbow_universe/bettercode/core/place/BlueGlassSearch.java
   - modern/core/src/main/java/com/rainbow_universe/bettercode/core/util/ReflectCompat.java

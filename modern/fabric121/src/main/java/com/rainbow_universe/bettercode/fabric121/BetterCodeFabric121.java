@@ -20,6 +20,7 @@ import com.rainbow_universe.bettercode.core.bridge.ClickResult;
 import com.rainbow_universe.bettercode.core.bridge.ContainerView;
 import com.rainbow_universe.bettercode.core.bridge.CursorState;
 import com.rainbow_universe.bettercode.core.bridge.SelectedRow;
+import com.rainbow_universe.bettercode.core.bridge.SelectedRowNormalizer;
 import com.rainbow_universe.bettercode.core.bridge.SlotView;
 import com.rainbow_universe.bettercode.core.place.PlaceRuntimeEntry;
 import com.rainbow_universe.bettercode.core.place.BlueGlassSearch;
@@ -994,16 +995,19 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                 if (!dim.equals(s.dimension())) {
                     continue;
                 }
-                BlockPos glass = normalizeSelectedGlassPos(mc, s.x(), s.y(), s.z());
-                if (glass == null) {
+                SelectedRow normalized = SelectedRowNormalizer.normalizeToGlassAnchor(
+                    new SelectedRow(s.dimension(), s.x(), s.y(), s.z()),
+                    (x, y, z) -> isBlueGlass(mc, x, y, z)
+                );
+                if (normalized == null) {
                     continue;
                 }
-                if (glass.getY() != s.y()) {
+                if (normalized.y() != s.y()) {
                     System.out.println("[printer-debug] seed_normalized source=selected_entry_to_glass dim=" + s.dimension()
                         + " from=" + s.x() + "," + s.y() + "," + s.z()
-                        + " to=" + glass.getX() + "," + glass.getY() + "," + glass.getZ());
+                        + " to=" + normalized.x() + "," + normalized.y() + "," + normalized.z());
                 }
-                seedGlasses.add(new BlockPosView(glass.getX(), glass.getY(), glass.getZ()));
+                seedGlasses.add(new BlockPosView(normalized.x(), normalized.y(), normalized.z()));
             }
             if (seedGlasses.isEmpty()) {
                 return null;
@@ -1035,16 +1039,6 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             } catch (Exception e) {
                 return false;
             }
-        }
-
-        private static BlockPos normalizeSelectedGlassPos(MinecraftClient mc, int x, int y, int z) {
-            if (isBlueGlass(mc, x, y, z)) {
-                return new BlockPos(x, y, z);
-            }
-            if (isBlueGlass(mc, x, y - 1, z)) {
-                return new BlockPos(x, y - 1, z);
-            }
-            return null;
         }
 
         private static boolean isFreeGlass(MinecraftClient mc, int x, int y, int z) {
@@ -1436,16 +1430,19 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                 if (s == null) {
                     continue;
                 }
-                BlockPos glass = normalizeSelectedGlassPos(mc, s.x(), s.y(), s.z());
-                if (glass == null) {
+                SelectedRow normalized = SelectedRowNormalizer.normalizeToGlassAnchor(
+                    new SelectedRow(s.dimension(), s.x(), s.y(), s.z()),
+                    (x, y, z) -> isBlueGlass(mc, x, y, z)
+                );
+                if (normalized == null) {
                     continue;
                 }
-                if (glass.getY() != s.y()) {
+                if (normalized.y() != s.y()) {
                     System.out.println("[publish-debug] selected_row_normalized source=entry_to_glass dim=" + s.dimension()
                         + " from=" + s.x() + "," + s.y() + "," + s.z()
-                        + " to=" + glass.getX() + "," + glass.getY() + "," + glass.getZ());
+                        + " to=" + normalized.x() + "," + normalized.y() + "," + normalized.z());
                 }
-                out.add(new SelectedRow(s.dimension(), glass.getX(), glass.getY(), glass.getZ()));
+                out.add(normalized);
             }
             return out;
         }

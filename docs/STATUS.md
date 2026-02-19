@@ -248,6 +248,10 @@
   - direct place-click primitive parity hardening (modern Fabric adapters):
     - block placement attempts in `fabric1165`/`fabric120`/`fabric121` now use legacy-like click primitive (`clickBlockLegacy` with look-spoof + packet-like use + interact),
     - reduces dependence on raw local `interactBlock` only path and aligns place attempt semantics with legacy `runPlaceClick` contract.
+  - adapter dedup slice (selected-row normalization):
+    - introduced shared helper `modern/core/src/main/java/com/rainbow_universe/bettercode/core/bridge/SelectedRowNormalizer.java`,
+    - `fabric1165`/`fabric120`/`fabric121` now reuse core normalization for `selectedRows()` export and runtime seed preparation (`entry -> glass` correction),
+    - removes duplicated adapter-only normalization branches while keeping the same strict behavior/logging.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,
