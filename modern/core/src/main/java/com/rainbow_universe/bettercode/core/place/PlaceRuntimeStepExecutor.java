@@ -28,8 +28,9 @@ public final class PlaceRuntimeStepExecutor {
     private static final int MAX_ARG_MISSES = 60;
     private static final int MAX_MENU_OPEN_ATTEMPTS = 8;
     private static final int MAX_MENU_REPLACE_CYCLES = 2;
-    private static final int MAX_RANDOM_ROUTE_CLICKS = 40;
+    private static final int MAX_RANDOM_ROUTE_CLICKS = 12;
     private static final int MAX_RANDOM_SAME_HASH_MISSES = 6;
+    private static final long RANDOM_ROUTE_MIN_GAP_MS = 320L;
     private static final int MAX_PLACED_LOST_COUNT = 6;
     private static final long BLOCK_RECHECK_MIN_ELAPSED_MS = 1200L;
     private static final int BLOCK_RECHECK_MISS_REQUIRED = 3;
@@ -326,6 +327,9 @@ public final class PlaceRuntimeStepExecutor {
                 && now - entry.lastMenuClickMs() < Math.max(180L, delay)) {
                 return PlaceExecResult.inProgress(0, "MENU_ACTION_GAP");
             }
+            if (now < entry.nextMenuActionMs()) {
+                return PlaceExecResult.inProgress(0, "MENU_ACTION_GAP");
+            }
 
             NameRoute route = parseNameRoute(entry.name(), menuRouteResolver.resolvePrimaryMenuKey(entry));
             logger.info("printer-debug",
@@ -430,7 +434,7 @@ public final class PlaceRuntimeStepExecutor {
                 entry.setLastMenuWindowId(view.windowId());
                 entry.setLastMenuClickMs(now);
                 entry.setMenuStartMs(now);
-                entry.setNextMenuActionMs(now + delay);
+                entry.setNextMenuActionMs(now + Math.max(delay, RANDOM_ROUTE_MIN_GAP_MS));
                 logger.info("printer-debug",
                     "runtime_state=ROUTE_MENU_RANDOM slot=" + randomSlot + " randomClicks=" + entry.randomClicks());
                 return PlaceExecResult.inProgress(0, "ROUTE_MENU_RANDOM");
@@ -464,6 +468,7 @@ public final class PlaceRuntimeStepExecutor {
             entry.setLastMenuWindowId(view.windowId());
             entry.setLastMenuClickMs(now);
             entry.setMenuClicksSinceOpen(0);
+            entry.setNextMenuActionMs(now + Math.max(120L, delay));
             logger.info("printer-debug", "runtime_state=ROUTE_MENU slot=" + slot + " key=" + routeKey);
             return PlaceExecResult.inProgress(0, "OPEN_PARAMS_CHEST");
         }
