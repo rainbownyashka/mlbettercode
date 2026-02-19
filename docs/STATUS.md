@@ -7,6 +7,7 @@
 ## Verified features
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
+  - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).
 - Current parity closure progress (code-level, pending runtime gate):
   - strict run seed resolver now excludes crosshair fallback and resolves nearest row as `glass.up` entry in all Fabric adapters,
   - menu open sign target now scans legacy y-offsets (`entry.z-1`, `dy=-2..0`) in all Fabric adapters,

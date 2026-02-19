@@ -1584,7 +1584,75 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                 return asString(text);
             } catch (Exception ignore) {
             }
+            try {
+                String fromField = readSignLineFromField(be, "text", line);
+                if (!fromField.isEmpty()) {
+                    return fromField;
+                }
+            } catch (Exception ignore) {
+            }
+            try {
+                String fromField = readSignLineFromField(be, "texts", line);
+                if (!fromField.isEmpty()) {
+                    return fromField;
+                }
+            } catch (Exception ignore) {
+            }
+            try {
+                String fromField = readSignLineFromField(be, "messages", line);
+                if (!fromField.isEmpty()) {
+                    return fromField;
+                }
+            } catch (Exception ignore) {
+            }
+            try {
+                java.lang.reflect.Field[] fields = be.getClass().getDeclaredFields();
+                for (java.lang.reflect.Field f : fields) {
+                    if (f == null || f.getType() == null || !f.getType().isArray()) {
+                        continue;
+                    }
+                    Class<?> c = f.getType().getComponentType();
+                    if (c == null || !c.getName().toLowerCase().contains("text")) {
+                        continue;
+                    }
+                    f.setAccessible(true);
+                    Object raw = f.get(be);
+                    if (!(raw instanceof Object[])) {
+                        continue;
+                    }
+                    Object[] arr = (Object[]) raw;
+                    if (line >= 0 && line < arr.length) {
+                        String s = asString(arr[line]).trim();
+                        if (!s.isEmpty()) {
+                            return s;
+                        }
+                    }
+                }
+            } catch (Exception ignore) {
+            }
             return "";
+        }
+
+        private static String readSignLineFromField(Object be, String fieldName, int line) {
+            if (be == null || fieldName == null || fieldName.isEmpty()) {
+                return "";
+            }
+            try {
+                java.lang.reflect.Field f = be.getClass().getDeclaredField(fieldName);
+                f.setAccessible(true);
+                Object raw = f.get(be);
+                if (!(raw instanceof Object[])) {
+                    return "";
+                }
+                Object[] arr = (Object[]) raw;
+                if (line < 0 || line >= arr.length) {
+                    return "";
+                }
+                String s = asString(arr[line]).trim();
+                return s == null ? "" : s;
+            } catch (Exception ignore) {
+                return "";
+            }
         }
 
         private static String asString(Object text) {
@@ -1666,6 +1734,48 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             try {
                 mc.player.setYaw(yaw);
                 mc.player.setPitch(pitch);
+            } catch (Exception ignore) {
+            }
+            sendLookPacketReflect(mc, yaw, pitch);
+        }
+
+        private static void sendLookPacketReflect(MinecraftClient mc, float yaw, float pitch) {
+            if (mc == null || mc.player == null || mc.player.networkHandler == null) {
+                return;
+            }
+            Object packet = null;
+            boolean onGround = false;
+            try {
+                onGround = mc.player.isOnGround();
+            } catch (Exception ignore) {
+            }
+            String[] candidates = new String[] {
+                "net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket$LookAndOnGround",
+                "net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket$LookOnly"
+            };
+            for (String cn : candidates) {
+                try {
+                    Class<?> c = Class.forName(cn);
+                    java.lang.reflect.Constructor<?> ctor = c.getDeclaredConstructor(float.class, float.class, boolean.class);
+                    ctor.setAccessible(true);
+                    packet = ctor.newInstance(Float.valueOf(yaw), Float.valueOf(pitch), Boolean.valueOf(onGround));
+                    if (packet != null) {
+                        break;
+                    }
+                } catch (Exception ignore) {
+                }
+            }
+            if (packet == null) {
+                return;
+            }
+            try {
+                for (java.lang.reflect.Method m : mc.player.networkHandler.getClass().getMethods()) {
+                    if (!"sendPacket".equals(m.getName()) || m.getParameterCount() != 1) {
+                        continue;
+                    }
+                    m.invoke(mc.player.networkHandler, packet);
+                    return;
+                }
             } catch (Exception ignore) {
             }
         }
