@@ -747,6 +747,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 // Core owns menu/args flow, but adapter must still place/re-place the block for the same entry.
                 if (entry.forceRePlaceRequested() && DIRECT_PLACE_STATE.cursor > 0) {
                     DIRECT_PLACE_STATE.cursor--;
+                }
+                if (entry.forceRePlaceRequested()) {
+                    clearPendingPlaceState(DIRECT_PLACE_STATE);
                     entry.setForceRePlaceRequested(false);
                 }
 
@@ -834,10 +837,11 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 if (!dim.equals(s.dimension())) {
                     continue;
                 }
-                if (!isBlueGlass(mc, s.x(), s.y(), s.z())) {
+                BlockPos glass = normalizeSelectedGlassPos(mc, s.x(), s.y(), s.z());
+                if (glass == null) {
                     continue;
                 }
-                seedGlasses.add(new BlockPosView(s.x(), s.y(), s.z()));
+                seedGlasses.add(new BlockPosView(glass.getX(), glass.getY(), glass.getZ()));
             }
             if (seedGlasses.isEmpty()) {
                 return null;
@@ -869,6 +873,16 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             } catch (Exception e) {
                 return false;
             }
+        }
+
+        private static BlockPos normalizeSelectedGlassPos(MinecraftClient mc, int x, int y, int z) {
+            if (isBlueGlass(mc, x, y, z)) {
+                return new BlockPos(x, y, z);
+            }
+            if (isBlueGlass(mc, x, y - 1, z)) {
+                return new BlockPos(x, y - 1, z);
+            }
+            return null;
         }
 
         private static boolean isFreeGlass(MinecraftClient mc, int x, int y, int z) {
@@ -1274,7 +1288,19 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
         @Override
         public List<SelectedRow> selectedRows() {
-            return new ArrayList<SelectedRow>(SELECTED.values());
+            MinecraftClient mc = MinecraftClient.getInstance();
+            List<SelectedRow> out = new ArrayList<SelectedRow>();
+            for (SelectedRow s : SELECTED.values()) {
+                if (s == null) {
+                    continue;
+                }
+                BlockPos glass = normalizeSelectedGlassPos(mc, s.x(), s.y(), s.z());
+                if (glass == null) {
+                    continue;
+                }
+                out.add(new SelectedRow(s.dimension(), glass.getX(), glass.getY(), glass.getZ()));
+            }
+            return out;
         }
 
         @Override

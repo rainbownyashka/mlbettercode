@@ -12,6 +12,16 @@ public final class ReflectCompat {
         }
         try {
             Object text = be.getClass()
+                .getMethod("getTextOnRow", int.class)
+                .invoke(be, Integer.valueOf(line));
+            String s = safe(textToString.apply(text)).trim();
+            if (!s.isEmpty()) {
+                return s;
+            }
+        } catch (Exception ignore) {
+        }
+        try {
+            Object text = be.getClass()
                 .getMethod("getTextOnRow", int.class, boolean.class)
                 .invoke(be, Integer.valueOf(line), Boolean.FALSE);
             String s = safe(textToString.apply(text)).trim();
@@ -108,20 +118,39 @@ public final class ReflectCompat {
             return "";
         }
         try {
-            java.lang.reflect.Field f = be.getClass().getDeclaredField(fieldName);
-            f.setAccessible(true);
+            java.lang.reflect.Field f = be.getClass().getField(fieldName);
             Object raw = f.get(be);
-            if (!(raw instanceof Object[])) {
-                return "";
+            if (raw instanceof Object[]) {
+                Object[] arr = (Object[]) raw;
+                if (line >= 0 && line < arr.length) {
+                    return safe(textToString.apply(arr[line])).trim();
+                }
             }
-            Object[] arr = (Object[]) raw;
-            if (line < 0 || line >= arr.length) {
-                return "";
-            }
-            return safe(textToString.apply(arr[line])).trim();
         } catch (Exception ignore) {
-            return "";
         }
+        try {
+            Class<?> cls = be.getClass();
+            while (cls != null && cls != Object.class) {
+                try {
+                    java.lang.reflect.Field f = cls.getDeclaredField(fieldName);
+                    f.setAccessible(true);
+                    Object raw = f.get(be);
+                    if (!(raw instanceof Object[])) {
+                        cls = cls.getSuperclass();
+                        continue;
+                    }
+                    Object[] arr = (Object[]) raw;
+                    if (line < 0 || line >= arr.length) {
+                        return "";
+                    }
+                    return safe(textToString.apply(arr[line])).trim();
+                } catch (NoSuchFieldException miss) {
+                    cls = cls.getSuperclass();
+                }
+            }
+        } catch (Exception ignore) {
+        }
+        return "";
     }
 
     private static String safe(String v) {

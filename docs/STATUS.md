@@ -233,6 +233,15 @@
     - removed non-legacy menu/params generic fallbacks in core (`tryOpenMenuTarget`/`tryOpenParamsTarget`) to keep strict entry-anchor path only,
     - strengthened GUI route lookup with alias + token-set matching for event names (`вход игрока` vs `событие входа`),
     - legacy click primitive now does two-stage interaction (`sendUseItemOnBlock` + direct `interactBlock`) in all Fabric adapters to reduce false `WAIT_MENU_ACK`.
+  - force-replace pending-confirm parity guard (modern Fabric adapters):
+    - `fabric1165`/`fabric120`/`fabric121` now clear adapter pending place-confirm state when core requests `forceRePlace`,
+    - intended to prevent stale pending timers from causing immediate false `PLACE_CONFIRM_TIMEOUT` right after `MENU_REPLACE -> FORCE_REPLACE`.
+  - selected-row normalization hardening (modern Fabric adapters):
+    - runtime seed resolver and publish-selected-row export now normalize coordinates to legacy glass anchor (`glass`, fallback `entry.down` when selected row is stored as entry),
+    - reduces false `DIRECT_RUNTIME_NOT_READY` and publish row/sign coordinate drift when old selector data contains entry coords.
+  - sign-read reflection compatibility hardening (modern core):
+    - `ReflectCompat.readSignLineReflect(...)` now tries additional public/legacy access paths (`getTextOnRow(int)`, public field lookup, superclass declared-field scan),
+    - intended to reduce false-empty sign reads on obfuscated/variant sign implementations before `PUBLISH_SIGN_INVALID`.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,
