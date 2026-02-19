@@ -85,6 +85,9 @@
 8. GUI route normalization parity hardening:
    - core `norm()` now strips MC formatting/punctuation and normalizes spaces (closer to legacy normalize-for-match semantics),
    - menu slot lookup now has additional fallback by tokenized NBT text, reducing false `NO_PATH_GUI` when display names differ.
+9. Block recheck coordinate parity:
+   - fixed core placed-block recheck to validate `entry.down` (legacy place plane) instead of `entry`,
+   - removes false block-lost detection that could trigger unnecessary `FORCE_REPLACE`/timeout chains.
 
 ### Verified Now
 1. Compile gates passed:

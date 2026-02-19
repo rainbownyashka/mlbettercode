@@ -14,7 +14,8 @@
   - direct run placement target aligned to legacy plane (`entry.down`) in all Fabric adapters,
   - params-open click target aligned toward legacy `sign+(0,1,1)` path with Y-offset scan in core executor,
   - sign detection in adapters hardened to registry-id based check (obfuscation-safe), not class-name only,
-  - menu route matching hardened with legacy-like text normalization + tokenized NBT fallback in core route resolver.
+  - menu route matching hardened with legacy-like text normalization + tokenized NBT fallback in core route resolver,
+  - core block-recheck coordinate fixed to legacy plane (`entry.down`) to avoid false block-revert loops.
 - `/mldsl run` plan execution path wired to place pipeline.
 - Chest page merge logic stores and reuses merged snapshot across pages.
 - `/loadmodule` supports explicit error reasons (timeout/http/ssl/etc.).
