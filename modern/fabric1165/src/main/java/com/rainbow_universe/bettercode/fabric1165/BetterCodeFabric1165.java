@@ -36,6 +36,8 @@ import net.minecraft.item.Items;
 import net.minecraft.nbt.StringNbtReader;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardObjective;
+import net.minecraft.scoreboard.ScoreboardPlayerScore;
+import net.minecraft.scoreboard.Team;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.ClickEvent;
@@ -55,6 +57,7 @@ import net.minecraft.util.registry.Registry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -642,6 +645,19 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 return out;
             }
             out.add(sidebar.getDisplayName().getString());
+            List<ScoreboardPlayerScore> scores = new ArrayList<>(scoreboard.getAllPlayerScores(sidebar));
+            scores.removeIf(score -> score == null || score.getPlayerName() == null || score.getPlayerName().startsWith("#"));
+            scores.sort(Comparator.comparingInt(ScoreboardPlayerScore::getScore));
+            int from = Math.max(0, scores.size() - 15);
+            for (int i = from; i < scores.size(); i++) {
+                ScoreboardPlayerScore score = scores.get(i);
+                Team team = scoreboard.getPlayerTeam(score.getPlayerName());
+                String line = Team.decorateName(team, new LiteralText(score.getPlayerName())).getString();
+                if (line == null) {
+                    continue;
+                }
+                out.add("[" + score.getScore() + "] " + line);
+            }
             return out;
         }
 

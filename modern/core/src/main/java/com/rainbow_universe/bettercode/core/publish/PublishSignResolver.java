@@ -31,7 +31,7 @@ public final class PublishSignResolver {
     private PublishSignResolver() {
     }
 
-    public static Result resolve(SelectedRow row, PublishCacheView cacheView, GameBridge bridge) {
+    public static Result resolve(SelectedRow row, PublishCacheView cacheView, GameBridge bridge, String scopeCacheKey) {
         if (row == null || cacheView == null || bridge == null) {
             return Result.fail("null_context");
         }
@@ -60,7 +60,8 @@ public final class PublishSignResolver {
             liveLines = bridge.readSignLinesAt(signX, signY, signZ);
         }
 
-        String scopeKey = dim + ":row:" + entryX + ":" + entryY + ":" + entryZ;
+        String scopeBase = (scopeCacheKey == null || scopeCacheKey.trim().isEmpty()) ? "default:" + dim : scopeCacheKey.trim() + ":" + dim;
+        String scopeKey = scopeBase + ":row:" + entryX + ":" + entryY + ":" + entryZ;
         String dimPosKey = dim + ":" + signX + ":" + signY + ":" + signZ;
         String entryKey = dim + ":entry:" + entryX + ":" + entryY + ":" + entryZ;
         String signPosKey = dim + ":" + signX + ":" + signY + ":" + signZ;

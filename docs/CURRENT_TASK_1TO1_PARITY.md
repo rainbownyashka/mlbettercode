@@ -97,6 +97,10 @@
      - `dimPos` sign lines cache,
      - `entryToSign` mapping (`dim:entry:x:y:z` -> `dim:sign:x:y:z`),
    - cache is loaded at publish start and saved after warmup/sign-validation stages (including fail paths).
+12. Scoreboard scope-key parity slice:
+   - modern publish scope key now derives from scoreboard `ID` line (legacy contract: score `12` line containing `ID`) with normalization `trim -> default`,
+   - adapters now expose sidebar rows as scored lines (`[score] text`) so core can resolve score-12 `ID` deterministically,
+   - when scoreboard rows are temporarily unavailable, modern reuses last known valid `ID` line (`scoreboard_cached`) instead of immediate blind reset.
 
 ### Verified Now
 1. Compile gates passed:
@@ -116,6 +120,9 @@
 3. Publish cache persistence parity:
    - confirm runtime behavior on live server that persisted cache is reused between separate game runs,
    - confirm no stale/empty overwrite regressions vs legacy when sign temporarily unloads.
+4. Scoreboard-late-load publish parity:
+   - verify logs show `stage=publish.scope source=scoreboard_live|scoreboard_cached`,
+   - verify `publish.sign.cache_hit key=` uses scoreboard-based scope, not only coord-derived fallback.
 
 ## Required Trace Gates (must be visible in logs)
 

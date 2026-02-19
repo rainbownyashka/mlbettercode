@@ -18,6 +18,10 @@
   - core block-recheck coordinate fixed to legacy plane (`entry.down`) to avoid false block-revert loops,
   - publish sign-cache scope key now includes dimension to avoid cross-dimension collisions,
   - modern publish sign-cache persistence added (`mldsl_cache/publish_sign_cache.json`) with `scope` + `dimPos` + `entryToSign` maps loaded/saved in core publish flow.
+  - publish scope-key parity aligned to legacy scoreboard ID contract:
+    - adapters now export sidebar score rows via `scoreboardLines()` (`[score] text`),
+    - core resolves scope from score `12` line containing `ID` (fallback: cached last valid ID, then `default`),
+    - publish trace includes `stage=publish.scope source=scoreboard_live|scoreboard_cached|default`.
 - `/mldsl run` plan execution path wired to place pipeline.
 - Chest page merge logic stores and reuses merged snapshot across pages.
 - `/loadmodule` supports explicit error reasons (timeout/http/ssl/etc.).

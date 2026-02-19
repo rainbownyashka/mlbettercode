@@ -56,6 +56,7 @@ public final class RuntimeCore {
     private volatile PendingLoad pendingLoad;
     private volatile PendingExecution pendingExecution;
     private long publishTraceSeq;
+    private volatile String lastScoreboardIdLine;
 
     public RuntimeCore(CoreLogger logger) {
         this(logger, new SettingsProvider() {
@@ -305,6 +306,10 @@ public final class RuntimeCore {
             pl == null ? "selection" : pl.postId,
             pl == null ? "default" : pl.configKey
         );
+        ScopeResolution scope = resolveScopeForPublish(bridge);
+        session.scopeCacheKey = scope.scopeId;
+        publishTrace(bridge, "publish.scope",
+            "source=" + scope.source + " idLine=" + scope.idLine + " scopeKey=" + session.scopeCacheKey + ":" + bridge.currentDimension());
         if (rows != null) {
             session.selectedRows.addAll(rows);
             session.warmupQueue.addAll(rows);
@@ -374,7 +379,7 @@ public final class RuntimeCore {
                         + " entry=" + rowCtx.entryX() + "," + rowCtx.entryY() + "," + rowCtx.entryZ()
                         + " sign=" + rowCtx.signX() + "," + rowCtx.signY() + "," + rowCtx.signZ());
             }
-            PublishSignResolver.Result resolved = PublishSignResolver.resolve(row, session.cacheView, bridge);
+            PublishSignResolver.Result resolved = PublishSignResolver.resolve(row, session.cacheView, bridge, session.scopeCacheKey);
             if (!resolved.ok) {
                 int ex = rowCtx == null ? row.entryX() : rowCtx.entryX();
                 int ey = rowCtx == null ? row.entryY() : rowCtx.entryY();
@@ -409,6 +414,19 @@ public final class RuntimeCore {
         } catch (Exception e) {
             publishTrace(bridge, "publish.cache.save", "error=" + e.getClass().getSimpleName());
         }
+    }
+
+    private ScopeResolution resolveScopeForPublish(GameBridge bridge) {
+        String liveIdLine = ScoreboardScopeResolver.extractScoreboardIdLine(bridge == null ? null : bridge.scoreboardLines());
+        if (liveIdLine != null && !liveIdLine.trim().isEmpty()) {
+            lastScoreboardIdLine = liveIdLine;
+            return new ScopeResolution(liveIdLine, ScoreboardScopeResolver.normalizeScopeId(liveIdLine), "scoreboard_live");
+        }
+        String remembered = lastScoreboardIdLine;
+        if (remembered != null && !remembered.trim().isEmpty()) {
+            return new ScopeResolution(remembered, ScoreboardScopeResolver.normalizeScopeId(remembered), "scoreboard_cached");
+        }
+        return new ScopeResolution("-", ScoreboardScopeResolver.normalizeScopeId(null), "default");
     }
 
     private static RuntimeErrorCode mapPublishErrorCode(String raw) {
@@ -984,6 +1002,18 @@ public final class RuntimeCore {
             value = value.substring(0, value.length() - 1);
         }
         return value.isEmpty() ? HUB_BASE_URL_PRIMARY : value;
+    }
+
+    private static final class ScopeResolution {
+        final String idLine;
+        final String scopeId;
+        final String source;
+
+        ScopeResolution(String idLine, String scopeId, String source) {
+            this.idLine = idLine == null ? "-" : idLine;
+            this.scopeId = scopeId == null || scopeId.trim().isEmpty() ? "default" : scopeId.trim();
+            this.source = source == null ? "default" : source;
+        }
     }
 
     private String resolveHubBaseUrl() {

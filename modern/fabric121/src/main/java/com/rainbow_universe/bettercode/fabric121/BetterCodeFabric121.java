@@ -719,7 +719,95 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                 return out;
             }
             out.add(sidebar.getDisplayName().getString());
+            List<Object> scores = getScoreEntries(scoreboard, sidebar);
+            scores.removeIf(score -> {
+                String playerName = getScorePlayerName(score);
+                return playerName == null || playerName.startsWith("#");
+            });
+            scores.sort((a, b) -> Integer.compare(getScoreValue(a), getScoreValue(b)));
+            int from = Math.max(0, scores.size() - 15);
+            for (int i = from; i < scores.size(); i++) {
+                Object score = scores.get(i);
+                String playerName = getScorePlayerName(score);
+                if (playerName == null || playerName.trim().isEmpty()) {
+                    continue;
+                }
+                out.add("[" + getScoreValue(score) + "] " + playerName);
+            }
             return out;
+        }
+
+        private List<Object> getScoreEntries(Scoreboard scoreboard, ScoreboardObjective objective) {
+            List<Object> out = new ArrayList<Object>();
+            if (scoreboard == null || objective == null) {
+                return out;
+            }
+            Object raw = invokeScoreMethod(scoreboard, "getAllPlayerScores", objective);
+            if (!(raw instanceof Iterable<?>)) {
+                raw = invokeScoreMethod(scoreboard, "getScoreboardEntries", objective);
+            }
+            if (!(raw instanceof Iterable<?>)) {
+                raw = invokeScoreMethod(scoreboard, "getAllScores", objective);
+            }
+            if (raw instanceof Iterable<?>) {
+                for (Object o : (Iterable<?>) raw) {
+                    out.add(o);
+                }
+            }
+            return out;
+        }
+
+        private int getScoreValue(Object score) {
+            if (score == null) {
+                return 0;
+            }
+            try {
+                Object raw = invokeScoreMethod(score, "getScore");
+                if (!(raw instanceof Number)) {
+                    raw = invokeScoreMethod(score, "getScorePoints");
+                }
+                if (!(raw instanceof Number)) {
+                    raw = invokeScoreMethod(score, "getValue");
+                }
+                if (raw instanceof Number) {
+                    return ((Number) raw).intValue();
+                }
+            } catch (Throwable ignored) {
+            }
+            return 0;
+        }
+
+        private String getScorePlayerName(Object score) {
+            if (score == null) {
+                return null;
+            }
+            try {
+                Object raw = invokeScoreMethod(score, "getPlayerName");
+                if (raw == null) {
+                    raw = invokeScoreMethod(score, "getOwner");
+                }
+                if (raw == null) {
+                    raw = invokeScoreMethod(score, "getName");
+                }
+                return raw == null ? null : raw.toString();
+            } catch (Throwable ignored) {
+            }
+            return null;
+        }
+
+        private Object invokeScoreMethod(Object target, String method, Object... args) {
+            if (target == null || method == null) {
+                return null;
+            }
+            try {
+                Class<?>[] sig = new Class<?>[args == null ? 0 : args.length];
+                for (int i = 0; i < sig.length; i++) {
+                    sig[i] = args[i].getClass();
+                }
+                return target.getClass().getMethod(method, sig).invoke(target, args);
+            } catch (Throwable ignored) {
+            }
+            return null;
         }
 
         @Override

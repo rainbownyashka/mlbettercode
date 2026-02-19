@@ -30,6 +30,7 @@ public final class PublishSessionState {
     public long timeoutAtMs;
     public int nextPageRetryCount;
     public String blockedReason;
+    public String scopeCacheKey;
     public final PublishCacheView cacheView = new PublishCacheView();
 
     public final List<File> sourceFiles = new ArrayList<File>();
@@ -59,5 +60,6 @@ public final class PublishSessionState {
         this.timeoutAtMs = startedAtMs + WARMUP_TIMEOUT_MS;
         this.nextPageRetryCount = 0;
         this.blockedReason = "";
+        this.scopeCacheKey = "default";
     }
 }
