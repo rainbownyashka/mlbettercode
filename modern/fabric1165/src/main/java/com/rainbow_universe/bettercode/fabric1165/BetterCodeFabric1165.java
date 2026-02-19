@@ -94,6 +94,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static long LAST_RUNTIME_TICK_WORLD_TIME = Long.MIN_VALUE;
     private static long LAST_RUNTIME_TICK_WALL_MS = 0L;
     private static String LAST_RUNTIME_TICK_DIM = "";
+    private static long LAST_END_TICK_WORLD_TIME = Long.MIN_VALUE;
+    private static String LAST_END_TICK_DIM = "";
     private static String LAST_LEGACY_CLICK_KEY = "";
     private static long LAST_LEGACY_CLICK_MS = 0L;
     private static int LAST_LEGACY_CLICK_BURST = 0;
@@ -223,6 +225,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         );
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (shouldSkipDuplicateEndTick(client)) {
+                return;
+            }
             if (isShutdownLikeState(client)) {
                 runtime().stopActiveExecution(new FabricBridge(null), "client_shutdown_state");
                 clearLocalTpQueue();
@@ -997,12 +1002,6 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                         + " distToStandSq=" + mc.player.squaredDistanceTo(standX, standY, standZ)
                         + " tpBusy=" + isTpPathBusyNow());
                 }
-                System.out.println("[printer-debug] place_step click result accepted="
-                    + (result != null && result.accepted())
-                    + " reason=" + (result == null ? "null" : result.reason())
-                    + " ack=" + (result == null ? "null" : result.ackState())
-                    + " target=" + target
-                    + " attempts=" + DIRECT_PLACE_STATE.placeAttempts);
                 if (result == null || !result.accepted()) {
                     if (DIRECT_PLACE_STATE.pendingSinceMs > 0L && now - DIRECT_PLACE_STATE.pendingSinceMs > 6000L) {
                         return PlaceExecResult.fail(0, 0, "PLACE_INTERACT_REJECTED",
@@ -2389,6 +2388,22 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         LAST_RUNTIME_TICK_WORLD_TIME = worldTick;
         LAST_RUNTIME_TICK_WALL_MS = nowMs;
         LAST_RUNTIME_TICK_DIM = dim;
+    }
+
+    private static boolean shouldSkipDuplicateEndTick(MinecraftClient mc) {
+        if (mc == null || mc.world == null) {
+            LAST_END_TICK_WORLD_TIME = Long.MIN_VALUE;
+            LAST_END_TICK_DIM = "";
+            return false;
+        }
+        long worldTick = mc.world.getTime();
+        String dim = mc.world.getRegistryKey() == null ? "unknown" : String.valueOf(mc.world.getRegistryKey().getValue());
+        if (worldTick == LAST_END_TICK_WORLD_TIME && dim.equals(LAST_END_TICK_DIM)) {
+            return true;
+        }
+        LAST_END_TICK_WORLD_TIME = worldTick;
+        LAST_END_TICK_DIM = dim;
+        return false;
     }
 
     private static void traceLegacyClickBurst(MinecraftClient mc, int x, int y, int z, String purpose) {

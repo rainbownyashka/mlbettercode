@@ -30,7 +30,9 @@ public final class PlaceRuntimeStepExecutor {
     private static final int MAX_MENU_REPLACE_CYCLES = 2;
     private static final int MAX_RANDOM_ROUTE_CLICKS = 12;
     private static final int MAX_RANDOM_SAME_HASH_MISSES = 6;
-    private static final long RANDOM_ROUTE_MIN_GAP_MS = 320L;
+    private static final long RANDOM_ROUTE_MIN_GAP_MS = 220L;
+    private static final long MENU_CLICK_MIN_GAP_MS = 300L;
+    private static final long MENU_NEXT_ACTION_MIN_GAP_MS = 220L;
     private static final int MAX_PLACED_LOST_COUNT = 6;
     private static final long BLOCK_RECHECK_MIN_ELAPSED_MS = 1200L;
     private static final int BLOCK_RECHECK_MISS_REQUIRED = 3;
@@ -100,7 +102,7 @@ public final class PlaceRuntimeStepExecutor {
             entry.setMenuOpenAttempts(0);
             entry.setForceRePlaceRequested(false);
             entry.setMenuReplaceCount(0);
-            entry.setNextMenuActionMs(now + delay);
+            entry.setNextMenuActionMs(now + Math.max(MENU_NEXT_ACTION_MIN_GAP_MS, delay));
             logger.info("printer-debug", "runtime_state=PLACE_BLOCK confirmed=1");
             return PlaceExecResult.inProgress(0, "OPEN_MENU");
         }
@@ -258,7 +260,7 @@ public final class PlaceRuntimeStepExecutor {
                     }
                     entry.setNeedOpenMenu(true);
                     entry.setMenuRetrySinceMs(now);
-                    entry.setNextMenuActionMs(now + Math.max(120, delay));
+                    entry.setNextMenuActionMs(now + Math.max(MENU_NEXT_ACTION_MIN_GAP_MS, delay));
                 }
                 if (entry.needOpenMenu() && now >= entry.nextMenuActionMs()) {
                     if (!ensureCursorClear(entry, bridge, now)) {
@@ -280,7 +282,7 @@ public final class PlaceRuntimeStepExecutor {
                     entry.setNeedOpenMenu(false);
                     entry.setMenuRetrySinceMs(now);
                     entry.setLastOpenAttemptMs(now);
-                    entry.setNextMenuActionMs(now + Math.max(120, delay));
+                    entry.setNextMenuActionMs(now + Math.max(MENU_NEXT_ACTION_MIN_GAP_MS, delay));
                     entry.setMenuOpenAttempts(openAttempt);
                     logger.info("printer-debug",
                         "runtime_state=OPEN_MENU opened=" + opened
@@ -336,7 +338,7 @@ public final class PlaceRuntimeStepExecutor {
             }
             if (entry.lastMenuWindowId() == view.windowId()
                 && entry.lastMenuClickMs() > 0L
-                && now - entry.lastMenuClickMs() < Math.max(180L, delay)) {
+                && now - entry.lastMenuClickMs() < Math.max(MENU_CLICK_MIN_GAP_MS, delay)) {
                 return PlaceExecResult.inProgress(0, "MENU_ACTION_GAP");
             }
             if (now < entry.nextMenuActionMs()) {
@@ -369,7 +371,7 @@ public final class PlaceRuntimeStepExecutor {
                 entry.setLastMenuClickMs(now);
                 // Reset scope wait timeout from the actual scope click moment.
                 entry.setMenuStartMs(now);
-                entry.setNextMenuActionMs(now + delay);
+                entry.setNextMenuActionMs(now + Math.max(MENU_NEXT_ACTION_MIN_GAP_MS, delay));
                 entry.setMenuRouteSameHashMisses(0);
                 entry.setMenuRouteLastHash("");
                 logger.info("printer-debug", "runtime_state=ROUTE_SCOPE slot=" + scopeSlot + " key=" + route.scopeKey);
@@ -417,7 +419,7 @@ public final class PlaceRuntimeStepExecutor {
                     if (now - entry.menuStartMs() < MENU_TIMEOUT_MS) {
                         entry.setNeedOpenMenu(true);
                         entry.setMenuRetrySinceMs(now);
-                        entry.setNextMenuActionMs(now + Math.max(120, delay));
+                        entry.setNextMenuActionMs(now + Math.max(MENU_NEXT_ACTION_MIN_GAP_MS, delay));
                         entry.setMenuClicksSinceOpen(0);
                         entry.setMenuRouteSameHashMisses(0);
                         entry.setMenuRouteLastHash("");
@@ -437,7 +439,7 @@ public final class PlaceRuntimeStepExecutor {
                     if (now - entry.menuStartMs() < MENU_TIMEOUT_MS) {
                         entry.setNeedOpenMenu(true);
                         entry.setMenuRetrySinceMs(now);
-                        entry.setNextMenuActionMs(now + Math.max(120, delay));
+                        entry.setNextMenuActionMs(now + Math.max(MENU_NEXT_ACTION_MIN_GAP_MS, delay));
                         return PlaceExecResult.inProgress(0, "WAIT_MENU_ROUTE");
                     }
                     return fail(logger, "NO_PATH_GUI", "menu key not found and random path unavailable: " + routeKey);
@@ -498,7 +500,7 @@ public final class PlaceRuntimeStepExecutor {
             entry.setLastMenuWindowId(view.windowId());
             entry.setLastMenuClickMs(now);
             entry.setMenuClicksSinceOpen(0);
-            entry.setNextMenuActionMs(now + Math.max(120L, delay));
+            entry.setNextMenuActionMs(now + Math.max(MENU_NEXT_ACTION_MIN_GAP_MS, delay));
             logger.info("printer-debug", "runtime_state=ROUTE_MENU slot=" + slot + " key=" + routeKey);
             return PlaceExecResult.inProgress(0, "OPEN_PARAMS_CHEST");
         }

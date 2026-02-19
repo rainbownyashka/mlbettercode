@@ -356,9 +356,12 @@
   - adapter gui snapshot parity follow-up (2026-02-19):
     - `fabric120/fabric121` container snapshot path now caches per world-tick + syncId + screenId (same approach as 1.16.5 adapter) and resets cache on screen close/error,
     - reduces repeated heavy GUI slot rebuilds during route/args retries and narrows runtime lag drift between adapters under menu loops.
-  - cache compaction + route fallback follow-up (2026-02-19):
-    - `fabric120/fabric121` snapshot cache payload now stores capped NBT strings (`256` chars) to reduce container-view memory pressure in hot GUI loops,
+  - route fallback follow-up (2026-02-19):
     - core menu route fallback now also derives aliases from `>`-separated path segments (legacy click-menu path style), improving resolution for nested menu labels without widening random-click behavior.
+  - runtime pacing + duplicate-tick guard follow-up (2026-02-19):
+    - core menu-stage pacing aligned closer to legacy cadence (`300ms` per-window click gap, `220ms` next-action gate) to reduce burst-click pressure in unresolved GUI states,
+    - modern Fabric adapters (`1165/120/121`) now skip duplicate `END_CLIENT_TICK` passes within the same world tick/dimension, preventing double step execution/click bursts when client tick callback fires twice,
+    - `fabric1165` hot-loop place diagnostics deduped (removed duplicate per-attempt print; kept structured `PLACE_CLICK_RESULT`) to reduce logger-induced frame/tick pressure during retries.
   - legacy block-id compatibility slice (modern Fabric adapters):
     - added shared mapper `LegacyBlockIdCompat` in core for common 1.12->1.13+ renames (`planks -> oak_planks` and related defaults),
     - `fabric1165/fabric120/fabric121` placement path now normalizes legacy block ids before registry lookup and block-presence checks,

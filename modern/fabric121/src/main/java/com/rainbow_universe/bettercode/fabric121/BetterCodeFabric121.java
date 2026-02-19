@@ -91,6 +91,8 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
     private static final DirectPlaceState DIRECT_PLACE_STATE = new DirectPlaceState();
     private static final LocalTpState LOCAL_TP_STATE = new LocalTpState();
     private static final long PLACE_TP_SETTLE_MS = 350L;
+    private static long LAST_END_TICK_WORLD_TIME = Long.MIN_VALUE;
+    private static String LAST_END_TICK_DIM = "";
     private static long SNAPSHOT_CACHE_TICK = Long.MIN_VALUE;
     private static int SNAPSHOT_CACHE_SYNC_ID = -1;
     private static int SNAPSHOT_CACHE_SCREEN_ID = -1;
@@ -223,6 +225,9 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
         ));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (shouldSkipDuplicateEndTick(client)) {
+                return;
+            }
             handleLocalTpPath(client);
             runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis());
         });
@@ -1531,7 +1536,7 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
                     if (!empty) {
                         itemId = st.getItem() == null ? "" : String.valueOf(Registries.ITEM.getId(st.getItem()));
                         display = st.getName() == null ? "" : st.getName().getString();
-                        nbt = readNbtStringCapped(st, 256);
+                        nbt = readNbtString(st);
                     }
                     boolean playerInv = s.inventory == mc.player.getInventory();
                     out.add(new SlotView(readIntField(s, "id", -1), readIntField(s, "index", -1), playerInv, empty, itemId, display, nbt));
@@ -2103,17 +2108,6 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
             return "";
         }
 
-        private static String readNbtStringCapped(ItemStack st, int maxLen) {
-            String nbt = readNbtString(st);
-            if (nbt == null) {
-                return "";
-            }
-            if (nbt.length() <= maxLen) {
-                return nbt;
-            }
-            return nbt.substring(0, Math.max(0, maxLen)) + "...";
-        }
-
         private static void applyDisplayName(ItemStack st, String displayName) {
             if (st == null || displayName == null || displayName.trim().isEmpty()) {
                 return;
@@ -2247,5 +2241,21 @@ public final class BetterCodeFabric121 implements ClientModInitializer {
         SNAPSHOT_CACHE_SYNC_ID = -1;
         SNAPSHOT_CACHE_SCREEN_ID = -1;
         SNAPSHOT_CACHE_VIEW = ContainerView.empty();
+    }
+
+    private static boolean shouldSkipDuplicateEndTick(MinecraftClient mc) {
+        if (mc == null || mc.world == null) {
+            LAST_END_TICK_WORLD_TIME = Long.MIN_VALUE;
+            LAST_END_TICK_DIM = "";
+            return false;
+        }
+        long worldTick = mc.world.getTime();
+        String dim = mc.world.getRegistryKey() == null ? "unknown" : String.valueOf(mc.world.getRegistryKey().getValue());
+        if (worldTick == LAST_END_TICK_WORLD_TIME && dim.equals(LAST_END_TICK_DIM)) {
+            return true;
+        }
+        LAST_END_TICK_WORLD_TIME = worldTick;
+        LAST_END_TICK_DIM = dim;
+        return false;
     }
 }
