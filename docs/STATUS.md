@@ -53,6 +53,11 @@
   - dual-Y place-confirm parity fix (2026-02-19):
     - core block-recheck now accepts both placement planes (`entry.down` and `entry`) to avoid false block-lost loops on vertical jitter,
     - modern Fabric adapters (`1165/120/121`) `isBlockPlaced(...)` now confirms expected block at both `target` and `target.up()`.
+  - fabric1165 place/tp stabilization + diagnostics slice (2026-02-19):
+    - removed instant local tp short-circuit in `enqueueTpPath(...)`; place/skip now use stepped local tp-path only,
+    - added tp settle gates before place/skip actions (`WAIT_TP_SETTLE*`) to reduce server-side interact rejects right after movement,
+    - added structured place diagnostics (`PLACE_WORLD_STATE`, `PLACE_CLICK_RESULT`) with block ids at `down/target/up`, player position and tp-busy state,
+    - reduced `block_id_compat` trace spam via rate-limit/last-key dedupe to lower tick pressure during place loops.
   - menu route transient unresolved guard:
     - unresolved route with no random candidates now enters bounded wait/reopen (`WAIT_MENU_ROUTE`) before final `NO_PATH_GUI`.
   - blue-glass search parity hardening:

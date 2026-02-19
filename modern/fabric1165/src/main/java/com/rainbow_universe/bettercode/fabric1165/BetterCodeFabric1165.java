@@ -76,7 +76,11 @@ import java.util.Map;
 public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static final String CODE_SELECTOR_TAG = "mldsl_code_selector";
     private static final long CODE_SELECTOR_TOGGLE_COOLDOWN_MS = 180L;
+    private static final long PLACE_TP_SETTLE_MS = 350L;
+    private static final long PLACE_WORLD_TRACE_GAP_MS = 300L;
     private static long lastCodeSelectorToggleMs = 0L;
+    private static String lastBlockCompatLogKey = "";
+    private static long lastBlockCompatLogMs = 0L;
     private static final Map<String, SelectedRow> SELECTED = new LinkedHashMap<>();
     private static volatile RuntimeCore RUNTIME;
     private static volatile ModSettingsService SETTINGS;
@@ -632,6 +636,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         long pendingSinceMs;
         long lastPlaceAttemptMs;
         int placeAttempts;
+        long tpSettleUntilMs;
+        long lastPlaceWorldTraceMs;
 
         void reset() {
             active = false;
@@ -644,6 +650,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             pendingSinceMs = 0L;
             lastPlaceAttemptMs = 0L;
             placeAttempts = 0;
+            tpSettleUntilMs = 0L;
+            lastPlaceWorldTraceMs = 0L;
         }
     }
 
@@ -805,6 +813,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 return PlaceExecResult.fail(0, 0, "CLIENT_CONTEXT_MISSING", "player/world/interactionManager unavailable");
             }
             synchronized (DIRECT_PLACE_STATE) {
+                long now = System.currentTimeMillis();
                 if (!DIRECT_PLACE_STATE.active || DIRECT_PLACE_STATE.seed == null) {
                     return PlaceExecResult.fail(0, 0, "DIRECT_RUNTIME_NOT_READY",
                         DIRECT_PLACE_STATE.failReason == null || DIRECT_PLACE_STATE.failReason.isEmpty()
@@ -826,7 +835,11 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                             return PlaceExecResult.fail(0, 0, "TP_PATH_FAILED",
                                 "cannot tp to skip target=" + skipEntry);
                         }
+                        DIRECT_PLACE_STATE.tpSettleUntilMs = now + PLACE_TP_SETTLE_MS;
                         return PlaceExecResult.inProgress(0, "WAIT_TP_PATH_SKIP");
+                    }
+                    if (now < DIRECT_PLACE_STATE.tpSettleUntilMs) {
+                        return PlaceExecResult.inProgress(0, "WAIT_TP_SETTLE_SKIP");
                     }
                     DIRECT_PLACE_STATE.cursor++;
                     System.out.println("[printer-debug] direct_skip_step cursor=" + DIRECT_PLACE_STATE.cursor);
@@ -871,7 +884,6 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 double standY = entryPos.getY();
                 double standZ = entryPos.getZ() - 2.0 + 0.5;
                 String expectedBlockId = String.valueOf(Registry.BLOCK.getId(block));
-                long now = System.currentTimeMillis();
                 System.out.println("[printer-debug] place_step begin cursor=" + DIRECT_PLACE_STATE.cursor
                     + " seed=" + DIRECT_PLACE_STATE.seed
                     + " entry=" + entryPos
@@ -892,8 +904,14 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                         return PlaceExecResult.fail(0, 0, "TP_PATH_FAILED",
                             "cannot tp to entry.z-2 for place target=" + entryPos);
                     }
+                    DIRECT_PLACE_STATE.tpSettleUntilMs = now + PLACE_TP_SETTLE_MS;
                     return PlaceExecResult.inProgress(0, "WAIT_TP_PATH");
                 }
+                if (now < DIRECT_PLACE_STATE.tpSettleUntilMs) {
+                    return PlaceExecResult.inProgress(0, "WAIT_TP_SETTLE");
+                }
+
+                maybeTracePlaceWorldState(mc, entryPos, target, block, now, "before_confirm");
 
                 if (isBlockPlaced(mc, target, block)) {
                     clearPendingPlaceState(DIRECT_PLACE_STATE);
@@ -924,6 +942,19 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 ClickResult result = clickBlockLegacy(target.getX(), target.getY(), target.getZ(), "place_block", true);
                 DIRECT_PLACE_STATE.lastPlaceAttemptMs = now;
                 DIRECT_PLACE_STATE.placeAttempts++;
+                String currentTargetId = blockIdAt(mc, target);
+                String currentUpId = blockIdAt(mc, target.up());
+                String currentDownId = blockIdAt(mc, target.down());
+                System.out.println("[printer-debug] PLACE_CLICK_RESULT accepted="
+                    + (result != null && result.accepted())
+                    + " reason=" + (result == null ? "null" : result.reason())
+                    + " ack=" + (result == null ? "null" : result.ackState())
+                    + " attempt=" + DIRECT_PLACE_STATE.placeAttempts
+                    + " target=" + target
+                + " blocks={down:" + currentDownId + ",target:" + currentTargetId + ",up:" + currentUpId + "}"
+                + " playerPos=" + mc.player.getX() + "," + mc.player.getY() + "," + mc.player.getZ()
+                + " distToStandSq=" + mc.player.squaredDistanceTo(standX, standY, standZ)
+                + " tpBusy=" + isTpPathBusyNow());
                 System.out.println("[printer-debug] place_step click result accepted="
                     + (result != null && result.accepted())
                     + " reason=" + (result == null ? "null" : result.reason())
@@ -939,6 +970,46 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     return PlaceExecResult.inProgress(0, "PLACE_RETRY_INTERACT");
                 }
                 return PlaceExecResult.inProgress(0, "PLACE_WAIT_CONFIRM");
+            }
+        }
+
+        private static void maybeTracePlaceWorldState(MinecraftClient mc, BlockPos entryPos, BlockPos target, Block expected, long now, String stage) {
+            if (mc == null || mc.player == null || mc.world == null || target == null) {
+                return;
+            }
+            if (now - DIRECT_PLACE_STATE.lastPlaceWorldTraceMs < PLACE_WORLD_TRACE_GAP_MS) {
+                return;
+            }
+            DIRECT_PLACE_STATE.lastPlaceWorldTraceMs = now;
+            String expectedId = expected == null ? "?" : String.valueOf(Registry.BLOCK.getId(expected));
+            String targetId = blockIdAt(mc, target);
+            String upId = blockIdAt(mc, target.up());
+            String downId = blockIdAt(mc, target.down());
+            System.out.println("[printer-debug] PLACE_WORLD_STATE stage=" + stage
+                + " entry=" + entryPos
+                + " target=" + target
+                + " expected=" + expectedId
+                + " blocks={down:" + downId + ",target:" + targetId + ",up:" + upId + "}"
+                + " playerPos=" + mc.player.getX() + "," + mc.player.getY() + "," + mc.player.getZ()
+                + " onGround=" + mc.player.isOnGround()
+                + " tpBusy=" + isTpPathBusyNow()
+                + " attempts=" + DIRECT_PLACE_STATE.placeAttempts);
+        }
+
+        private static String blockIdAt(MinecraftClient mc, BlockPos pos) {
+            if (mc == null || mc.world == null || pos == null) {
+                return "unknown";
+            }
+            try {
+                return String.valueOf(Registry.BLOCK.getId(mc.world.getBlockState(pos).getBlock()));
+            } catch (Exception ignore) {
+                return "err";
+            }
+        }
+
+        private static boolean isTpPathBusyNow() {
+            synchronized (LOCAL_TP_STATE) {
+                return !LOCAL_TP_STATE.queue.isEmpty();
             }
         }
 
@@ -1514,13 +1585,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 if (LOCAL_TP_STATE.queue.isEmpty()) {
                     return false;
                 }
-                if (distSq <= 100.0D && setPlayerPositionLocal(mc, x + 0.5D, y, z + 0.5D)) {
-                    LOCAL_TP_STATE.queue.clear();
-                    LOCAL_TP_STATE.nextMs = 0L;
-                    System.out.println("[printer-debug] testcase_tp queued target=" + x + "," + y + "," + z
-                        + " steps=0 immediate=true");
-                    return true;
-                }
+                // Keep stepped tp path only. Instant local set causes frequent server-side desync/reject on place.
                 LOCAL_TP_STATE.nextMs = System.currentTimeMillis();
                 System.out.println("[printer-debug] testcase_tp queued target=" + x + "," + y + "," + z
                     + " steps=" + LOCAL_TP_STATE.queue.size());
@@ -1700,7 +1765,13 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             String normalized = LegacyBlockIdCompat.normalizeForModern(vanillaFixed);
             if (!base.equalsIgnoreCase(normalized)) {
                 String mode = base.equalsIgnoreCase(vanillaFixed) ? "compat_map" : "vanilla_flattening";
-                System.out.println("[printer-debug] block_id_compat mode=" + mode + " from=" + base + " to=" + normalized);
+                String key = mode + "|" + base.toLowerCase() + "|" + normalized.toLowerCase();
+                long now = System.currentTimeMillis();
+                if (!key.equals(lastBlockCompatLogKey) || now - lastBlockCompatLogMs >= 2500L) {
+                    lastBlockCompatLogKey = key;
+                    lastBlockCompatLogMs = now;
+                    System.out.println("[printer-debug] block_id_compat mode=" + mode + " from=" + base + " to=" + normalized);
+                }
             }
             return normalized;
         }
