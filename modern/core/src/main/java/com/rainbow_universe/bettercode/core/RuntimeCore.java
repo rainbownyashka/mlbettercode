@@ -285,12 +285,24 @@ public final class RuntimeCore {
             return;
         }
         exec.state.markCurrentDone();
+        if (hasMenuPayload(stepEntry)) {
+            bridge.onRuntimeStepCompleted(stepEntry);
+        }
         int delay = settings.getInt("printer.stepDelayMs", 80);
         if (delay < 0) {
             delay = 0;
         }
         exec.nextStepAtMs = nowMs + delay;
         logger.info("printer-debug", "tick step ok source=" + exec.source + " step=" + exec.state.executedCount() + "/" + exec.state.totalCount());
+    }
+
+    private static boolean hasMenuPayload(PlaceRuntimeEntry entry) {
+        if (entry == null) {
+            return false;
+        }
+        String rawName = entry.name() == null ? "" : entry.name().trim();
+        String rawArgs = entry.argsRaw() == null ? "" : entry.argsRaw().trim();
+        return !rawName.isEmpty() || (!rawArgs.isEmpty() && !"no".equalsIgnoreCase(rawArgs));
     }
 
     public RuntimeResult handlePublish(GameBridge bridge) {

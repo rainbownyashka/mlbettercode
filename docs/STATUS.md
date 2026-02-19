@@ -27,6 +27,13 @@
     - core placement call now uses original runtime entry for menu-payload steps (keeps re-place flags intact),
     - adapters consume `forceRePlaceRequested` and rewind one cursor step before re-place,
     - intended to prevent step drift and false `PLACE_CONFIRM_TIMEOUT` after `MENU_REPLACE`.
+  - latest live-log stabilization slice (2026-02-19):
+    - fixed menu-payload step cursor progression: adapters now advance cursor on explicit step completion callback from core, not only on immediate block confirm,
+    - reduced wrong-target click risk: sign/params y-offset probes are now tried top-down (`dy=0..-2`) in core/adapters,
+    - added shared debug helper command `/testcase` on modern Fabric adapters:
+      - `/testcase setpos` stores current crosshair block (fallback player block) with dimension,
+      - `/testcase rightclick` performs legacy-style right click at saved position,
+      - `/testcase tp` queues local TP path to saved position.
   - menu route transient unresolved guard:
     - unresolved route with no random candidates now enters bounded wait/reopen (`WAIT_MENU_ROUTE`) before final `NO_PATH_GUI`.
   - blue-glass search parity hardening:

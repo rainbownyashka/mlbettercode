@@ -19,6 +19,9 @@ public interface GameBridge {
     default void onExecutionStop() {
     }
 
+    default void onRuntimeStepCompleted(PlaceRuntimeEntry entry) {
+    }
+
     String currentDimension();
     Path runDirectory();
     List<String> scoreboardLines();

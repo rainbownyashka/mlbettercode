@@ -26,6 +26,7 @@ import com.rainbow_universe.bettercode.core.settings.SettingDef;
 import com.rainbow_universe.bettercode.core.settings.SettingType;
 import com.rainbow_universe.bettercode.core.util.LegacyBlockIdCompat;
 import com.rainbow_universe.bettercode.core.util.ReflectCompat;
+import com.rainbow_universe.bettercode.core.util.TestcaseTool;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v1.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v1.FabricClientCommandSource;
@@ -186,6 +187,16 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     .executes(ctx -> inspectPlan(ctx.getSource(), Path.of(StringArgumentType.getString(ctx, "path")))))
         );
 
+        ClientCommandManager.DISPATCHER.register(
+            ClientCommandManager.literal("testcase")
+                .then(ClientCommandManager.literal("setpos")
+                    .executes(ctx -> testcaseSetPos(ctx.getSource())))
+                .then(ClientCommandManager.literal("rightclick")
+                    .executes(ctx -> testcaseRightClick(ctx.getSource())))
+                .then(ClientCommandManager.literal("tp")
+                    .executes(ctx -> testcaseTp(ctx.getSource())))
+        );
+
         ClientTickEvents.END_CLIENT_TICK.register(client ->
             runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis()));
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
@@ -298,6 +309,43 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
     private static int runCodeSelectorCommand(FabricClientCommandSource source) {
         return issueCodeSelectorTool(source);
+    }
+
+    private static int testcaseSetPos(FabricClientCommandSource source) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.player == null || mc.world == null) {
+            source.sendError(new LiteralText("[testcase] player/world unavailable"));
+            return 0;
+        }
+        BlockPos pos = mc.player.getBlockPos();
+        HitResult target = mc.crosshairTarget;
+        if (target instanceof BlockHitResult) {
+            pos = ((BlockHitResult) target).getBlockPos();
+        }
+        String dim = String.valueOf(mc.world.getRegistryKey().getValue());
+        TestcaseTool.Result result = TestcaseTool.setPos(dim, pos.getX(), pos.getY(), pos.getZ());
+        source.sendFeedback(new LiteralText("[testcase] " + result.message()));
+        return result.ok() ? 1 : 0;
+    }
+
+    private static int testcaseRightClick(FabricClientCommandSource source) {
+        TestcaseTool.Result result = TestcaseTool.rightClick(new FabricBridge(source));
+        if (result.ok()) {
+            source.sendFeedback(new LiteralText("[testcase] " + result.message()));
+            return 1;
+        }
+        source.sendError(new LiteralText("[testcase] " + result.message()));
+        return 0;
+    }
+
+    private static int testcaseTp(FabricClientCommandSource source) {
+        TestcaseTool.Result result = TestcaseTool.tp(new FabricBridge(source));
+        if (result.ok()) {
+            source.sendFeedback(new LiteralText("[testcase] " + result.message()));
+            return 1;
+        }
+        source.sendError(new LiteralText("[testcase] " + result.message()));
+        return 0;
     }
 
     private static int toggleCurrentBlock(FabricClientCommandSource source) {
@@ -696,6 +744,22 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
 
         @Override
+        public void onRuntimeStepCompleted(PlaceRuntimeEntry entry) {
+            if (entry == null || entry.isPause() || entry.isSkip() || entry.moveOnly()) {
+                return;
+            }
+            synchronized (DIRECT_PLACE_STATE) {
+                if (!DIRECT_PLACE_STATE.active) {
+                    return;
+                }
+                DIRECT_PLACE_STATE.cursor++;
+                clearPendingPlaceState(DIRECT_PLACE_STATE);
+                System.out.println("[printer-debug] cursor_advance reason=step_completed cursor=" + DIRECT_PLACE_STATE.cursor
+                    + " block=" + (entry.blockId() == null ? "" : entry.blockId()));
+            }
+        }
+
+        @Override
         public PlaceExecResult executePlacePlan(List<PlaceOp> ops, boolean checkOnly) {
             if (ops == null || ops.isEmpty()) {
                 return PlaceExecResult.fail(0, 0, "PARSE_SCHEMA_MISMATCH", "no place operations");
@@ -757,6 +821,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     clearPendingPlaceState(DIRECT_PLACE_STATE);
                     entry.setForceRePlaceRequested(false);
                 }
+                boolean menuPayload = hasMenuPayload(entry);
 
                 String sourceBlockId = entry.blockId() == null ? "" : entry.blockId().trim();
                 String blockId = normalizeBlockIdForRuntime(sourceBlockId);
@@ -797,7 +862,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
                 if (isBlockPlaced(mc, target, block)) {
                     clearPendingPlaceState(DIRECT_PLACE_STATE);
-                    DIRECT_PLACE_STATE.cursor++;
+                    if (!menuPayload) {
+                        DIRECT_PLACE_STATE.cursor++;
+                    }
                     System.out.println("[printer-debug] direct_step_confirmed block=" + sourceBlockId + " target=" + target + " cursor=" + DIRECT_PLACE_STATE.cursor);
                     return PlaceExecResult.ok(1);
                 }
@@ -1031,6 +1098,15 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 return true;
             }
             return openMenuAtEntryAnchor();
+        }
+
+        private static boolean hasMenuPayload(PlaceRuntimeEntry entry) {
+            if (entry == null) {
+                return false;
+            }
+            String rawName = entry.name() == null ? "" : entry.name().trim();
+            String rawArgs = entry.argsRaw() == null ? "" : entry.argsRaw().trim();
+            return !rawName.isEmpty() || (!rawArgs.isEmpty() && !"no".equalsIgnoreCase(rawArgs));
         }
 
         @Override
@@ -1471,7 +1547,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             if (entry == null) {
                 return false;
             }
-            for (int dy = -2; dy <= 0; dy++) {
+            for (int dy = 0; dy >= -2; dy--) {
                 ClickResult sign = clickBlockLegacy(entry.getX(), entry.getY() + dy, entry.getZ() - 1, "menu_open_sign", true);
                 if (sign != null && sign.accepted()) {
                     return true;

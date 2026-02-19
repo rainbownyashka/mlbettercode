@@ -681,7 +681,7 @@ public final class PlaceRuntimeStepExecutor {
         BlockPosView anchor = bridge.getRuntimeEntryAnchor();
         if (anchor != null) {
             // Legacy parity: params click prefers sign(z-1) + (0,1,1), where sign Y may vary in [-2..0] from entry.
-            for (int dy = -2; dy <= 0; dy++) {
+            for (int dy = 0; dy >= -2; dy--) {
                 ClickResult legacy = bridge.clickBlockLegacy(
                     anchor.x(),
                     anchor.y() + dy + 1,
