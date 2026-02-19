@@ -24,6 +24,7 @@ import com.rainbow_universe.bettercode.core.place.BlueGlassSearch;
 import com.rainbow_universe.bettercode.core.settings.ModSettingsService;
 import com.rainbow_universe.bettercode.core.settings.SettingDef;
 import com.rainbow_universe.bettercode.core.settings.SettingType;
+import com.rainbow_universe.bettercode.core.util.LegacyBlockIdCompat;
 import com.rainbow_universe.bettercode.core.util.ReflectCompat;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v1.ClientCommandManager;
@@ -757,22 +758,26 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     entry.setForceRePlaceRequested(false);
                 }
 
-                String blockId = entry.blockId() == null ? "" : entry.blockId().trim();
+                String sourceBlockId = entry.blockId() == null ? "" : entry.blockId().trim();
+                String blockId = LegacyBlockIdCompat.normalizeForModern(sourceBlockId);
+                if (!sourceBlockId.equalsIgnoreCase(blockId)) {
+                    System.out.println("[printer-debug] block_id_compat from=" + sourceBlockId + " to=" + blockId);
+                }
                 Identifier id;
                 try {
                     id = new Identifier(blockId);
                 } catch (Exception ex) {
-                    return PlaceExecResult.fail(0, 0, "INVALID_BLOCK_ID", "invalid block id: " + blockId);
+                    return PlaceExecResult.fail(0, 0, "INVALID_BLOCK_ID", "invalid block id: " + sourceBlockId);
                 }
                 Block block = Registry.BLOCK.get(id);
                 if (block == null || block.asItem() == null || block.asItem() == ItemStack.EMPTY.getItem()) {
-                    return PlaceExecResult.fail(0, 0, "INVALID_BLOCK_ID", "unknown block: " + blockId);
+                    return PlaceExecResult.fail(0, 0, "INVALID_BLOCK_ID", "unknown block: " + sourceBlockId);
                 }
 
                 Item item = block.asItem();
                 int slot = findHotbarSlot(mc, item);
                 if (slot < 0) {
-                    return PlaceExecResult.fail(0, 0, "MISSING_REQUIRED_ITEM", "required item not in hotbar: " + blockId);
+                    return PlaceExecResult.fail(0, 0, "MISSING_REQUIRED_ITEM", "required item not in hotbar: " + sourceBlockId);
                 }
                 if (mc.player.inventory.selectedSlot != slot) {
                     mc.player.inventory.selectedSlot = slot;
@@ -786,7 +791,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     + " seed=" + DIRECT_PLACE_STATE.seed
                     + " entry=" + entryPos
                     + " target=" + target
-                    + " block=" + blockId
+                    + " block=" + sourceBlockId
+                    + " blockNormalized=" + blockId
                     + " expected=" + expectedBlockId
                     + " pendingTarget=" + DIRECT_PLACE_STATE.pendingTarget
                     + " pendingBlock=" + DIRECT_PLACE_STATE.pendingBlockId
@@ -795,7 +801,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 if (isBlockPlaced(mc, target, block)) {
                     clearPendingPlaceState(DIRECT_PLACE_STATE);
                     DIRECT_PLACE_STATE.cursor++;
-                    System.out.println("[printer-debug] direct_step_confirmed block=" + blockId + " target=" + target + " cursor=" + DIRECT_PLACE_STATE.cursor);
+                    System.out.println("[printer-debug] direct_step_confirmed block=" + sourceBlockId + " target=" + target + " cursor=" + DIRECT_PLACE_STATE.cursor);
                     return PlaceExecResult.ok(1);
                 }
 
@@ -1081,7 +1087,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             }
             try {
                 String worldId = String.valueOf(Registry.BLOCK.getId(mc.world.getBlockState(new BlockPos(x, y, z)).getBlock()));
-                return blockId.trim().equalsIgnoreCase(worldId);
+                return LegacyBlockIdCompat.normalizeForModern(blockId).equalsIgnoreCase(worldId);
             } catch (Exception ignore) {
                 return false;
             }

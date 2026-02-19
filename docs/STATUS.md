@@ -266,6 +266,10 @@
   - event/lead no-args + tick-spam stabilization slice:
     - params chest stage now follows legacy `1.12.2` guard: when parsed args are empty (`args=no`), runtime skips params-open branch and marks step done (`runtime_state=SKIP_PARAMS_NO_ARGS`) instead of waiting/retrying chest open that should not exist,
     - high-frequency in-progress/verbose tick traces are now rate-limited in core runtime and step executor to reduce periodic client freezes during stuck menu/params loops while keeping state-transition logs.
+  - legacy block-id compatibility slice (modern Fabric adapters):
+    - added shared mapper `LegacyBlockIdCompat` in core for common 1.12->1.13+ renames (`planks -> oak_planks` and related defaults),
+    - `fabric1165/fabric120/fabric121` placement path now normalizes legacy block ids before registry lookup and block-presence checks,
+    - runtime now traces conversion via `block_id_compat from=<legacy> to=<modern>` to keep migration behavior observable.
 - Modern targets now include bootstrap modules:
   - `modern/fabric1165` (new),
   - `modern/fabric120`,
