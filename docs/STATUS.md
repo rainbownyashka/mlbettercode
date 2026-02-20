@@ -88,6 +88,10 @@
     - core plan builder now ports legacy post-place metadata from ops (`__MLDSL_NEGATED__::` prefix, `lapis_block -> SIGN_NAME`, `emerald_block -> CYCLE` with `ticks=` parse),
     - runtime step executor now runs explicit post-place state machine with legacy-like delays/stages (`SIGN_NAME`, `CYCLE`, `NEGATE`) and sign target resolve at `entry.z-1` with `dy=0..-2`,
     - no `nocache` behavior was introduced in this slice (risky branch intentionally deferred).
+  - quality-mode planning slice (2026-02-20):
+    - `docs/AGENT_WORK_PLAN.md` switched to "parity-first + evidence-first" execution mode,
+    - agent-owned quality gates defined to reduce user manual testing to checkpoint acceptance only,
+    - "done" criteria now require build + behavior evidence + explicit unchanged scope.
 - `/mldsl run` plan execution path wired to place pipeline.
 - Chest page merge logic stores and reuses merged snapshot across pages.
 - `/loadmodule` supports explicit error reasons (timeout/http/ssl/etc.).
