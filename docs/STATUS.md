@@ -5,6 +5,20 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- engineering workflow policy recorded:
+  - runtime printer/scanner stays minimal and cross-version portable,
+  - complex logic/validation should be shifted to compiler side by default.
+- Legacy 1.12.2 place GUI slot-safety hardening:
+  - `feature/place/PlaceGuiHandler` now normalizes all queued/direct GUI clicks through container-index validation (`toSafeClickIndex`),
+  - protects menu/args/page-turn/item-sequence paths from invalid raw slot ids on custom containers (e.g. `slotNumber=74` with `inventorySlots.size=46`),
+  - fails fast with explicit reasons (`*_slot_invalid`) instead of client crash (`IndexOutOfBoundsException` in `Container.slotClick`).
+- Legacy 1.12.2 fill-area item(var) compatibility fix:
+  - `feature/place/PlaceGuiHandler` now handles `item(var(...))` args as VARIABLE-mode input instead of forcing literal item-spec parsing,
+  - fixes false `&c/placeadvanced: invalid item()` for compiler-emitted fill args like `slot(13)=item(var(__set_item))`.
+- Legacy 1.12.2 action-bar to chat reroute:
+  - centralized in `ExampleMod#setActionBar(...)`: all action-bar texts are now emitted to chat via `debugChat(...)`,
+  - on-screen action-bar HUD lines are cleared (no ephemeral-only error messages),
+  - added short duplicate suppression window (`ACTIONBAR_CHAT_DUP_GAP_MS`) to avoid tick-loop chat spam.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).

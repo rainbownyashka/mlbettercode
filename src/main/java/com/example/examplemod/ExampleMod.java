@@ -296,6 +296,11 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private static volatile String actionBar2Text = "";
     private static volatile long actionBarExpireMs = 0L;
     private static volatile long actionBar2ExpireMs = 0L;
+    private static volatile String actionBarPrimaryLastChatText = "";
+    private static volatile String actionBarSecondaryLastChatText = "";
+    private static volatile long actionBarPrimaryLastChatMs = 0L;
+    private static volatile long actionBarSecondaryLastChatMs = 0L;
+    private static final long ACTIONBAR_CHAT_DUP_GAP_MS = 1500L;
     private final ItemStack[][] hotbarSets = new ItemStack[2][9];
     private final long[] lastHotbarTapMs = new long[9];
     private final boolean[] hotbarKeyDown = new boolean[9];
@@ -5771,17 +5776,41 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     public void setActionBar(boolean primary, String text, long durationMs)
     {
         String formatted = applyColorCodes(text);
-        long until = System.currentTimeMillis() + Math.max(0, durationMs);
+        long now = System.currentTimeMillis();
+
+        // Legacy UX override: route action-bar diagnostics into persistent chat.
+        // We still dedupe short repeated ticks to avoid log/chat floods.
         if (primary)
         {
-            actionBarText = formatted;
-            actionBarExpireMs = until;
+            actionBarText = "";
+            actionBarExpireMs = 0L;
+            if (formatted == null || formatted.trim().isEmpty())
+            {
+                return;
+            }
+            if (formatted.equals(actionBarPrimaryLastChatText) && (now - actionBarPrimaryLastChatMs) < ACTIONBAR_CHAT_DUP_GAP_MS)
+            {
+                return;
+            }
+            actionBarPrimaryLastChatText = formatted;
+            actionBarPrimaryLastChatMs = now;
+            debugChat(formatted);
+            return;
         }
-        else
+
+        actionBar2Text = "";
+        actionBar2ExpireMs = 0L;
+        if (formatted == null || formatted.trim().isEmpty())
         {
-            actionBar2Text = formatted;
-            actionBar2ExpireMs = until;
+            return;
         }
+        if (formatted.equals(actionBarSecondaryLastChatText) && (now - actionBarSecondaryLastChatMs) < ACTIONBAR_CHAT_DUP_GAP_MS)
+        {
+            return;
+        }
+        actionBarSecondaryLastChatText = formatted;
+        actionBarSecondaryLastChatMs = now;
+        debugChat(formatted);
     }
 
     private static String applyColorCodes(String text)
