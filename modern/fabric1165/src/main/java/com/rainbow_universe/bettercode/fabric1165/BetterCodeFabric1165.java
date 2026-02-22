@@ -824,10 +824,10 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             for (int i = 0; i < ops.size(); i++) {
                 PlaceOp op = ops.get(i);
                 PlaceRuntimeEntry step = op.kind() == PlaceOp.Kind.AIR
-                    ? new PlaceRuntimeEntry(true, false, "minecraft:air", "", "", java.util.Collections.<com.rainbow_universe.bettercode.core.place.PlaceArgSpec>emptyList())
+                    ? new PlaceRuntimeEntry(true, false, "minecraft:air", "", "", java.util.Collections.<com.rainbow_universe.bettercode.core.place.PlaceArgSpec>emptyList(), false)
                     : op.kind() == PlaceOp.Kind.SKIP
-                        ? new PlaceRuntimeEntry(false, true, "skip", "", "", java.util.Collections.<com.rainbow_universe.bettercode.core.place.PlaceArgSpec>emptyList())
-                        : new PlaceRuntimeEntry(false, false, op.blockId(), op.name(), op.args(), java.util.Collections.<com.rainbow_universe.bettercode.core.place.PlaceArgSpec>emptyList());
+                        ? new PlaceRuntimeEntry(false, true, "skip", "", "", java.util.Collections.<com.rainbow_universe.bettercode.core.place.PlaceArgSpec>emptyList(), false)
+                        : new PlaceRuntimeEntry(false, false, op.blockId(), op.name(), op.args(), java.util.Collections.<com.rainbow_universe.bettercode.core.place.PlaceArgSpec>emptyList(), false);
                 PlaceExecResult stepRes = executePlaceStep(step, false);
                 if (!stepRes.ok()) {
                     return PlaceExecResult.fail(executed, i, stepRes.errorCode(), stepRes.errorMessage());
