@@ -10,6 +10,8 @@ import com.rainbow_universe.bettercode.core.PlaceExecResult;
 import com.rainbow_universe.bettercode.core.PlaceOp;
 import com.rainbow_universe.bettercode.core.RuntimeCore;
 import com.rainbow_universe.bettercode.core.RuntimeResult;
+import com.rainbow_universe.bettercode.core.ScoreboardContext;
+import com.rainbow_universe.bettercode.core.ScoreboardParser;
 import com.rainbow_universe.bettercode.core.bridge.AckState;
 import com.rainbow_universe.bettercode.core.bridge.BlockPosView;
 import com.rainbow_universe.bettercode.core.bridge.ClickResult;
@@ -61,6 +63,7 @@ import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.particle.ParticleTypes;
 import net.minecraft.util.registry.Registry;
 
 import java.nio.file.Files;
@@ -90,6 +93,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static final LocalTpState LOCAL_TP_STATE = new LocalTpState();
     private static volatile String LAST_WORLD_SEED_HINT_DIM = "";
     private static volatile BlockPos LAST_WORLD_SEED_HINT = null;
+    private static volatile boolean LAST_EDITOR_LIKE = false;
+    private static volatile String LAST_EDITOR_DIM = "";
+    private static long LAST_SELECTOR_HIGHLIGHT_MS = 0L;
     private static int INIT_CALL_COUNT = 0;
     private static long LAST_RUNTIME_TICK_WORLD_TIME = Long.MIN_VALUE;
     private static long LAST_RUNTIME_TICK_WALL_MS = 0L;
@@ -238,6 +244,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             traceRuntimeTickProbe(client);
             handleLocalTpPath(client);
             refreshWorldLoadSeedHint(client);
+            refreshCodeEntrySeedHint(client);
+            renderSelectionHighlights(client);
             runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis());
         });
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
@@ -2443,20 +2451,163 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             return;
         }
         LAST_WORLD_SEED_HINT_DIM = dim;
-        BlockPos feet = mc.player.getBlockPos();
-        BlockPos candidate = feet.add(-2, -1, -2);
-        boolean hit = false;
-        try {
-            hit = mc.world.isChunkLoaded(candidate)
-                && mc.world.getBlockState(candidate).getBlock() == Blocks.LIGHT_BLUE_STAINED_GLASS;
-        } catch (Exception ignore) {
-            hit = false;
+        tryResolveSeedHint(mc, "world_load");
+    }
+
+    private static void refreshCodeEntrySeedHint(MinecraftClient mc) {
+        if (mc == null || mc.player == null || mc.world == null) {
+            LAST_EDITOR_LIKE = false;
+            LAST_EDITOR_DIM = "";
+            return;
         }
-        LAST_WORLD_SEED_HINT = hit ? candidate : null;
-        System.out.println("[printer-debug] world_load_seed_probe dim=" + dim
+        String dim = String.valueOf(mc.world.getRegistryKey().getValue());
+        boolean editorLike = false;
+        try {
+            ScoreboardContext ctx = ScoreboardParser.parse(new FabricBridge(null).scoreboardLines());
+            editorLike = ctx.editorLike();
+        } catch (Exception ignore) {
+            editorLike = false;
+        }
+        boolean dimChanged = !dim.equals(LAST_EDITOR_DIM);
+        boolean entered = !LAST_EDITOR_LIKE && editorLike;
+        LAST_EDITOR_DIM = dim;
+        LAST_EDITOR_LIKE = editorLike;
+        if (!entered && !dimChanged) {
+            return;
+        }
+        if (!editorLike) {
+            return;
+        }
+        tryResolveSeedHint(mc, dimChanged ? "code_entry_dim_change" : "code_entry_transition");
+    }
+
+    private static void tryResolveSeedHint(MinecraftClient mc, String reason) {
+        if (mc == null || mc.player == null || mc.world == null) {
+            return;
+        }
+        String dim = String.valueOf(mc.world.getRegistryKey().getValue());
+        BlockPos feet = mc.player.getBlockPos();
+        BlockPos fromFeetOffset = feet.add(-2, -1, -2);
+        if (isBlueGlassAt(mc, fromFeetOffset)) {
+            LAST_WORLD_SEED_HINT = fromFeetOffset;
+            logSeedHint(reason, dim, feet, "offset(-2,-1,-2)", fromFeetOffset, true);
+            return;
+        }
+        BlockPos fixed = new BlockPos(219, 0, 219);
+        if (isBlueGlassAt(mc, fixed)) {
+            LAST_WORLD_SEED_HINT = fixed;
+            logSeedHint(reason, dim, feet, "fixed(219,0,219)", fixed, true);
+            return;
+        }
+        BlockPos barrierHint = detectSeedFromBarrierCorner(mc);
+        if (barrierHint != null) {
+            LAST_WORLD_SEED_HINT = barrierHint;
+            logSeedHint(reason, dim, feet, "barrier(max_xz)-5,-5+-1scan", barrierHint, true);
+            return;
+        }
+        LAST_WORLD_SEED_HINT = null;
+        logSeedHint(reason, dim, feet, "all_missed", fromFeetOffset, false);
+    }
+
+    private static void logSeedHint(String reason, String dim, BlockPos feet, String source, BlockPos candidate, boolean hit) {
+        System.out.println("[printer-debug] world_seed_probe reason=" + reason
+            + " dim=" + dim
             + " playerFeet=" + feet
+            + " source=" + source
             + " candidate=" + candidate
             + " hit=" + hit);
+    }
+
+    private static boolean isBlueGlassAt(MinecraftClient mc, BlockPos pos) {
+        if (mc == null || mc.world == null || pos == null) {
+            return false;
+        }
+        try {
+            return mc.world.isChunkLoaded(pos)
+                && mc.world.getBlockState(pos).getBlock() == Blocks.LIGHT_BLUE_STAINED_GLASS;
+        } catch (Exception ignore) {
+            return false;
+        }
+    }
+
+    private static BlockPos detectSeedFromBarrierCorner(MinecraftClient mc) {
+        if (mc == null || mc.player == null || mc.world == null) {
+            return null;
+        }
+        BlockPos feet = mc.player.getBlockPos();
+        final int radius = 384;
+        int minX = feet.getX() - radius;
+        int maxX = feet.getX() + radius;
+        int minZ = feet.getZ() - radius;
+        int maxZ = feet.getZ() + radius;
+        int bestX = Integer.MIN_VALUE;
+        int bestZ = Integer.MIN_VALUE;
+        boolean foundBarrier = false;
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                BlockPos p = new BlockPos(x, 0, z);
+                if (!mc.world.isChunkLoaded(p)) {
+                    continue;
+                }
+                if (mc.world.getBlockState(p).getBlock() != Blocks.BARRIER) {
+                    continue;
+                }
+                if (!foundBarrier || x > bestX || (x == bestX && z > bestZ)) {
+                    bestX = x;
+                    bestZ = z;
+                    foundBarrier = true;
+                }
+            }
+        }
+        if (!foundBarrier) {
+            return null;
+        }
+        int baseX = bestX - 5;
+        int baseZ = bestZ - 5;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                BlockPos candidate = new BlockPos(baseX + dx, 0, baseZ + dz);
+                if (isBlueGlassAt(mc, candidate)) {
+                    System.out.println("[printer-debug] world_seed_from_barrier_success barrierCorner="
+                        + bestX + ",0," + bestZ
+                        + " base=" + baseX + ",0," + baseZ
+                        + " found=" + candidate);
+                    return candidate;
+                }
+            }
+        }
+        System.out.println("[printer-debug] world_seed_from_barrier_miss barrierCorner="
+            + bestX + ",0," + bestZ
+            + " base=" + baseX + ",0," + baseZ
+            + " scan=3x3");
+        return null;
+    }
+
+    private static void renderSelectionHighlights(MinecraftClient mc) {
+        if (mc == null || mc.player == null || mc.world == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - LAST_SELECTOR_HIGHLIGHT_MS < 220L) {
+            return;
+        }
+        LAST_SELECTOR_HIGHLIGHT_MS = now;
+        String dim = String.valueOf(mc.world.getRegistryKey().getValue());
+        int shown = 0;
+        for (SelectedRow row : SELECTED.values()) {
+            if (row == null || !dim.equals(row.dimension())) {
+                continue;
+            }
+            if (shown >= 80) {
+                break;
+            }
+            double gx = row.x() + 0.5;
+            double gy = row.y() + 0.15;
+            double gz = row.z() + 0.5;
+            mc.world.addParticle(ParticleTypes.END_ROD, gx, gy, gz, 0.0, 0.005, 0.0);
+            mc.world.addParticle(ParticleTypes.CRIT, gx, row.y() + 1.05, gz, 0.0, 0.0, 0.0);
+            shown++;
+        }
     }
 
     private static void traceRuntimeTickProbe(MinecraftClient mc) {
