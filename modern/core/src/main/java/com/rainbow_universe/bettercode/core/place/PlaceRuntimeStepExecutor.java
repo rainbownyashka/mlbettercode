@@ -208,7 +208,8 @@ public final class PlaceRuntimeStepExecutor {
             }
             boolean switchedOrAcked = switched || ack == AckState.ACKED;
             boolean paramsReady = view.windowId() >= 0 && countNonPlayerSlots(view) > 0;
-            if (switchedOrAcked && paramsReady) {
+            boolean paramsChestReady = hasParamsChestNearTarget(bridge);
+            if (switchedOrAcked && paramsReady && paramsChestReady) {
                 entry.setAwaitingParamsChest(false);
                 entry.setAwaitingArgs(true);
                 entry.setArgsStartMs(now);
@@ -223,12 +224,14 @@ public final class PlaceRuntimeStepExecutor {
                 logger.info("printer-debug", "runtime_state=OPEN_PARAMS_CHEST switched=1");
                 return PlaceExecResult.inProgress(0, "APPLY_ARGS");
             }
-            if (switchedOrAcked && !paramsReady) {
+            if (switchedOrAcked && (!paramsReady || !paramsChestReady)) {
                 if (!entry.needOpenParamsChest() && now - entry.paramsStartMs() >= PARAMS_REOPEN_AFTER_MS) {
                     entry.setNeedOpenParamsChest(true);
                     entry.setNextParamsActionMs(now + Math.max(120, delay));
                     logger.info("printer-debug",
-                        "runtime_state=WAIT_PARAMS_CHEST action=reopen_empty_params window=" + view.windowId());
+                        "runtime_state=WAIT_PARAMS_CHEST action=reopen_not_ready window=" + view.windowId()
+                            + " nonPlayer=" + countNonPlayerSlots(view)
+                            + " chestReady=" + paramsChestReady);
                 }
                 return PlaceExecResult.inProgress(0, "WAIT_PARAMS_CHEST");
             }
@@ -882,9 +885,15 @@ public final class PlaceRuntimeStepExecutor {
             }
             return PlaceExecResult.inProgress(0, "POST_PLACE_CURSOR_WAIT");
         }
-        BlockPosView target = resolvePostPlaceTarget(bridge);
+        BlockPosView target = resolvePostPlaceTarget(bridge, logger);
         if (target == null) {
             return fail(logger, "POST_PLACE_SIGN_NOT_FOUND", "postPlace target sign is missing");
+        }
+        if (logger != null) {
+            logger.info("printer-debug",
+                "post_place_target kind=" + entry.postPlaceKind()
+                    + " stage=" + entry.postPlaceStage()
+                    + " target=" + target.x() + "," + target.y() + "," + target.z());
         }
 
         int kind = entry.postPlaceKind();
@@ -904,7 +913,7 @@ public final class PlaceRuntimeStepExecutor {
                 if (!bridge.selectHotbarSlot(hotbarIdx)) {
                     return fail(logger, "POST_PLACE_SELECT_FAILED", "cannot select postPlace hotbar slot");
                 }
-                if (!clickPostPlaceTarget(bridge, target, "post_place_sign_name")) {
+                if (!clickPostPlaceTarget(bridge, target, "post_place_sign_name", logger)) {
                     return fail(logger, "POST_PLACE_CLICK_FAILED", "postPlace sign-name click rejected");
                 }
                 entry.setPostPlaceStage(1);
@@ -938,7 +947,7 @@ public final class PlaceRuntimeStepExecutor {
                 if (!bridge.selectHotbarSlot(hotbarIdx)) {
                     return fail(logger, "POST_PLACE_SELECT_FAILED", "cannot select postPlace cycle-name slot");
                 }
-                if (!clickPostPlaceTarget(bridge, target, "post_place_cycle_name")) {
+                if (!clickPostPlaceTarget(bridge, target, "post_place_cycle_name", logger)) {
                     return fail(logger, "POST_PLACE_CLICK_FAILED", "postPlace cycle-name click rejected");
                 }
                 entry.setPostPlaceStage(1);
@@ -957,7 +966,7 @@ public final class PlaceRuntimeStepExecutor {
                 if (!bridge.selectHotbarSlot(hotbarIdx)) {
                     return fail(logger, "POST_PLACE_SELECT_FAILED", "cannot select postPlace cycle slot");
                 }
-                if (!clickPostPlaceTarget(bridge, target, "post_place_cycle_ticks")) {
+                if (!clickPostPlaceTarget(bridge, target, "post_place_cycle_ticks", logger)) {
                     return fail(logger, "POST_PLACE_CLICK_FAILED", "postPlace cycle-ticks click rejected");
                 }
                 entry.setPostPlaceStage(2);
@@ -985,7 +994,7 @@ public final class PlaceRuntimeStepExecutor {
                 if (!bridge.selectHotbarSlot(hotbarIdx)) {
                     return fail(logger, "POST_PLACE_SELECT_FAILED", "cannot select negate arrow slot");
                 }
-                if (!clickPostPlaceTarget(bridge, target, "post_place_negate")) {
+                if (!clickPostPlaceTarget(bridge, target, "post_place_negate", logger)) {
                     return fail(logger, "POST_PLACE_CLICK_FAILED", "postPlace negate click rejected");
                 }
                 entry.setPostPlaceStage(1);
@@ -1001,7 +1010,7 @@ public final class PlaceRuntimeStepExecutor {
         return PlaceExecResult.ok(1);
     }
 
-    private static BlockPosView resolvePostPlaceTarget(GameBridge bridge) {
+    private static BlockPosView resolvePostPlaceTarget(GameBridge bridge, CoreLogger logger) {
         if (bridge == null) {
             return null;
         }
@@ -1009,31 +1018,88 @@ public final class PlaceRuntimeStepExecutor {
         if (anchor == null) {
             return null;
         }
-        for (int dy = 0; dy >= -2; dy--) {
+        for (int dy = 1; dy >= -3; dy--) {
             int x = anchor.x();
             int y = anchor.y() + dy;
             int z = anchor.z() - 1;
             if (bridge.isSignAt(x, y, z)) {
+                if (logger != null) {
+                    logger.info("printer-debug", "post_place_sign_found at=" + x + "," + y + "," + z + " dy=" + dy);
+                }
                 return new BlockPosView(x, y, z);
             }
+        }
+        if (logger != null) {
+            logger.info("printer-debug",
+                "post_place_sign_missing fallback_to_anchor anchor="
+                    + anchor.x() + "," + anchor.y() + "," + anchor.z());
         }
         return new BlockPosView(anchor.x(), anchor.y(), anchor.z());
     }
 
-    private static boolean clickPostPlaceTarget(GameBridge bridge, BlockPosView target, String purpose) {
+    private static boolean clickPostPlaceTarget(GameBridge bridge, BlockPosView target, String purpose, CoreLogger logger) {
         if (bridge == null || target == null) {
             return false;
         }
-        ClickResult legacy = bridge.clickBlockLegacy(target.x(), target.y(), target.z(), purpose, true);
-        if (legacy != null && legacy.accepted()) {
-            return true;
+        int[][] points = buildPostPlaceClickPoints(bridge, target);
+        for (int i = 0; i < points.length; i++) {
+            int x = points[i][0];
+            int y = points[i][1];
+            int z = points[i][2];
+            ClickResult legacy = bridge.clickBlockLegacy(x, y, z, purpose, true);
+            if (logger != null) {
+                logger.info("printer-debug",
+                    "post_place_click probe=legacy idx=" + i
+                        + " target=" + x + "," + y + "," + z
+                        + " accepted=" + (legacy != null && legacy.accepted())
+                        + " reason=" + (legacy == null ? "null" : safe(legacy.reason())));
+            }
+            if (legacy != null && legacy.accepted()) {
+                return true;
+            }
+            ClickResult packet = bridge.sendUseItemOnBlock(x, y, z);
+            if (logger != null) {
+                logger.info("printer-debug",
+                    "post_place_click probe=packet idx=" + i
+                        + " target=" + x + "," + y + "," + z
+                        + " accepted=" + (packet != null && packet.accepted())
+                        + " reason=" + (packet == null ? "null" : safe(packet.reason())));
+            }
+            if (packet != null && packet.accepted()) {
+                return true;
+            }
+            ClickResult interact = bridge.interactBlock(x, y, z);
+            if (logger != null) {
+                logger.info("printer-debug",
+                    "post_place_click probe=interact idx=" + i
+                        + " target=" + x + "," + y + "," + z
+                        + " accepted=" + (interact != null && interact.accepted())
+                        + " reason=" + (interact == null ? "null" : safe(interact.reason())));
+            }
+            if (interact != null && interact.accepted()) {
+                return true;
+            }
         }
-        ClickResult packet = bridge.sendUseItemOnBlock(target.x(), target.y(), target.z());
-        if (packet != null && packet.accepted()) {
-            return true;
+        return false;
+    }
+
+    private static int[][] buildPostPlaceClickPoints(GameBridge bridge, BlockPosView target) {
+        java.util.ArrayList<int[]> pts = new java.util.ArrayList<int[]>();
+        pts.add(new int[] {target.x(), target.y(), target.z()});
+        pts.add(new int[] {target.x(), target.y() + 1, target.z()});
+        pts.add(new int[] {target.x(), target.y() - 1, target.z()});
+        BlockPosView anchor = bridge == null ? null : bridge.getRuntimeEntryAnchor();
+        if (anchor != null) {
+            for (int dy = 1; dy >= -3; dy--) {
+                pts.add(new int[] {anchor.x(), anchor.y() + dy, anchor.z() - 1});
+            }
+            pts.add(new int[] {anchor.x(), anchor.y(), anchor.z()});
         }
-        ClickResult interact = bridge.interactBlock(target.x(), target.y(), target.z());
-        return interact != null && interact.accepted();
+        int[][] out = new int[pts.size()][3];
+        for (int i = 0; i < pts.size(); i++) {
+            out[i] = pts.get(i);
+        }
+        return out;
     }
 
     private static void clearPostPlaceState(PlaceRuntimeEntry entry) {
@@ -1979,6 +2045,30 @@ public final class PlaceRuntimeStepExecutor {
             }
         }
         return count;
+    }
+
+    private static boolean hasParamsChestNearTarget(GameBridge bridge) {
+        if (bridge == null) {
+            return false;
+        }
+        String[] ids = new String[] {
+            "minecraft:trapped_chest",
+            "minecraft:chest",
+            "minecraft:barrel"
+        };
+        int[][] offsets = new int[][] {
+            {0, 1, 0},
+            {0, 2, 0},
+            {0, 0, 0}
+        };
+        for (int[] off : offsets) {
+            for (String id : ids) {
+                if (bridge.isBlockAtOffset(off[0], off[1], off[2], id)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static SlotView findNextPageArrowSlot(ContainerView view) {

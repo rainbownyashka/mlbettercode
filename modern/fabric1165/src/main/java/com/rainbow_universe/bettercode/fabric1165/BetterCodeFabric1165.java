@@ -257,7 +257,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             renderSelectionHighlights(client);
             runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis());
         });
-        WorldRenderEvents.LAST.register(BetterCodeFabric1165::renderSelectionOutlines);
+        WorldRenderEvents.BEFORE_DEBUG_RENDER.register(BetterCodeFabric1165::renderSelectionOutlines);
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
             if (hand != Hand.MAIN_HAND || player == null || world == null || hitResult == null) {
                 return ActionResult.PASS;
@@ -2701,6 +2701,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         RenderSystem.disableTexture();
+        RenderSystem.disableDepthTest();
         RenderSystem.lineWidth(2.0F);
         BufferBuilder bb = Tessellator.getInstance().getBuffer();
         bb.begin(GL11.GL_LINES, VertexFormats.POSITION_COLOR);
@@ -2716,12 +2717,20 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             BlockPos top = anchor.up();
             Box box = new Box(top).expand(0.003);
             WorldRenderer.drawBox(context.matrixStack(), bb, box, 0.15F, 0.95F, 1.0F, 1.0F);
+            // Fallback visual marker in case line state is affected by external render mods.
+            try {
+                mc.world.addParticle(net.minecraft.particle.ParticleTypes.END_ROD,
+                    top.getX() + 0.5, top.getY() + 0.98, top.getZ() + 0.5,
+                    0.0, 0.0, 0.0);
+            } catch (Exception ignore) {
+            }
             drawn++;
             if (drawn >= 120) {
                 break;
             }
         }
         Tessellator.getInstance().draw();
+        RenderSystem.enableDepthTest();
         RenderSystem.enableTexture();
         RenderSystem.disableBlend();
     }

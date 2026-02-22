@@ -84,6 +84,12 @@
   - fabric1165 direct place now tries creative hotbar auto-inject for missing required block items before failing (`MISSING_REQUIRED_ITEM` remains fail-fast for non-creative cases).
   - params stage now enters args only when switched window is actually ready (has non-player slots); otherwise it keeps reopen/retry path instead of premature `APPLY_ARGS`.
   - line-outline camera anchoring fixed (no camera-offset double transform), preventing floating/rotating outlines while moving view.
+- Params/open and selector render hardening:
+  - args stage now additionally requires nearby params-chest presence (trapped chest/chest/barrel near current runtime target) before transition; if absent, runtime reopens params target instead of applying args into wrong GUI.
+  - selector outlines now render in `BEFORE_DEBUG_RENDER` pass with depth override and tiny fallback marker particle for diagnostics.
+- PostPlace diagnostic + retry targeting update:
+  - postPlace target resolver now scans wider sign Y offsets (`dy=+1..-3`) before fallback to anchor.
+  - postPlace click path now probes multiple coordinates (resolved target + nearby + anchor-sign offsets) across legacy/packet/interact methods with structured per-attempt logs (`post_place_click`), making `POST_PLACE_CLICK_FAILED` root causes explicit in `latest.log`.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).
