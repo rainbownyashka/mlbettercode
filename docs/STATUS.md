@@ -72,6 +72,8 @@
 - Modern GUI slot-route correctness + highlight visibility fix:
   - menu route lookups in runtime now always skip player-inventory slots to prevent accidental clicks into local inventory when menu label collides.
   - selector highlight particles on fabric1165 now use important-particle fallback (plus visible y-offset), with concise debug trace when rows are selected but not rendered in current dimension.
+- Cross-version migration risk register added:
+  - `docs/CROSS_VERSION_ADAPTER_RISKS.md` now tracks known/expected adapter failures for 1.12.2 parity migration (ids, gui slots, signs, seed detect, tp/window timing, perf, cache scope, obfuscation).
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).
