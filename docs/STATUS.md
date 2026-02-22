@@ -23,6 +23,9 @@
   - `feature/place/PlaceTickHandler` now emits explicit final chat result when print queue completes (`/print finished: queue_completed`),
   - critical stop paths now end with unified abort reason in chat (`/print aborted: <reason>`), including params timeout, place retry exhaustion, and post-place terminal errors.
   - completion check is now resolved before editor/gui guard early-returns, fixing silent finish cases where queue ended but no final message was emitted.
+  - final printer states are now mirrored to `latest.log` via `printer-debug` markers:
+    - `PRINT_FINISHED reason=queue_completed`
+    - `PRINT_ABORTED reason=<reason>`.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).

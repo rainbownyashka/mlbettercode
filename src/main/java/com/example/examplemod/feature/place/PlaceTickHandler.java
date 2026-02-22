@@ -45,6 +45,7 @@ final class PlaceTickHandler
             if (state.current == null)
             {
                 state.active = false;
+                System.out.println("[printer-debug] PRINT_FINISHED reason=queue_completed");
                 host.setActionBar(true, "&a/print finished: queue_completed", 3000L);
                 return;
             }
@@ -797,6 +798,7 @@ final class PlaceTickHandler
     private static void abortPrint(PlaceModuleHost host, PlaceState state, String reason)
     {
         String r = reason == null || reason.trim().isEmpty() ? "unknown" : reason.trim();
+        System.err.println("[printer-debug] PRINT_ABORTED reason=" + r);
         if (host != null)
         {
             host.setActionBar(false, "&c/print aborted: " + r, 3500L);
