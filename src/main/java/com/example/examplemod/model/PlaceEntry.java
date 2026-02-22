@@ -61,6 +61,8 @@ public class PlaceEntry
     public int argsValidationPasses;
     public int argsValidationReapplyCount;
     public final Map<Integer, Integer> argAppliedSlotByIndex = new HashMap<>();
+    public long inputWaitSinceMs;
+    public int inputWaitResets;
     public long cursorNotEmptySinceMs;
     public int argsGuiPage;
     public boolean argsPageTurnPending;
@@ -150,6 +152,8 @@ public class PlaceEntry
         this.argsValidationNextMs = 0L;
         this.argsValidationPasses = 0;
         this.argsValidationReapplyCount = 0;
+        this.inputWaitSinceMs = 0L;
+        this.inputWaitResets = 0;
         this.cursorNotEmptySinceMs = 0L;
         this.argsGuiPage = 0;
         this.argsPageTurnPending = false;
@@ -227,6 +231,8 @@ public class PlaceEntry
         this.argsValidationNextMs = 0L;
         this.argsValidationPasses = 0;
         this.argsValidationReapplyCount = 0;
+        this.inputWaitSinceMs = 0L;
+        this.inputWaitResets = 0;
         this.cursorNotEmptySinceMs = 0L;
         this.argsGuiPage = 0;
         this.argsPageTurnPending = false;

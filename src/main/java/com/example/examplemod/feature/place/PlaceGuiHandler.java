@@ -31,6 +31,8 @@ final class PlaceGuiHandler
     private static final long MENU_REOPEN_TIMEOUT_MS = 15000L;
     private static final long GUI_STALL_TIMEOUT_MS = 60000L;
     private static final int GUI_REOPEN_MAX_ATTEMPTS = 6;
+    private static final long INPUT_STALL_TIMEOUT_MS = 15000L;
+    private static final int INPUT_STALL_MAX_RESETS = 4;
 
     private PlaceGuiHandler() {}
 
@@ -88,6 +90,8 @@ final class PlaceGuiHandler
                 entry.argsValidationNextMs = 0L;
                 entry.argsValidationPasses = 0;
                 entry.argsValidationReapplyCount = 0;
+                entry.inputWaitSinceMs = 0L;
+                entry.inputWaitResets = 0;
                 entry.argsGuiPage = 0;
                 entry.argsPageTurnPending = false;
                 entry.argsPageTurnStartMs = 0L;
@@ -440,6 +444,8 @@ final class PlaceGuiHandler
                 entry.argsValidationNextMs = 0L;
                 entry.argsValidationPasses = 0;
                 entry.argsValidationReapplyCount = 0;
+                entry.inputWaitSinceMs = 0L;
+                entry.inputWaitResets = 0;
                 entry.argsGuiPage = 0;
                 entry.argsPageTurnPending = false;
                 entry.argsPageTurnStartMs = 0L;
@@ -844,8 +850,37 @@ final class PlaceGuiHandler
         }
         if (host.isInputActive())
         {
+            if (entry.inputWaitSinceMs <= 0L)
+            {
+                entry.inputWaitSinceMs = nowMs;
+                return;
+            }
+            if (nowMs - entry.inputWaitSinceMs >= host.placeDelayMs(INPUT_STALL_TIMEOUT_MS))
+            {
+                entry.inputWaitResets++;
+                if (entry.inputWaitResets > INPUT_STALL_MAX_RESETS)
+                {
+                    host.setActionBar(false, "&c/placeadvanced: input stage timeout", 3000L);
+                    abort(host, state, "args_input_stage_timeout");
+                    return;
+                }
+                if (host.isDebugUi())
+                {
+                    host.debugChat("placeadvanced: input stage reset attempt=" + entry.inputWaitResets);
+                }
+                host.setInputActive(false);
+                host.closeCurrentScreen();
+                entry.awaitingArgs = false;
+                entry.awaitingParamsChest = true;
+                entry.needOpenParamsChest = true;
+                entry.paramsStartMs = nowMs;
+                entry.nextParamsActionMs = nowMs + host.placeDelayMs(350L);
+                entry.inputWaitSinceMs = 0L;
+                return;
+            }
             return;
         }
+        entry.inputWaitSinceMs = 0L;
         if (entry.lastArgsActionMs > 0 && nowMs - entry.lastArgsActionMs < host.placeDelayMs(180L))
         {
             return;

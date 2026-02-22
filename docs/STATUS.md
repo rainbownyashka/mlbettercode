@@ -59,6 +59,9 @@
 - Legacy 1.12.2 plan row finalize/repair:
   - `/mldsl run` plan queue now appends per-row finalize markers.
   - when a full row is built (newline/end), runtime validates the whole row via `rowAlreadyMatches(...)` (including sign-cache fallback), stores row as completed on success, and on mismatch runs bounded `break first row block -> rebuild row -> revalidate` cycle.
+- Legacy 1.12.2 input-stage stall recovery:
+  - `awaitingArgs` now has explicit `inputActive` watchdog: if input stage hangs for 15s, runtime force-resets input and reopens params chest path.
+  - bounded reset attempts with explicit abort reason (`args_input_stage_timeout`) instead of infinite wait.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).
