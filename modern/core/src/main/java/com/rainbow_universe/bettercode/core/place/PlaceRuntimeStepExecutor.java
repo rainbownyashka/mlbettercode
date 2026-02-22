@@ -88,6 +88,13 @@ public final class PlaceRuntimeStepExecutor {
                     + " blockId=" + safe(entry.blockId())
                     + " nameRaw=" + safe(entry.name()));
         }
+        // Global cursor gate: no new actions (including new block placement) while cursor is occupied.
+        if (!ensureCursorClear(entry, bridge, now)) {
+            if (isCursorTimeout(entry, now)) {
+                return fail(logger, "CURSOR_NOT_EMPTY", "global cursor guard timeout");
+            }
+            return PlaceExecResult.inProgress(0, "CURSOR_WAIT_GLOBAL");
+        }
 
         if (!entry.placedBlock()) {
             // Use the original runtime entry so adapter can observe re-place intent flags
@@ -210,6 +217,12 @@ public final class PlaceRuntimeStepExecutor {
             boolean paramsReady = view.windowId() >= 0 && countNonPlayerSlots(view) > 0;
             boolean paramsChestReady = hasParamsChestNearTarget(bridge);
             if (switchedOrAcked && paramsReady && paramsChestReady) {
+                if (!ensureCursorClear(entry, bridge, now)) {
+                    if (isCursorTimeout(entry, now)) {
+                        return fail(logger, "CURSOR_NOT_EMPTY", "cursor not empty before args stage");
+                    }
+                    return PlaceExecResult.inProgress(0, "CURSOR_WAIT");
+                }
                 entry.setAwaitingParamsChest(false);
                 entry.setAwaitingArgs(true);
                 entry.setArgsStartMs(now);
@@ -258,6 +271,12 @@ public final class PlaceRuntimeStepExecutor {
                 return PlaceExecResult.inProgress(0, "WAIT_PARAMS_CHEST");
             }
             if (entry.needOpenParamsChest() && now >= entry.nextParamsActionMs()) {
+                if (!ensureCursorClear(entry, bridge, now)) {
+                    if (isCursorTimeout(entry, now)) {
+                        return fail(logger, "CURSOR_NOT_EMPTY", "cursor not empty during params reopen");
+                    }
+                    return PlaceExecResult.inProgress(0, "CURSOR_WAIT");
+                }
                 boolean opened = tryOpenParamsTarget(bridge);
                 entry.setParamsOpenAttempts(entry.paramsOpenAttempts() + 1);
                 entry.setNextParamsActionMs(now + Math.max(120, delay));

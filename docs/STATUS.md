@@ -90,6 +90,9 @@
 - PostPlace diagnostic + retry targeting update:
   - postPlace target resolver now scans wider sign Y offsets (`dy=+1..-3`) before fallback to anchor.
   - postPlace click path now probes multiple coordinates (resolved target + nearby + anchor-sign offsets) across legacy/packet/interact methods with structured per-attempt logs (`post_place_click`), making `POST_PLACE_CLICK_FAILED` root causes explicit in `latest.log`.
+- Global cursor-safety gate update:
+  - runtime no longer marks step as complete while cursor stack is non-empty (`tick step wait_cursor_clear`), preventing next block placement before current GUI state is fully cleared.
+  - place/menu/params stages now share global cursor guard, and params reopen path also requires cursor empty before new open attempts.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).

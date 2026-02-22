@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonParseException;
+import com.rainbow_universe.bettercode.core.bridge.CursorState;
 import com.rainbow_universe.bettercode.core.bridge.SelectedRow;
 import com.rainbow_universe.bettercode.core.publish.PublishExportExecutor;
 import com.rainbow_universe.bettercode.core.publish.PublishCacheView;
@@ -302,6 +303,16 @@ public final class RuntimeCore {
                 exec.lastInProgressReason = reason;
                 exec.lastInProgressLogMs = nowMs;
             }
+            return;
+        }
+        CursorState cursor = bridge.getCursorStack();
+        if (cursor != null && !cursor.isEmpty()) {
+            exec.nextStepAtMs = nowMs + Math.max(80, settings.getInt("printer.stepDelayMs", 80));
+            logger.info("printer-debug",
+                "tick step wait_cursor_clear source=" + exec.source
+                    + " step=" + exec.state.executedCount() + "/" + exec.state.totalCount()
+                    + " cursorItem=" + cursor.itemId()
+                    + " cursorName=" + cursor.displayName());
             return;
         }
         exec.state.markCurrentDone();
