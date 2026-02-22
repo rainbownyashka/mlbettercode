@@ -200,6 +200,8 @@ public final class PlaceModule
 
         state.active = !state.queue.isEmpty();
         state.current = null;
+        state.totalEntries = state.queue.size();
+        state.startedMs = state.active ? System.currentTimeMillis() : 0L;
         host.setActionBar(true, "&a/placeadvanced queued=" + state.queue.size(), 2000L);
     }
 
@@ -663,6 +665,8 @@ public final class PlaceModule
 
         state.active = !state.queue.isEmpty();
         state.current = null;
+        state.totalEntries = state.queue.size();
+        state.startedMs = state.active ? System.currentTimeMillis() : 0L;
         host.setActionBar(true,
             "&a/mldsl queued=" + state.queue.size() + " rows=" + rows.size() + " skipped=" + skippedRows,
             3500L);
@@ -1184,6 +1188,8 @@ public final class PlaceModule
 
         state.active = !state.queue.isEmpty();
         state.current = null;
+        state.totalEntries = state.queue.size();
+        state.startedMs = state.active ? System.currentTimeMillis() : 0L;
         host.setActionBar(true, "&a/place queued=" + state.queue.size(), 2000L);
     }
 }

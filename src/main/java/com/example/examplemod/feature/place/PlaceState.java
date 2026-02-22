@@ -10,12 +10,15 @@ final class PlaceState
     final Deque<PlaceEntry> queue = new ArrayDeque<>();
     PlaceEntry current = null;
     boolean active = false;
+    int totalEntries = 0;
+    long startedMs = 0L;
 
     void reset()
     {
         active = false;
         queue.clear();
         current = null;
+        totalEntries = 0;
+        startedMs = 0L;
     }
 }
-

@@ -26,6 +26,8 @@ public interface PlaceModuleHost
     long placeParamsChestAutoOpenDelayMs();
 
     void setActionBar(boolean ok, String text, long timeMs);
+    void setPrinterEtaActionBar(String text, long timeMs);
+    void clearPrinterEtaActionBar();
     void debugChat(String text);
 
     boolean isDevCreativeScoreboard(Minecraft mc);

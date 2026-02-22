@@ -29,11 +29,13 @@ final class PlaceTickHandler
             {
                 host.setActionBar(false, "&c/print aborted: world_or_player_unavailable", 3000L);
             }
+            host.clearPrinterEtaActionBar();
             state.reset();
             return;
         }
         if (!state.active)
         {
+            host.clearPrinterEtaActionBar();
             return;
         }
 
@@ -47,9 +49,11 @@ final class PlaceTickHandler
                 state.active = false;
                 System.out.println("[printer-debug] PRINT_FINISHED reason=queue_completed");
                 host.setActionBar(true, "&a/print finished: queue_completed", 3000L);
+                host.clearPrinterEtaActionBar();
                 return;
             }
         }
+        updatePrinterEta(host, state, nowMs);
 
         if (!host.isEditorModeActive() || !host.isDevCreativeScoreboard(mc))
         {
@@ -802,6 +806,7 @@ final class PlaceTickHandler
         if (host != null)
         {
             host.setActionBar(false, "&c/print aborted: " + r, 3500L);
+            host.clearPrinterEtaActionBar();
             host.clearQueuedClicks();
             host.clearTpPathQueue();
         }
@@ -809,5 +814,54 @@ final class PlaceTickHandler
         {
             state.reset();
         }
+    }
+
+    private static void updatePrinterEta(PlaceModuleHost host, PlaceState state, long nowMs)
+    {
+        if (host == null || state == null || !state.active)
+        {
+            return;
+        }
+        int total = Math.max(0, state.totalEntries);
+        if (total <= 0)
+        {
+            total = state.queue.size() + (state.current == null ? 0 : 1);
+        }
+        int remaining = state.queue.size() + (state.current == null ? 0 : 1);
+        int done = Math.max(0, total - remaining);
+        if (done > total)
+        {
+            done = total;
+        }
+        long started = state.startedMs > 0L ? state.startedMs : nowMs;
+        long elapsed = Math.max(0L, nowMs - started);
+        long etaMs;
+        if (done <= 0 || remaining <= 0)
+        {
+            etaMs = 0L;
+        }
+        else
+        {
+            double avgPerEntry = (double) elapsed / (double) done;
+            etaMs = (long) Math.max(0.0, avgPerEntry * (double) remaining);
+        }
+        String eta = formatEta(etaMs);
+        host.setPrinterEtaActionBar("&bETA: " + eta + " &7| &f" + done + "/" + total + " &7| &eleft " + remaining, 1600L);
+    }
+
+    private static String formatEta(long etaMs)
+    {
+        long sec = Math.max(0L, etaMs / 1000L);
+        long min = sec / 60L;
+        long rem = sec % 60L;
+        if (min > 99L)
+        {
+            min = 99L;
+        }
+        if (rem < 10L)
+        {
+            return min + ":0" + rem;
+        }
+        return min + ":" + rem;
     }
 }

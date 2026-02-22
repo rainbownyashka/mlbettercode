@@ -27,6 +27,10 @@
   - final printer states are now mirrored to `latest.log` via `printer-debug` markers:
     - `PRINT_FINISHED reason=queue_completed`
     - `PRINT_ABORTED reason=<reason>`.
+- Legacy 1.12.2 printer ETA overlay:
+  - added dedicated ETA action-bar channel for active print runs (`ETA mm:ss`, done/total, remaining),
+  - ETA is independent from generic action-bar reroute (generic messages still go to chat),
+  - ETA bar is cleared on finish/abort/reset.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).

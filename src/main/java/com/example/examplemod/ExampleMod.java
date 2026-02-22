@@ -296,6 +296,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
     private static volatile String actionBar2Text = "";
     private static volatile long actionBarExpireMs = 0L;
     private static volatile long actionBar2ExpireMs = 0L;
+    private static volatile String printerEtaBarText = "";
+    private static volatile long printerEtaBarExpireMs = 0L;
     private static volatile String actionBarPrimaryLastChatText = "";
     private static volatile String actionBarSecondaryLastChatText = "";
     private static volatile long actionBarPrimaryLastChatMs = 0L;
@@ -5811,6 +5813,27 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         actionBarSecondaryLastChatText = formatted;
         actionBarSecondaryLastChatMs = now;
         scheduleMainChat(formatted);
+    }
+
+    @Override
+    public void setPrinterEtaActionBar(String text, long timeMs)
+    {
+        String formatted = applyColorCodes(text);
+        if (formatted == null || formatted.trim().isEmpty())
+        {
+            printerEtaBarText = "";
+            printerEtaBarExpireMs = 0L;
+            return;
+        }
+        printerEtaBarText = formatted;
+        printerEtaBarExpireMs = System.currentTimeMillis() + Math.max(0L, timeMs);
+    }
+
+    @Override
+    public void clearPrinterEtaActionBar()
+    {
+        printerEtaBarText = "";
+        printerEtaBarExpireMs = 0L;
     }
 
     private static String applyColorCodes(String text)
@@ -13236,7 +13259,8 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         long now = System.currentTimeMillis();
         String text1 = now <= actionBarExpireMs ? actionBarText : "";
         String text2 = now <= actionBar2ExpireMs ? actionBar2Text : "";
-        if (text1.isEmpty() && text2.isEmpty())
+        String etaText = now <= printerEtaBarExpireMs ? printerEtaBarText : "";
+        if (text1.isEmpty() && text2.isEmpty() && etaText.isEmpty())
         {
             return;
         }
@@ -13255,6 +13279,12 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         {
             int w2 = mc.fontRenderer.getStringWidth(text2);
             mc.fontRenderer.drawStringWithShadow(text2, centerX - (w2 / 2), baseY + lineHeight, 0xFFFFFF);
+        }
+        if (!etaText.isEmpty())
+        {
+            int w3 = mc.fontRenderer.getStringWidth(etaText);
+            int y3 = baseY + (text2.isEmpty() ? lineHeight : (lineHeight * 2));
+            mc.fontRenderer.drawStringWithShadow(etaText, centerX - (w3 / 2), y3, 0xFFFFFF);
         }
     }
 
