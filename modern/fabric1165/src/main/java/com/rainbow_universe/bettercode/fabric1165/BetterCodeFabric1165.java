@@ -33,12 +33,18 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v1.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v1.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
+import net.minecraft.client.render.BufferBuilder;
+import net.minecraft.client.render.Tessellator;
+import net.minecraft.client.render.VertexFormats;
+import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -61,10 +67,12 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
-import net.minecraft.particle.ParticleTypes;
 import net.minecraft.util.registry.Registry;
+import com.mojang.blaze3d.systems.RenderSystem;
+import org.lwjgl.opengl.GL11;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -249,6 +257,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             renderSelectionHighlights(client);
             runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis());
         });
+        WorldRenderEvents.LAST.register(BetterCodeFabric1165::renderSelectionOutlines);
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
             if (hand != Hand.MAIN_HAND || player == null || world == null || hitResult == null) {
                 return ActionResult.PASS;
@@ -2614,16 +2623,6 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             if (shown >= 80) {
                 break;
             }
-            double gx = row.x() + 0.5;
-            double gy = row.y() + 1.02;
-            double gz = row.z() + 0.5;
-            // Pseudo-outline on top face: center + four corners.
-            spawnHighlightParticle(mc, ParticleTypes.END_ROD, gx, gy, gz, 0.0, 0.01, 0.0);
-            spawnHighlightParticle(mc, ParticleTypes.HAPPY_VILLAGER, gx - 0.32, gy, gz - 0.32, 0.0, 0.0, 0.0);
-            spawnHighlightParticle(mc, ParticleTypes.HAPPY_VILLAGER, gx + 0.32, gy, gz - 0.32, 0.0, 0.0, 0.0);
-            spawnHighlightParticle(mc, ParticleTypes.HAPPY_VILLAGER, gx - 0.32, gy, gz + 0.32, 0.0, 0.0, 0.0);
-            spawnHighlightParticle(mc, ParticleTypes.HAPPY_VILLAGER, gx + 0.32, gy, gz + 0.32, 0.0, 0.0, 0.0);
-            spawnHighlightParticle(mc, ParticleTypes.CRIT, gx, gy + 0.13, gz, 0.0, 0.0, 0.0);
             shown++;
         }
         if (selectedInDim > 0 && shown == 0 && now - LAST_SELECTOR_HIGHLIGHT_LOG_MS >= 1500L) {
@@ -2634,27 +2633,45 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
     }
 
-    private static void spawnHighlightParticle(MinecraftClient mc, net.minecraft.particle.ParticleEffect fx,
-                                               double x, double y, double z, double vx, double vy, double vz) {
-        if (mc == null || mc.world == null || fx == null) {
+    private static void renderSelectionOutlines(WorldRenderContext context) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (context == null || mc == null || mc.world == null || mc.player == null) {
             return;
         }
-        try {
-            java.lang.reflect.Method m = mc.world.getClass().getMethod(
-                "addImportantParticle",
-                net.minecraft.particle.ParticleEffect.class,
-                boolean.class,
-                double.class, double.class, double.class,
-                double.class, double.class, double.class
-            );
-            m.invoke(mc.world, fx, Boolean.TRUE, x, y, z, vx, vy, vz);
+        String dim = String.valueOf(mc.world.getRegistryKey().getValue());
+        if (SELECTED.isEmpty()) {
             return;
-        } catch (Exception ignore) {
         }
-        try {
-            mc.world.addParticle(fx, x, y, z, vx, vy, vz);
-        } catch (Exception ignore) {
+        Vec3d cam = context.camera() == null ? null : context.camera().getPos();
+        if (cam == null) {
+            return;
         }
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.disableTexture();
+        RenderSystem.lineWidth(2.0F);
+        BufferBuilder bb = Tessellator.getInstance().getBuffer();
+        bb.begin(GL11.GL_LINES, VertexFormats.POSITION_COLOR);
+        int drawn = 0;
+        for (SelectedRow row : SELECTED.values()) {
+            if (row == null || !dim.equals(row.dimension())) {
+                continue;
+            }
+            BlockPos anchor = new BlockPos(row.x(), row.y(), row.z());
+            if (!isBlueGlassAt(mc, anchor)) {
+                continue;
+            }
+            BlockPos top = anchor.up();
+            Box box = new Box(top).expand(0.003).offset(-cam.x, -cam.y, -cam.z);
+            WorldRenderer.drawBox(context.matrixStack(), bb, box, 0.15F, 0.95F, 1.0F, 1.0F);
+            drawn++;
+            if (drawn >= 120) {
+                break;
+            }
+        }
+        Tessellator.getInstance().draw();
+        RenderSystem.enableTexture();
+        RenderSystem.disableBlend();
     }
 
     private static void traceRuntimeTickProbe(MinecraftClient mc) {

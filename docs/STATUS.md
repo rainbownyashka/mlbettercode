@@ -77,6 +77,9 @@
 - Modern route/selector robustness update:
   - menu slot matching now uses normalized combined text (`display + nbt`) with unicode-escape cleanup and service-token stripping, improving compatibility with ViaVersion-style JSON/NBT wrappers without locale translation hacks.
   - selector highlight on fabric1165 now draws a top-face pseudo-outline and auto-removes selected rows when anchor blue-glass is broken.
+- Fabric1165 selector visual mode switched to line-outline:
+  - selected rows are now rendered via world render pass (`WorldRenderEvents.LAST`) as cyan line boxes (block outline style) instead of particle spam.
+  - tick path keeps only anchor validation and auto-unselect for broken blue-glass anchors.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).
