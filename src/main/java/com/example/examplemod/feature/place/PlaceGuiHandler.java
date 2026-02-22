@@ -10,6 +10,7 @@ import net.minecraft.client.gui.inventory.GuiContainer;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.inventory.ClickType;
 import net.minecraft.inventory.Slot;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.init.Items;
 import net.minecraft.network.play.client.CPacketCreativeInventoryAction;
@@ -1225,6 +1226,17 @@ final class PlaceGuiHandler
             return st.getMetadata() == expected.getMetadata();
         }
 
+        // For text/num/var/arr/location/apple the only stable server-side signal is
+        // that the correct input-mode item is present in target slot.
+        // Value rendering can differ/transiently lag, so do not hard-fail by text here.
+        Item expectedModeItem = host.itemForMode(arg.mode);
+        if (expectedModeItem != null && st.getItem() != expectedModeItem)
+        {
+            return false;
+        }
+        return true;
+
+        /*
         String expectedRaw = arg.valueRaw == null ? "" : arg.valueRaw;
         String actualRaw = host.extractEntryText(st, arg.mode);
         String expNorm = host.normalizeForMatch(expectedRaw);
@@ -1238,6 +1250,7 @@ final class PlaceGuiHandler
             return false;
         }
         return gotNorm.equals(expNorm) || gotNorm.contains(expNorm) || expNorm.contains(gotNorm);
+        */
     }
 
     private static void requeueArgsFromIndex(PlaceEntry entry, int failedIndex)

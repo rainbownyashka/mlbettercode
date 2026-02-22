@@ -46,6 +46,9 @@
 - Legacy 1.12.2 args close-gate validation:
   - params GUI is no longer closed immediately after arg queue end; runtime now validates applied arg slots before close.
   - on mismatch runtime re-queues from first failed arg and retries in-place; aborts only on bounded validation timeout/retry exhaustion.
+- Legacy 1.12.2 args validation semantics adjustment:
+  - for non-`item(...)` args, validation now confirms mode-item presence in target slot (book/slime/itemframe/etc.) instead of strict display-text equality.
+  - strict value comparison is preserved only for `item(...)`, reducing false validation fails on server-side text/render lag.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).
