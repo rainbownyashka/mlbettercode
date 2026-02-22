@@ -75,6 +75,10 @@ public class PlaceEntry
     public int paramsOpenAttempts;
     public long paramsStartMs;
     public long nextParamsActionMs;
+    public String guiStallStage;
+    public String guiStallHash;
+    public long guiStallSinceMs;
+    public int guiReopenAttempts;
 
     // Post-place configuration (functions/cycles).
     public int postPlaceKind = POST_PLACE_NONE;
@@ -153,6 +157,10 @@ public class PlaceEntry
         this.paramsOpenAttempts = 0;
         this.paramsStartMs = 0L;
         this.nextParamsActionMs = 0L;
+        this.guiStallStage = "";
+        this.guiStallHash = "";
+        this.guiStallSinceMs = 0L;
+        this.guiReopenAttempts = 0;
         this.triedWindowId = -1;
         this.menuClicksSinceOpen = 0;
         this.menuNonEmptySinceMs = 0L;
@@ -223,6 +231,10 @@ public class PlaceEntry
         this.paramsOpenAttempts = 0;
         this.paramsStartMs = 0L;
         this.nextParamsActionMs = 0L;
+        this.guiStallStage = "";
+        this.guiStallHash = "";
+        this.guiStallSinceMs = 0L;
+        this.guiReopenAttempts = 0;
         this.triedWindowId = -1;
         this.menuClicksSinceOpen = 0;
         this.menuNonEmptySinceMs = 0L;

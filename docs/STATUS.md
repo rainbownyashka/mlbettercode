@@ -52,6 +52,10 @@
 - Legacy 1.12.2 no-op arg handling:
   - empty non-item args (e.g. `text()`) are treated as no-op steps: no slot write attempt and no validation requirement.
   - prevents false validation/retry loops for compiler entries that intentionally carry empty arg payloads.
+- Legacy 1.12.2 GUI resilience hardening:
+  - all queued GUI clicks are now gated by cursor-empty check (no next click while cursor is occupied).
+  - menu stage now auto-reopens after 15s hang with bounded attempts.
+  - generic GUI watchdog closes/reopens stalled menu/params/args windows when non-player contents do not change for 60s (bounded attempts, explicit abort on exhaustion).
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).

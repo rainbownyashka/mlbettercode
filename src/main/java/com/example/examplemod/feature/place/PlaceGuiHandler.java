@@ -28,6 +28,9 @@ final class PlaceGuiHandler
     private static final Logger LOGGER = LogManager.getLogger("BetterCode-Place");
     private static final int PAGE_TURN_MAX_RETRIES = 5;
     private static final long PAGE_TURN_TIMEOUT_MS = 1500L;
+    private static final long MENU_REOPEN_TIMEOUT_MS = 15000L;
+    private static final long GUI_STALL_TIMEOUT_MS = 60000L;
+    private static final int GUI_REOPEN_MAX_ATTEMPTS = 6;
 
     private PlaceGuiHandler() {}
 
@@ -46,6 +49,18 @@ final class PlaceGuiHandler
 
         if (entry.awaitingParamsChest)
         {
+            touchGuiStall(entry, gui, "params", nowMs);
+            if (isGuiStalled(entry, nowMs, host.placeDelayMs(GUI_STALL_TIMEOUT_MS)))
+            {
+                if (!reopenGuiWithLimit(host, state, entry, "params_stall_60s"))
+                {
+                    return;
+                }
+                host.closeCurrentScreen();
+                entry.needOpenParamsChest = true;
+                entry.nextParamsActionMs = nowMs + host.placeDelayMs(350L);
+                return;
+            }
             int windowId = gui.inventorySlots == null ? -1 : gui.inventorySlots.windowId;
             boolean switchedFromMenu = windowId != -1
                 && entry.lastMenuWindowId != -1
@@ -105,12 +120,52 @@ final class PlaceGuiHandler
 
         if (entry.awaitingArgs)
         {
+            touchGuiStall(entry, gui, "args", nowMs);
+            if (isGuiStalled(entry, nowMs, host.placeDelayMs(GUI_STALL_TIMEOUT_MS)))
+            {
+                if (!reopenGuiWithLimit(host, state, entry, "args_stall_60s"))
+                {
+                    return;
+                }
+                host.closeCurrentScreen();
+                entry.awaitingArgs = false;
+                entry.awaitingParamsChest = true;
+                entry.needOpenParamsChest = true;
+                entry.paramsStartMs = nowMs;
+                entry.nextParamsActionMs = nowMs + host.placeDelayMs(350L);
+                return;
+            }
             handleArgs(host, state, gui, nowMs);
             return;
         }
 
         if (!entry.awaitingMenu)
         {
+            return;
+        }
+        touchGuiStall(entry, gui, "menu", nowMs);
+        if (entry.menuStartMs > 0L && nowMs - entry.menuStartMs > host.placeDelayMs(MENU_REOPEN_TIMEOUT_MS))
+        {
+            if (!reopenGuiWithLimit(host, state, entry, "menu_reopen_15s"))
+            {
+                return;
+            }
+            host.closeCurrentScreen();
+            entry.needOpenMenu = true;
+            entry.menuStartMs = nowMs;
+            entry.nextMenuActionMs = nowMs + host.placeDelayMs(350L);
+            return;
+        }
+        if (isGuiStalled(entry, nowMs, host.placeDelayMs(GUI_STALL_TIMEOUT_MS)))
+        {
+            if (!reopenGuiWithLimit(host, state, entry, "menu_stall_60s"))
+            {
+                return;
+            }
+            host.closeCurrentScreen();
+            entry.needOpenMenu = true;
+            entry.menuStartMs = nowMs;
+            entry.nextMenuActionMs = nowMs + host.placeDelayMs(350L);
             return;
         }
 
@@ -217,6 +272,10 @@ final class PlaceGuiHandler
                         abort(host, state, "scope_menu_slot_invalid");
                         return;
                     }
+                    if (!isCursorClearNow())
+                    {
+                        return;
+                    }
                     host.queueClick(new ClickAction(preferredClickSlot, 0, ClickType.PICKUP));
                     entry.triedSlots.add(preferredClickSlot);
                     try
@@ -299,6 +358,10 @@ final class PlaceGuiHandler
                 abort(host, state, "random_menu_slot_invalid");
                 return;
             }
+            if (!isCursorClearNow())
+            {
+                return;
+            }
             host.queueClick(new ClickAction(rndClickSlot, 0, ClickType.PICKUP));
             entry.triedSlots.add(rndClickSlot);
             try
@@ -330,6 +393,10 @@ final class PlaceGuiHandler
         if (stepClickSlot < 0)
         {
             abort(host, state, "menu_slot_invalid");
+            return;
+        }
+        if (!isCursorClearNow())
+        {
             return;
         }
         host.queueClick(new ClickAction(stepClickSlot, 0, ClickType.PICKUP));
@@ -643,6 +710,10 @@ final class PlaceGuiHandler
                 abort(host, state, "item_seq_bad_slot");
                 return;
             }
+            if (!isCursorClearNow())
+            {
+                return;
+            }
             host.queueClick(new ClickAction(seqClickSlot, 0, ClickType.PICKUP));
             entry.tempItemSeqStage++;
             entry.pendingArgNextMs = nowMs + host.placeDelayMs(500L);
@@ -722,6 +793,10 @@ final class PlaceGuiHandler
                 {
                     host.setActionBar(false, "&c/placeadvanced: pending arg slot is invalid", 2500L);
                     abort(host, state, "pending_arg_slot_invalid");
+                    return;
+                }
+                if (!isCursorClearNow())
+                {
                     return;
                 }
                 host.queueClick(new ClickAction(pendingClickSlot, 0, ClickType.PICKUP));
@@ -1749,6 +1824,83 @@ final class PlaceGuiHandler
         return count;
     }
 
+    private static boolean isCursorClearNow()
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.player == null)
+        {
+            return false;
+        }
+        try
+        {
+            ItemStack carried = mc.player.inventory.getItemStack();
+            return carried == null || carried.isEmpty();
+        }
+        catch (Exception ignore)
+        {
+            return false;
+        }
+    }
+
+    private static void touchGuiStall(PlaceEntry entry, GuiContainer gui, String stage, long nowMs)
+    {
+        if (entry == null || gui == null)
+        {
+            return;
+        }
+        String hash = buildNonPlayerHash(gui);
+        int wid = gui.inventorySlots == null ? -1 : gui.inventorySlots.windowId;
+        String current = stage + ":" + wid + ":" + hash;
+        if (entry.guiStallStage == null || !entry.guiStallStage.equals(stage))
+        {
+            entry.guiStallStage = stage;
+            entry.guiStallHash = current;
+            entry.guiStallSinceMs = nowMs;
+            entry.guiReopenAttempts = 0;
+            return;
+        }
+        if (entry.guiStallHash == null || !entry.guiStallHash.equals(current))
+        {
+            entry.guiStallHash = current;
+            entry.guiStallSinceMs = nowMs;
+            entry.guiReopenAttempts = 0;
+        }
+    }
+
+    private static boolean isGuiStalled(PlaceEntry entry, long nowMs, long timeoutMs)
+    {
+        if (entry == null || timeoutMs <= 0L)
+        {
+            return false;
+        }
+        if (entry.guiStallSinceMs <= 0L)
+        {
+            return false;
+        }
+        return nowMs - entry.guiStallSinceMs >= timeoutMs;
+    }
+
+    private static boolean reopenGuiWithLimit(PlaceModuleHost host, PlaceState state, PlaceEntry entry, String reason)
+    {
+        if (entry == null || host == null)
+        {
+            return false;
+        }
+        entry.guiReopenAttempts++;
+        if (entry.guiReopenAttempts > GUI_REOPEN_MAX_ATTEMPTS)
+        {
+            host.setActionBar(false, "&c/place: gui reopen exhausted", 3000L);
+            abort(host, state, reason + "_reopen_exhausted");
+            return false;
+        }
+        if (host.isDebugUi())
+        {
+            host.debugChat("placeadvanced: reopen gui reason=" + reason + " attempt=" + entry.guiReopenAttempts);
+        }
+        entry.guiStallSinceMs = 0L;
+        return true;
+    }
+
     private static final class SlotRouteResult
     {
         final boolean waiting;
@@ -1896,6 +2048,10 @@ final class PlaceGuiHandler
             LOGGER.info("PLACE_PAGE_CLICK arrow_invalid targetPage={} slot={} rawArrow={}",
                 targetPage + 1, abs, nextArrow.slotNumber);
             return new SlotRouteResult(false, true, null);
+        }
+        if (!isCursorClearNow())
+        {
+            return new SlotRouteResult(true, false, null);
         }
         host.queueClick(new ClickAction(arrowClickSlot, 0, ClickType.PICKUP));
         LOGGER.info("PLACE_PAGE_CLICK click currentPage={} targetPage={} slot={} arrowSlot={}",
