@@ -98,8 +98,33 @@ final class PlaceTickHandler
 
         PlaceEntry entry = state.current;
 
+        // Control step: skip/move-only must never enter place/menu/sign branches.
+        if (entry.moveOnly)
+        {
+            if (entry.pos == null)
+            {
+                state.current = null;
+                return;
+            }
+            double dx = entry.pos.getX() + 0.5;
+            double dy = entry.pos.getY();
+            double dz = entry.pos.getZ() - 2.0 + 0.5;
+
+            if (mc.player.getDistanceSq(dx, dy, dz) <= 6.0)
+            {
+                state.current = null;
+                return;
+            }
+            if (!host.tpPathQueueIsEmpty())
+            {
+                return;
+            }
+            host.buildTpPathQueue(mc.world, mc.player.posX, mc.player.posY, mc.player.posZ, dx, dy, dz);
+            return;
+        }
+
         // If the block is already present (server delayed updates), detect it and continue without re-placing.
-        if (!entry.placedBlock && entry.pos != null && entry.block != null)
+        if (!entry.moveOnly && !entry.placedBlock && entry.pos != null && entry.block != null)
         {
             try
             {
@@ -297,25 +322,6 @@ final class PlaceTickHandler
                 entry.paramsOpenAttempts++;
                 entry.nextParamsActionMs = nowMs + host.placeDelayMs(350L);
             }
-            return;
-        }
-
-        if (entry.moveOnly)
-        {
-            double dx = entry.pos.getX() + 0.5;
-            double dy = entry.pos.getY();
-            double dz = entry.pos.getZ() - 2.0 + 0.5;
-
-            if (mc.player.getDistanceSq(dx, dy, dz) <= 6.0)
-            {
-                state.current = null;
-                return;
-            }
-            if (!host.tpPathQueueIsEmpty())
-            {
-                return;
-            }
-            host.buildTpPathQueue(mc.world, mc.player.posX, mc.player.posY, mc.player.posZ, dx, dy, dz);
             return;
         }
 
@@ -566,6 +572,12 @@ final class PlaceTickHandler
     {
         if (entry == null)
         {
+            return;
+        }
+        if (entry.moveOnly)
+        {
+            entry.awaitingMenu = false;
+            entry.needOpenMenu = false;
             return;
         }
         try

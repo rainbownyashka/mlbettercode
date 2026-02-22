@@ -34,6 +34,9 @@
 - Legacy 1.12.2 `/mldsl run` continue/skip sign matching now uses sign cache as parity fallback:
   - `findSignAtZMinus1(...)` now falls back to cached entry->sign mapping and cached `z-1` sign lookup even when chunk is loaded but live sign tile is transiently missing.
   - `PlaceModule.rowAlreadyMatches(...)` now merges live sign lines with cached sign lines (publish cache) before deciding mismatch, reducing false "row not matched" on long/partially loaded sign text.
+- Legacy 1.12.2 skip control-step hardening:
+  - `PlaceTickHandler` now handles `moveOnly` steps before any block-confirm/menu/sign stage.
+  - skip control packets no longer pass through `startAfterPlaced(...)`, so they cannot trigger imaginary sign right-click at `z-1`.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).
