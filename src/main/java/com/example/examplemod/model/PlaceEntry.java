@@ -89,6 +89,11 @@ public class PlaceEntry
 
     // Move-only step (no placement, only TP path advance).
     public boolean moveOnly = false;
+    // Break-only step (destroy existing block at pos, then continue).
+    public boolean breakOnly = false;
+    // Plan row finalize marker: validate full row and optionally trigger row rebuild.
+    public boolean rowFinalizeMarker = false;
+    public int planRowRuntimeIndex = -1;
 
     // Placement retry (server may cancel fast placements / anti-cheat).
     public int placeAttempts = 0;
@@ -173,6 +178,9 @@ public class PlaceEntry
         this.postPlaceNextMs = 0L;
 
         this.moveOnly = false;
+        this.breakOnly = false;
+        this.rowFinalizeMarker = false;
+        this.planRowRuntimeIndex = -1;
         this.placedConfirmedMs = 0L;
         this.placedLostCount = 0;
         this.tempHotbarSlot = -1;
@@ -247,6 +255,9 @@ public class PlaceEntry
         this.postPlaceNextMs = 0L;
 
         this.moveOnly = false;
+        this.breakOnly = false;
+        this.rowFinalizeMarker = false;
+        this.planRowRuntimeIndex = -1;
         this.placedConfirmedMs = 0L;
         this.placedLostCount = 0;
         this.tempHotbarSlot = -1;

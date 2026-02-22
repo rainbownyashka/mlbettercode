@@ -35,7 +35,7 @@ public final class PlaceModule
     private List<BlockPos> lastScannedBlueGlass = new ArrayList<>();
     private int lastScannedBlueGlassDim = Integer.MIN_VALUE;
 
-    private static final class PlanStep
+    static final class PlanStep
     {
         boolean isPause;
         boolean isSkip;
@@ -599,68 +599,33 @@ public final class PlaceModule
             host.setLastGlassPos(startGlass, mc.world.provider.getDimension());
         }
 
+        state.planRows.clear();
+        state.completedPlanRows.clear();
+
         // Build execution queue: append rows sequentially.
         for (int rowIndex = 0; rowIndex < pendingRows.size(); rowIndex++)
         {
             BlockPos glass = starts.get(rowIndex);
             int logicalRowNumber = pendingRowNumbers.get(rowIndex);
-            int p = 0; // reset per row
-            for (PlanStep s : pendingRows.get(rowIndex))
+            List<PlanStep> rowSteps = pendingRows.get(rowIndex);
+
+            PlaceState.PlanRowRuntime rr = new PlaceState.PlanRowRuntime();
+            rr.logicalRowNumber = logicalRowNumber;
+            rr.glassPos = glass;
+            rr.steps = rowSteps;
+            int runtimeIndex = state.planRows.size();
+            state.planRows.add(rr);
+
+            List<PlaceEntry> entries = buildEntriesForPlanRow(host, glass, rowSteps);
+            for (PlaceEntry e : entries)
             {
-                if (s.isPause)
-                {
-                    PlaceEntry pause = new PlaceEntry(mc.player.getPosition(), Blocks.AIR, "");
-                    pause.searchKey = "";
-                    state.queue.add(pause);
-                    continue;
-                }
-                if (s.isSkip)
-                {
-                    BlockPos target = glass.add(-2 * p, 1, 0);
-                    PlaceEntry move = new PlaceEntry(target, Blocks.AIR, "");
-                    move.searchKey = "";
-                    move.moveOnly = true;
-                    state.queue.add(move);
-                    p++;
-                    continue;
-                }
-
-                BlockPos target = glass.add(-2 * p, 1, 0);
-
-                String name = s.name == null ? "" : s.name;
-                String norm = host.normalizeForMatch(name);
-                PlaceEntry entry = new PlaceEntry(target, s.block, norm);
-                entry.negated = s.negated;
-                entry.preferredMenuKey = resolvePreferredScopeMenuKey(host, s.expectedSign2);
-
-                if (s.block == Blocks.LAPIS_BLOCK)
-                {
-                    entry.searchKey = "";
-                    entry.postPlaceKind = PlaceEntry.POST_PLACE_SIGN_NAME;
-                    entry.postPlaceName = name;
-                }
-                else if (s.block == Blocks.EMERALD_BLOCK)
-                {
-                    entry.searchKey = "";
-                    entry.postPlaceKind = PlaceEntry.POST_PLACE_CYCLE;
-                    entry.postPlaceName = name;
-                    entry.postPlaceCycleTicks = parseCycleTicks(s.argsRaw == null ? "no" : s.argsRaw);
-                }
-                else
-                {
-                    entry.searchKey = norm;
-                    if (s.argsRaw != null)
-                    {
-                        entry.advancedArgsRaw = s.argsRaw;
-                    }
-                    if (s.parsedArgs != null && !s.parsedArgs.isEmpty())
-                    {
-                        entry.advancedArgs = s.parsedArgs;
-                    }
-                }
-                state.queue.add(entry);
-                p++;
+                state.queue.add(e);
             }
+            PlaceEntry marker = new PlaceEntry(glass, Blocks.AIR, "");
+            marker.searchKey = "";
+            marker.rowFinalizeMarker = true;
+            marker.planRowRuntimeIndex = runtimeIndex;
+            state.queue.add(marker);
         }
 
         state.active = !state.queue.isEmpty();
@@ -933,7 +898,7 @@ public final class PlaceModule
         host.setActionBar(true, "&a/mldsl check done: found=" + foundRows + "/" + rows.size(), 3500L);
     }
 
-    private static boolean rowAlreadyMatches(
+    static boolean rowAlreadyMatches(
         PlaceModuleHost host,
         Minecraft mc,
         BlockPos glass,
@@ -1088,6 +1053,109 @@ public final class PlaceModule
             p++;
         }
         return true;
+    }
+
+    static List<PlaceEntry> buildEntriesForPlanRow(PlaceModuleHost host, BlockPos glass, List<PlanStep> steps)
+    {
+        List<PlaceEntry> out = new ArrayList<>();
+        if (host == null || glass == null || steps == null)
+        {
+            return out;
+        }
+        int p = 0;
+        for (PlanStep s : steps)
+        {
+            if (s == null)
+            {
+                continue;
+            }
+            if (s.isPause)
+            {
+                PlaceEntry pause = new PlaceEntry(glass, Blocks.AIR, "");
+                pause.searchKey = "";
+                out.add(pause);
+                continue;
+            }
+            if (s.isSkip)
+            {
+                BlockPos target = glass.add(-2 * p, 1, 0);
+                PlaceEntry move = new PlaceEntry(target, Blocks.AIR, "");
+                move.searchKey = "";
+                move.moveOnly = true;
+                out.add(move);
+                p++;
+                continue;
+            }
+
+            BlockPos target = glass.add(-2 * p, 1, 0);
+            String name = s.name == null ? "" : s.name;
+            String norm = host.normalizeForMatch(name);
+            PlaceEntry entry = new PlaceEntry(target, s.block, norm);
+            entry.negated = s.negated;
+            entry.preferredMenuKey = resolvePreferredScopeMenuKey(host, s.expectedSign2);
+
+            if (s.block == Blocks.LAPIS_BLOCK)
+            {
+                entry.searchKey = "";
+                entry.postPlaceKind = PlaceEntry.POST_PLACE_SIGN_NAME;
+                entry.postPlaceName = name;
+            }
+            else if (s.block == Blocks.EMERALD_BLOCK)
+            {
+                entry.searchKey = "";
+                entry.postPlaceKind = PlaceEntry.POST_PLACE_CYCLE;
+                entry.postPlaceName = name;
+                entry.postPlaceCycleTicks = parseCycleTicks(s.argsRaw == null ? "no" : s.argsRaw);
+            }
+            else
+            {
+                entry.searchKey = norm;
+                if (s.argsRaw != null)
+                {
+                    entry.advancedArgsRaw = s.argsRaw;
+                }
+                if (s.parsedArgs != null && !s.parsedArgs.isEmpty())
+                {
+                    entry.advancedArgs = s.parsedArgs;
+                }
+            }
+            out.add(entry);
+            p++;
+        }
+        return out;
+    }
+
+    static List<PlaceEntry> buildBreakEntriesForPlanRow(BlockPos glass, List<PlanStep> steps)
+    {
+        List<PlaceEntry> out = new ArrayList<>();
+        if (glass == null || steps == null)
+        {
+            return out;
+        }
+        int p = 0;
+        for (PlanStep s : steps)
+        {
+            if (s == null)
+            {
+                continue;
+            }
+            if (s.isPause)
+            {
+                continue;
+            }
+            if (s.isSkip)
+            {
+                p++;
+                continue;
+            }
+            BlockPos target = glass.add(-2 * p, 1, 0);
+            PlaceEntry br = new PlaceEntry(target, Blocks.AIR, "");
+            br.searchKey = "";
+            br.breakOnly = true;
+            out.add(br);
+            p++;
+        }
+        return out;
     }
 
     private static int parseCycleTicks(String raw)

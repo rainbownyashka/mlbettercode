@@ -13,6 +13,9 @@ import net.minecraft.util.EnumHand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 
+import java.util.ArrayList;
+import java.util.List;
+
 final class PlaceTickHandler
 {
     private PlaceTickHandler() {}
@@ -97,6 +100,18 @@ final class PlaceTickHandler
         }
 
         PlaceEntry entry = state.current;
+
+        if (entry.rowFinalizeMarker)
+        {
+            handlePlanRowFinalize(host, state, mc, entry, nowMs);
+            return;
+        }
+
+        if (entry.breakOnly)
+        {
+            handleBreakOnly(host, state, mc, entry, nowMs);
+            return;
+        }
 
         // Control step: skip/move-only must never enter place/menu/sign branches.
         if (entry.moveOnly)
@@ -545,6 +560,138 @@ final class PlaceTickHandler
         {
             state.current = null;
         }
+    }
+
+    private static void handlePlanRowFinalize(
+        PlaceModuleHost host,
+        PlaceState state,
+        Minecraft mc,
+        PlaceEntry marker,
+        long nowMs)
+    {
+        if (host == null || state == null || mc == null || marker == null)
+        {
+            if (state != null)
+            {
+                state.current = null;
+            }
+            return;
+        }
+        int idx = marker.planRowRuntimeIndex;
+        if (idx < 0 || idx >= state.planRows.size())
+        {
+            state.current = null;
+            return;
+        }
+        PlaceState.PlanRowRuntime rr = state.planRows.get(idx);
+        boolean ok = false;
+        try
+        {
+            ok = PlaceModule.rowAlreadyMatches(
+                host,
+                mc,
+                rr.glassPos,
+                rr.steps,
+                rr.logicalRowNumber,
+                true);
+        }
+        catch (Exception ignore) { }
+
+        if (ok)
+        {
+            state.completedPlanRows.add(rr.logicalRowNumber);
+            if (host.isDebugUi())
+            {
+                host.debugChat("&a/mldsl row " + rr.logicalRowNumber + " finalized");
+            }
+            state.current = null;
+            return;
+        }
+
+        rr.repairAttempts++;
+        if (rr.repairAttempts > 3)
+        {
+            abortPrint(host, state, "row_repair_exhausted_" + rr.logicalRowNumber);
+            return;
+        }
+
+        List<PlaceEntry> front = new ArrayList<>();
+        List<PlaceEntry> breakers = PlaceModule.buildBreakEntriesForPlanRow(rr.glassPos, rr.steps);
+        List<PlaceEntry> rebuild = PlaceModule.buildEntriesForPlanRow(host, rr.glassPos, rr.steps);
+        front.addAll(breakers);
+        front.addAll(rebuild);
+        PlaceEntry nextMarker = new PlaceEntry(rr.glassPos, net.minecraft.init.Blocks.AIR, "");
+        nextMarker.searchKey = "";
+        nextMarker.rowFinalizeMarker = true;
+        nextMarker.planRowRuntimeIndex = idx;
+        front.add(nextMarker);
+
+        for (int i = front.size() - 1; i >= 0; i--)
+        {
+            state.queue.addFirst(front.get(i));
+        }
+        if (host.isDebugUi())
+        {
+            host.debugChat("&e/mldsl row " + rr.logicalRowNumber + " invalid -> break+rebuild (attempt " + rr.repairAttempts + ")");
+        }
+        state.current = null;
+    }
+
+    private static void handleBreakOnly(
+        PlaceModuleHost host,
+        PlaceState state,
+        Minecraft mc,
+        PlaceEntry entry,
+        long nowMs)
+    {
+        if (host == null || state == null || mc == null || entry == null || entry.pos == null)
+        {
+            if (state != null)
+            {
+                state.current = null;
+            }
+            return;
+        }
+        double dx = entry.pos.getX() + 0.5;
+        double dy = entry.pos.getY();
+        double dz = entry.pos.getZ() - 2.0 + 0.5;
+        if (mc.player.getDistanceSq(dx, dy, dz) > 6.0)
+        {
+            if (!host.tpPathQueueIsEmpty())
+            {
+                return;
+            }
+            host.buildTpPathQueue(mc.world, mc.player.posX, mc.player.posY, mc.player.posZ, dx, dy, dz);
+            return;
+        }
+        try
+        {
+            if (!mc.world.isBlockLoaded(entry.pos, false))
+            {
+                return;
+            }
+            if (mc.world.isAirBlock(entry.pos))
+            {
+                state.current = null;
+                return;
+            }
+            if (entry.nextPlaceAttemptMs > 0L && nowMs < entry.nextPlaceAttemptMs)
+            {
+                return;
+            }
+            if (mc.playerController != null)
+            {
+                mc.playerController.onPlayerDamageBlock(entry.pos, EnumFacing.UP);
+                mc.player.swingArm(EnumHand.MAIN_HAND);
+            }
+            entry.placeAttempts++;
+            entry.nextPlaceAttemptMs = nowMs + host.placeDelayMs(120L);
+            if (entry.placeAttempts > 40)
+            {
+                abortPrint(host, state, "row_break_timeout");
+            }
+        }
+        catch (Exception ignore) { }
     }
 
     private static void selectHotbarSlot(Minecraft mc, int slot)
