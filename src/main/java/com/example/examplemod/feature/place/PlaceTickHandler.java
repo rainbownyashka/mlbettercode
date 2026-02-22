@@ -36,6 +36,20 @@ final class PlaceTickHandler
         {
             return;
         }
+
+        // Always resolve queue completion first, before any runtime guards that may early-return.
+        // Otherwise printer can finish silently while GUI/editor guards keep skipping the tick body.
+        if (state.current == null)
+        {
+            state.current = state.queue.poll();
+            if (state.current == null)
+            {
+                state.active = false;
+                host.setActionBar(true, "&a/print finished: queue_completed", 3000L);
+                return;
+            }
+        }
+
         if (!host.isEditorModeActive() || !host.isDevCreativeScoreboard(mc))
         {
             return;
@@ -75,17 +89,6 @@ final class PlaceTickHandler
                 catch (Exception ignore) { }
             }
             return;
-        }
-
-        if (state.current == null)
-        {
-            state.current = state.queue.poll();
-            if (state.current == null)
-            {
-                state.active = false;
-                host.setActionBar(true, "&a/print finished: queue_completed", 3000L);
-                return;
-            }
         }
 
         PlaceEntry entry = state.current;
