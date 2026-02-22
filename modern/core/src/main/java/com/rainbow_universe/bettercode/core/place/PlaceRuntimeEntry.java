@@ -65,6 +65,8 @@ public final class PlaceRuntimeEntry {
     private int paramsOpenAttempts;
     private long paramsStartMs;
     private long nextParamsActionMs;
+    private int paramsReadyWindowId;
+    private long paramsReadySinceMs;
 
     private int postPlaceKind;
     private String postPlaceName;
@@ -132,6 +134,8 @@ public final class PlaceRuntimeEntry {
         this.paramsOpenAttempts = 0;
         this.paramsStartMs = 0L;
         this.nextParamsActionMs = 0L;
+        this.paramsReadyWindowId = -1;
+        this.paramsReadySinceMs = 0L;
         this.postPlaceKind = POST_PLACE_NONE;
         this.postPlaceName = "";
         this.postPlaceCycleTicks = -1;
@@ -274,6 +278,10 @@ public final class PlaceRuntimeEntry {
     public void setParamsStartMs(long paramsStartMs) { this.paramsStartMs = paramsStartMs; }
     public long nextParamsActionMs() { return nextParamsActionMs; }
     public void setNextParamsActionMs(long nextParamsActionMs) { this.nextParamsActionMs = nextParamsActionMs; }
+    public int paramsReadyWindowId() { return paramsReadyWindowId; }
+    public void setParamsReadyWindowId(int paramsReadyWindowId) { this.paramsReadyWindowId = paramsReadyWindowId; }
+    public long paramsReadySinceMs() { return paramsReadySinceMs; }
+    public void setParamsReadySinceMs(long paramsReadySinceMs) { this.paramsReadySinceMs = paramsReadySinceMs; }
     public int postPlaceKind() { return postPlaceKind; }
     public void setPostPlaceKind(int postPlaceKind) { this.postPlaceKind = postPlaceKind; }
     public String postPlaceName() { return postPlaceName; }

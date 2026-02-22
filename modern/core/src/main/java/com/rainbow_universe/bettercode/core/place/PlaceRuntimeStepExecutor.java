@@ -24,6 +24,7 @@ public final class PlaceRuntimeStepExecutor {
     private static final long MENU_NON_EMPTY_STABLE_MS = 250L;
     private static final long PARAMS_TIMEOUT_MS = 6000L;
     private static final long PARAMS_REOPEN_AFTER_MS = 1200L;
+    private static final long PARAMS_WINDOW_STABLE_MS = 140L;
     private static final long ARGS_TIMEOUT_MS = 12000L;
     private static final long ARGS_ACTION_MIN_GAP_MS = 180L;
     private static final long CURSOR_TIMEOUT_MS = 5000L;
@@ -198,6 +199,8 @@ public final class PlaceRuntimeStepExecutor {
                 entry.setNeedOpenParamsChest(false);
                 entry.setAwaitingArgs(false);
                 entry.setArgsWindowId(-1);
+                entry.setParamsReadyWindowId(-1);
+                entry.setParamsReadySinceMs(0L);
                 logger.info("printer-debug", "runtime_state=SKIP_PARAMS_NO_ARGS");
                 return finishOrPostPlace(entry, bridge, logger, now, delay);
             }
@@ -216,7 +219,22 @@ public final class PlaceRuntimeStepExecutor {
             boolean switchedOrAcked = switched || ack == AckState.ACKED;
             boolean paramsReady = view.windowId() >= 0 && countNonPlayerSlots(view) > 0;
             boolean paramsChestReady = hasParamsChestNearTarget(bridge);
-            if (switchedOrAcked && paramsReady && paramsChestReady) {
+            if (paramsReady && paramsChestReady) {
+                if (entry.paramsReadyWindowId() != view.windowId()) {
+                    entry.setParamsReadyWindowId(view.windowId());
+                    entry.setParamsReadySinceMs(now);
+                    logger.info("printer-debug",
+                        "runtime_state=WAIT_PARAMS_CHEST action=window_ready window=" + view.windowId()
+                            + " nonPlayer=" + countNonPlayerSlots(view));
+                }
+            } else {
+                entry.setParamsReadyWindowId(-1);
+                entry.setParamsReadySinceMs(0L);
+            }
+            boolean paramsStable = entry.paramsReadyWindowId() == view.windowId()
+                && entry.paramsReadySinceMs() > 0L
+                && now - entry.paramsReadySinceMs() >= PARAMS_WINDOW_STABLE_MS;
+            if (switchedOrAcked && paramsReady && paramsChestReady && paramsStable) {
                 if (!ensureCursorClear(entry, bridge, now)) {
                     if (isCursorTimeout(entry, now)) {
                         return fail(logger, "CURSOR_NOT_EMPTY", "cursor not empty before args stage");
@@ -234,6 +252,8 @@ public final class PlaceRuntimeStepExecutor {
                 entry.setAdvancedArgIndex(0);
                 entry.setArgsMisses(0);
                 entry.clearUsedArgSlots();
+                entry.setParamsReadyWindowId(-1);
+                entry.setParamsReadySinceMs(0L);
                 logger.info("printer-debug", "runtime_state=OPEN_PARAMS_CHEST switched=1");
                 return PlaceExecResult.inProgress(0, "APPLY_ARGS");
             }
@@ -261,12 +281,16 @@ public final class PlaceRuntimeStepExecutor {
                 bridge.closeScreen();
                 entry.setNeedOpenParamsChest(true);
                 entry.setNextParamsActionMs(now + Math.max(120, delay));
+                entry.setParamsReadyWindowId(-1);
+                entry.setParamsReadySinceMs(0L);
                 logger.info("printer-debug", "runtime_state=WAIT_PARAMS_CHEST action=close_for_reopen");
                 return PlaceExecResult.inProgress(0, "WAIT_PARAMS_CHEST");
             }
             if (noWindow && !entry.needOpenParamsChest() && now - entry.paramsStartMs() >= PARAMS_REOPEN_AFTER_MS) {
                 entry.setNeedOpenParamsChest(true);
                 entry.setNextParamsActionMs(now + Math.max(120, delay));
+                entry.setParamsReadyWindowId(-1);
+                entry.setParamsReadySinceMs(0L);
                 logger.info("printer-debug", "runtime_state=WAIT_PARAMS_CHEST action=reopen_no_window");
                 return PlaceExecResult.inProgress(0, "WAIT_PARAMS_CHEST");
             }
@@ -280,6 +304,8 @@ public final class PlaceRuntimeStepExecutor {
                 boolean opened = tryOpenParamsTarget(bridge);
                 entry.setParamsOpenAttempts(entry.paramsOpenAttempts() + 1);
                 entry.setNextParamsActionMs(now + Math.max(120, delay));
+                entry.setParamsReadyWindowId(-1);
+                entry.setParamsReadySinceMs(0L);
                 logger.info("printer-debug",
                     "runtime_state=WAIT_PARAMS_CHEST action=reopen opened=" + opened + " attempts=" + entry.paramsOpenAttempts());
                 if (!opened && entry.paramsOpenAttempts() >= MAX_MENU_OPEN_ATTEMPTS) {
@@ -559,6 +585,8 @@ public final class PlaceRuntimeStepExecutor {
                 entry.setNeedOpenParamsChest(false);
                 entry.setAwaitingArgs(false);
                 entry.setArgsWindowId(-1);
+                entry.setParamsReadyWindowId(-1);
+                entry.setParamsReadySinceMs(0L);
                 entry.setLastMenuWindowId(view.windowId());
                 entry.setLastMenuClickMs(now);
                 entry.setMenuClicksSinceOpen(0);
@@ -571,6 +599,8 @@ public final class PlaceRuntimeStepExecutor {
             entry.setNextParamsActionMs(now + delay);
             entry.setParamsOpenAttempts(0);
             entry.setNeedOpenParamsChest(false);
+            entry.setParamsReadyWindowId(-1);
+            entry.setParamsReadySinceMs(0L);
             entry.setArgsWindowId(-1);
             entry.setLastMenuWindowId(view.windowId());
             entry.setLastMenuClickMs(now);
@@ -1173,10 +1203,6 @@ public final class PlaceRuntimeStepExecutor {
                 }
             }
         }
-        // Final fallback matches legacy when sign target can't be resolved.
-        if (bridge.useBlockAtOffset(0, 1, 0, "params_open")) {
-            return true;
-        }
         return false;
     }
 
@@ -1239,6 +1265,8 @@ public final class PlaceRuntimeStepExecutor {
         entry.setParamsOpenAttempts(0);
         entry.setParamsStartMs(0L);
         entry.setNextParamsActionMs(0L);
+        entry.setParamsReadyWindowId(-1);
+        entry.setParamsReadySinceMs(0L);
         entry.setAwaitingArgs(false);
         entry.setAdvancedArgIndex(0);
         entry.setArgsStartMs(0L);
@@ -2070,6 +2098,10 @@ public final class PlaceRuntimeStepExecutor {
         if (bridge == null) {
             return false;
         }
+        BlockPosView anchor = bridge.getRuntimeEntryAnchor();
+        if (anchor == null) {
+            return false;
+        }
         String[] ids = new String[] {
             "minecraft:trapped_chest",
             "minecraft:chest",
@@ -2078,11 +2110,12 @@ public final class PlaceRuntimeStepExecutor {
         int[][] offsets = new int[][] {
             {0, 1, 0},
             {0, 2, 0},
-            {0, 0, 0}
+            {0, 0, 0},
+            {0, -1, 0}
         };
         for (int[] off : offsets) {
             for (String id : ids) {
-                if (bridge.isBlockAtOffset(off[0], off[1], off[2], id)) {
+                if (bridge.isBlockAt(anchor.x() + off[0], anchor.y() + off[1], anchor.z() + off[2], id)) {
                     return true;
                 }
             }

@@ -41,10 +41,11 @@ import net.minecraft.block.Blocks;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.Tessellator;
-import net.minecraft.client.render.VertexFormats;
+import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.WorldRenderer;
+import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -71,8 +72,6 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.registry.Registry;
-import com.mojang.blaze3d.systems.RenderSystem;
-import org.lwjgl.opengl.GL11;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -257,7 +256,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             renderSelectionHighlights(client);
             runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis());
         });
-        WorldRenderEvents.BEFORE_DEBUG_RENDER.register(BetterCodeFabric1165::renderSelectionOutlines);
+        WorldRenderEvents.LAST.register(BetterCodeFabric1165::renderSelectionOutlines);
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
             if (hand != Hand.MAIN_HAND || player == null || world == null || hitResult == null) {
                 return ActionResult.PASS;
@@ -905,6 +904,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     return;
                 }
                 DIRECT_PLACE_STATE.cursor++;
+                DIRECT_PLACE_STATE.lastEntryTarget = null;
                 clearPendingPlaceState(DIRECT_PLACE_STATE);
                 System.out.println("[printer-debug] cursor_advance reason=step_completed cursor=" + DIRECT_PLACE_STATE.cursor
                     + " block=" + (entry.blockId() == null ? "" : entry.blockId()));
@@ -2698,13 +2698,18 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         if (SELECTED.isEmpty()) {
             return;
         }
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableTexture();
-        RenderSystem.disableDepthTest();
-        RenderSystem.lineWidth(2.0F);
-        BufferBuilder bb = Tessellator.getInstance().getBuffer();
-        bb.begin(GL11.GL_LINES, VertexFormats.POSITION_COLOR);
+        Vec3d cam = context.camera() == null ? null : context.camera().getPos();
+        if (cam == null) {
+            return;
+        }
+        MatrixStack matrices = context.matrixStack();
+        if (matrices == null || mc.getBufferBuilders() == null) {
+            return;
+        }
+        VertexConsumerProvider.Immediate consumers = mc.getBufferBuilders().getEntityVertexConsumers();
+        VertexConsumer lineBuffer = consumers.getBuffer(RenderLayer.getLines());
+        matrices.push();
+        matrices.translate(-cam.x, -cam.y, -cam.z);
         int drawn = 0;
         for (SelectedRow row : SELECTED.values()) {
             if (row == null || !dim.equals(row.dimension())) {
@@ -2716,23 +2721,14 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             }
             BlockPos top = anchor.up();
             Box box = new Box(top).expand(0.003);
-            WorldRenderer.drawBox(context.matrixStack(), bb, box, 0.15F, 0.95F, 1.0F, 1.0F);
-            // Fallback visual marker in case line state is affected by external render mods.
-            try {
-                mc.world.addParticle(net.minecraft.particle.ParticleTypes.END_ROD,
-                    top.getX() + 0.5, top.getY() + 0.98, top.getZ() + 0.5,
-                    0.0, 0.0, 0.0);
-            } catch (Exception ignore) {
-            }
+            WorldRenderer.drawBox(matrices, lineBuffer, box, 0.15F, 0.95F, 1.0F, 1.0F);
             drawn++;
             if (drawn >= 120) {
                 break;
             }
         }
-        Tessellator.getInstance().draw();
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableTexture();
-        RenderSystem.disableBlend();
+        matrices.pop();
+        consumers.draw(RenderLayer.getLines());
     }
 
     private static void traceRuntimeTickProbe(MinecraftClient mc) {
