@@ -2698,8 +2698,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         if (SELECTED.isEmpty()) {
             return;
         }
-        Vec3d cam = context.camera() == null ? null : context.camera().getPos();
-        if (cam == null) {
+        if (context.camera() == null) {
             return;
         }
         MatrixStack matrices = context.matrixStack();
@@ -2709,7 +2708,6 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         VertexConsumerProvider.Immediate consumers = mc.getBufferBuilders().getEntityVertexConsumers();
         VertexConsumer lineBuffer = consumers.getBuffer(RenderLayer.getLines());
         matrices.push();
-        matrices.translate(-cam.x, -cam.y, -cam.z);
         int drawn = 0;
         for (SelectedRow row : SELECTED.values()) {
             if (row == null || !dim.equals(row.dimension())) {
