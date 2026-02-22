@@ -25,6 +25,10 @@ final class PlaceTickHandler
         }
         if (mc.world == null || mc.player == null)
         {
+            if (state.active)
+            {
+                host.setActionBar(false, "&c/print aborted: world_or_player_unavailable", 3000L);
+            }
             state.reset();
             return;
         }
@@ -79,6 +83,7 @@ final class PlaceTickHandler
             if (state.current == null)
             {
                 state.active = false;
+                host.setActionBar(true, "&a/print finished: queue_completed", 3000L);
                 return;
             }
         }
@@ -260,10 +265,7 @@ final class PlaceTickHandler
                 }
                 if (entry.paramsStartMs > 0L && nowMs - entry.paramsStartMs > 12000L)
                 {
-                    host.setActionBar(false, "&c/placeadvanced: params chest timeout", 2500L);
-                    host.clearQueuedClicks();
-                    host.clearTpPathQueue();
-                    state.reset();
+                    abortPrint(host, state, "params_chest_timeout");
                     return;
                 }
 
@@ -327,10 +329,7 @@ final class PlaceTickHandler
                 && entry.firstPlaceAttemptMs > 0L
                 && nowMs - entry.firstPlaceAttemptMs > 15000L)
             {
-                host.setActionBar(false, "&c/place: block placement retries exceeded", 2500L);
-                host.clearQueuedClicks();
-                host.clearTpPathQueue();
-                state.reset();
+                abortPrint(host, state, "block_retries_exceeded");
                 return;
             }
             try
@@ -398,8 +397,7 @@ final class PlaceTickHandler
         BlockPos clickPos = signPos != null ? signPos : entry.pos;
         if (clickPos == null)
         {
-            host.setActionBar(false, "&c/placeadvanced: no sign pos", 2500L);
-            state.reset();
+            abortPrint(host, state, "post_place_no_sign_pos");
             return true;
         }
 
@@ -412,8 +410,7 @@ final class PlaceTickHandler
             case PlaceEntry.POST_PLACE_CYCLE:
                 return handlePostPlaceCycle(host, state, mc, entry, nowMs, clickPos);
             default:
-                host.setActionBar(false, "&c/placeadvanced: unknown post-place kind", 2500L);
-                state.reset();
+                abortPrint(host, state, "post_place_unknown_kind");
                 return true;
         }
     }
@@ -432,8 +429,7 @@ final class PlaceTickHandler
         }
         if (entry.postPlaceName == null || entry.postPlaceName.trim().isEmpty())
         {
-            host.setActionBar(false, "&c/placeadvanced: missing name", 2500L);
-            state.reset();
+            abortPrint(host, state, "post_place_missing_name");
             return true;
         }
         int slot = host.giveQuickInputItemToHotbar(PlaceModule.INPUT_MODE_TEXT, entry.postPlaceName, false);
@@ -498,9 +494,8 @@ final class PlaceTickHandler
         int slot = ensureArrowInHand(mc);
         if (slot < 0)
         {
-            host.setActionBar(false, "&c/placeadvanced: NOT arrow not available", 2500L);
             System.err.println("[printer-debug] PLACE_NEGATE_FAILED reason=no_arrow");
-            state.reset();
+            abortPrint(host, state, "post_place_not_arrow_not_available");
             return true;
         }
         selectHotbarSlot(mc, slot);
@@ -514,8 +509,7 @@ final class PlaceTickHandler
         catch (Exception e)
         {
             System.err.println("[printer-debug] PLACE_NEGATE_FAILED reason=click_exception msg=" + e.getMessage());
-            host.setActionBar(false, "&c/placeadvanced: NOT apply failed", 2500L);
-            state.reset();
+            abortPrint(host, state, "post_place_not_apply_failed");
             return true;
         }
 
@@ -795,5 +789,20 @@ final class PlaceTickHandler
         mc.playerController.processRightClickBlock(
             mc.player, mc.world, target, EnumFacing.UP, hit, EnumHand.MAIN_HAND
         );
+    }
+
+    private static void abortPrint(PlaceModuleHost host, PlaceState state, String reason)
+    {
+        String r = reason == null || reason.trim().isEmpty() ? "unknown" : reason.trim();
+        if (host != null)
+        {
+            host.setActionBar(false, "&c/print aborted: " + r, 3500L);
+            host.clearQueuedClicks();
+            host.clearTpPathQueue();
+        }
+        if (state != null)
+        {
+            state.reset();
+        }
     }
 }

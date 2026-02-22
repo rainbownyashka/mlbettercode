@@ -19,6 +19,9 @@
   - centralized in `ExampleMod#setActionBar(...)`: all action-bar texts are now emitted to chat via `debugChat(...)`,
   - on-screen action-bar HUD lines are cleared (no ephemeral-only error messages),
   - added short duplicate suppression window (`ACTIONBAR_CHAT_DUP_GAP_MS`) to avoid tick-loop chat spam.
+- Legacy 1.12.2 printer completion reason output:
+  - `feature/place/PlaceTickHandler` now emits explicit final chat result when print queue completes (`/print finished: queue_completed`),
+  - critical stop paths now end with unified abort reason in chat (`/print aborted: <reason>`), including params timeout, place retry exhaustion, and post-place terminal errors.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).

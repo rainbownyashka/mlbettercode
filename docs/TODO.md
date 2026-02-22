@@ -6,6 +6,7 @@ Format: `id | task | priority | owner | needs_user_test | state | links`
 - MOD-138 | Add printer/scanner runtime stop UX: keybind `K` to stop active print/scan and show persistent colored subtitle hint while running (`Идет распечатка, Нажми K чтобы остановить`) | P1 | agent | yes | open | src/main/java/com/example/examplemod/ExampleMod.java, src/main/java/com/example/examplemod/feature/place
 - MOD-139 | Record and enforce workflow policy: keep runtime printer/scanner minimal+portable and shift smart validation/bugfixes to compiler side by default | P1 | agent | no | done | AGENTS.md, docs/AGENT_RUNBOOK.md
 - MOD-140 | Reroute legacy 1.12.2 action-bar diagnostics to persistent chat (central `setActionBar` hook) and suppress rapid duplicate repeats to keep chat readable | P0 | agent | yes | done | src/main/java/com/example/examplemod/ExampleMod.java
+- MOD-141 | Add explicit printer final-state chat reason in legacy 1.12.2 (`/print finished` and `/print aborted:<reason>` at central tick stop points) | P0 | agent | yes | done | src/main/java/com/example/examplemod/feature/place/PlaceTickHandler.java
 - MOD-001 | Reconcile `legacy/pages-work` fixes into `main` via safe cherry-picks | P0 | agent | yes | open | branches:main,legacy/pages-work
 - MOD-002 | Finalize robust chest paging logs (signal/no spam balance) | P1 | agent | yes | in_progress | src/main/java/com/example/examplemod/feature/regallactions
 - MOD-003 | Implement mirror switch config (default vercel, optional duckdns mirror) | P1 | agent | yes | open | docs/AGENT_WORK_PLAN.md
