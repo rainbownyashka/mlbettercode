@@ -80,6 +80,10 @@
 - Fabric1165 selector visual mode switched to line-outline:
   - selected rows are now rendered via world render pass (`WorldRenderEvents.LAST`) as cyan line boxes (block outline style) instead of particle spam.
   - tick path keeps only anchor validation and auto-unselect for broken blue-glass anchors.
+- Modern reliability update for placement/params flow:
+  - fabric1165 direct place now tries creative hotbar auto-inject for missing required block items before failing (`MISSING_REQUIRED_ITEM` remains fail-fast for non-creative cases).
+  - params stage now enters args only when switched window is actually ready (has non-player slots); otherwise it keeps reopen/retry path instead of premature `APPLY_ARGS`.
+  - line-outline camera anchoring fixed (no camera-offset double transform), preventing floating/rotating outlines while moving view.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).

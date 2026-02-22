@@ -1014,6 +1014,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 Item item = block.asItem();
                 int slot = findHotbarSlot(mc, item);
                 if (slot < 0) {
+                    slot = ensureBlockInHotbar(mc, item, sourceBlockId);
+                }
+                if (slot < 0) {
                     return PlaceExecResult.fail(0, 0, "MISSING_REQUIRED_ITEM", "required item not in hotbar: " + sourceBlockId);
                 }
                 if (mc.player.inventory.selectedSlot != slot) {
@@ -1312,6 +1315,59 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 }
             }
             return -1;
+        }
+
+        private static int ensureBlockInHotbar(MinecraftClient mc, Item item, String sourceBlockId) {
+            if (mc == null || mc.player == null || mc.interactionManager == null || item == null) {
+                return -1;
+            }
+            if (!isCreativePlayer(mc)) {
+                return -1;
+            }
+            int target = findEmptyHotbarSlot(mc);
+            if (target < 0) {
+                target = 8;
+            }
+            try {
+                ItemStack st = new ItemStack(item);
+                mc.player.inventory.setStack(target, st);
+                mc.interactionManager.clickCreativeStack(st, 36 + target);
+                int resolved = findHotbarSlot(mc, item);
+                if (resolved >= 0) {
+                    System.out.println("[printer-debug] hotbar_autoinject_ok block=" + sourceBlockId
+                        + " slot=" + resolved
+                        + " item=" + String.valueOf(Registry.ITEM.getId(item)));
+                    return resolved;
+                }
+            } catch (Exception e) {
+                System.out.println("[printer-debug] hotbar_autoinject_fail block=" + sourceBlockId
+                    + " reason=" + e.getClass().getSimpleName());
+            }
+            return -1;
+        }
+
+        private static int findEmptyHotbarSlot(MinecraftClient mc) {
+            if (mc == null || mc.player == null) {
+                return -1;
+            }
+            for (int i = 0; i < 9; i++) {
+                ItemStack st = mc.player.inventory.getStack(i);
+                if (st == null || st.isEmpty()) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        private static boolean isCreativePlayer(MinecraftClient mc) {
+            if (mc == null || mc.player == null) {
+                return false;
+            }
+            try {
+                return mc.player.abilities.creativeMode;
+            } catch (Exception ignore) {
+            }
+            return false;
         }
 
         private static BlockPos resolveLastPlacedTarget() {
@@ -2642,10 +2698,6 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         if (SELECTED.isEmpty()) {
             return;
         }
-        Vec3d cam = context.camera() == null ? null : context.camera().getPos();
-        if (cam == null) {
-            return;
-        }
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         RenderSystem.disableTexture();
@@ -2662,7 +2714,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 continue;
             }
             BlockPos top = anchor.up();
-            Box box = new Box(top).expand(0.003).offset(-cam.x, -cam.y, -cam.z);
+            Box box = new Box(top).expand(0.003);
             WorldRenderer.drawBox(context.matrixStack(), bb, box, 0.15F, 0.95F, 1.0F, 1.0F);
             drawn++;
             if (drawn >= 120) {

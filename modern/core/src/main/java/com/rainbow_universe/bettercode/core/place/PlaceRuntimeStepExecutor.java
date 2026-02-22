@@ -206,7 +206,9 @@ public final class PlaceRuntimeStepExecutor {
                         + " needOpenParams=" + entry.needOpenParamsChest()
                         + " paramsAttempts=" + entry.paramsOpenAttempts());
             }
-            if (switched || ack == AckState.ACKED) {
+            boolean switchedOrAcked = switched || ack == AckState.ACKED;
+            boolean paramsReady = view.windowId() >= 0 && countNonPlayerSlots(view) > 0;
+            if (switchedOrAcked && paramsReady) {
                 entry.setAwaitingParamsChest(false);
                 entry.setAwaitingArgs(true);
                 entry.setArgsStartMs(now);
@@ -220,6 +222,15 @@ public final class PlaceRuntimeStepExecutor {
                 entry.clearUsedArgSlots();
                 logger.info("printer-debug", "runtime_state=OPEN_PARAMS_CHEST switched=1");
                 return PlaceExecResult.inProgress(0, "APPLY_ARGS");
+            }
+            if (switchedOrAcked && !paramsReady) {
+                if (!entry.needOpenParamsChest() && now - entry.paramsStartMs() >= PARAMS_REOPEN_AFTER_MS) {
+                    entry.setNeedOpenParamsChest(true);
+                    entry.setNextParamsActionMs(now + Math.max(120, delay));
+                    logger.info("printer-debug",
+                        "runtime_state=WAIT_PARAMS_CHEST action=reopen_empty_params window=" + view.windowId());
+                }
+                return PlaceExecResult.inProgress(0, "WAIT_PARAMS_CHEST");
             }
             if (entry.paramsStartMs() <= 0L) {
                 entry.setParamsStartMs(now);
