@@ -101,6 +101,9 @@
 - Fabric1165 selector outline follow-up:
   - removed extra manual camera translation in line-outline render path (double transform), keeping box draw in render-context matrix space only.
   - expected result: outline no longer "flies away" or shrinks to distant point while camera moves.
+- Fabric1165 selector outline visibility follow-up:
+  - outline render event moved to `WorldRenderEvents.BEFORE_DEBUG_RENDER` (debug line stage).
+  - line draw path reverted to direct framebuffer line render (`BufferBuilder/Tessellator`) for 1.16.5 compatibility; `RenderLayer.getLines()` path removed from selector.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).
