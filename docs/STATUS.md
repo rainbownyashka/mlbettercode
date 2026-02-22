@@ -58,7 +58,7 @@
   - generic GUI watchdog closes/reopens stalled menu/params/args windows when non-player contents do not change for 60s (bounded attempts, explicit abort on exhaustion).
 - Legacy 1.12.2 plan row finalize/repair:
   - `/mldsl run` plan queue now appends per-row finalize markers.
-  - when a full row is built (newline/end), runtime validates the whole row via `rowAlreadyMatches(...)` (including sign-cache fallback), stores row as completed on success, and on mismatch runs bounded `break row -> rebuild row -> revalidate` cycle.
+  - when a full row is built (newline/end), runtime validates the whole row via `rowAlreadyMatches(...)` (including sign-cache fallback), stores row as completed on success, and on mismatch runs bounded `break first row block -> rebuild row -> revalidate` cycle.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).

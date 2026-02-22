@@ -1153,7 +1153,7 @@ public final class PlaceModule
             br.searchKey = "";
             br.breakOnly = true;
             out.add(br);
-            p++;
+            break;
         }
         return out;
     }
