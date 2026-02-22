@@ -16347,6 +16347,26 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
                 return checkPos;
             }
         }
+        // Live tile may be missing/transient even when chunk is loaded; use cached mapping fallback.
+        String scopeKey = getCodeGlassScopeKey(world);
+        if (scopeKey != null)
+        {
+            String k = scopeKey + ":" + basePos.toLong();
+            Long hit = entryToSignPosByScopeEntry.get(k);
+            if (hit != null)
+            {
+                BlockPos mapped = BlockPos.fromLong(hit.longValue());
+                if (mapped != null)
+                {
+                    return mapped;
+                }
+            }
+        }
+        BlockPos cachedNeighbor = findCachedSignAtZMinus1(world, basePos);
+        if (cachedNeighbor != null)
+        {
+            return cachedNeighbor;
+        }
         return null;
     }
 

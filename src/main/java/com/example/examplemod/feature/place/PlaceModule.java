@@ -1012,7 +1012,7 @@ public final class PlaceModule
                 boolean s2Ok = expectedSign2Norm == null || expectedSign2Norm.isEmpty();
                 StringBuilder actual = verbose ? new StringBuilder() : null;
 
-                String[] cachedLines = null;
+                String[] cachedLines = host.getCachedSignLines(mc.world, signPos);
                 TileEntity te = mc.world.getTileEntity(signPos);
                 if (te instanceof TileEntitySign)
                 {
@@ -1041,17 +1041,9 @@ public final class PlaceModule
                         }
                     }
                 }
-                else
+
+                if (cachedLines != null)
                 {
-                    cachedLines = host.getCachedSignLines(mc.world, signPos);
-                    if (cachedLines == null)
-                    {
-                        if (verbose)
-                        {
-                            host.debugChat("&e/mldsl skip-check row " + rowNumber + ": sign not loaded and no cache p=" + p);
-                        }
-                        return false;
-                    }
                     for (int li = 0; li < cachedLines.length; li++)
                     {
                         String txt = cachedLines[li];
@@ -1070,6 +1062,14 @@ public final class PlaceModule
                             s2Ok = true;
                         }
                     }
+                }
+                if (!(te instanceof TileEntitySign) && cachedLines == null)
+                {
+                    if (verbose)
+                    {
+                        host.debugChat("&e/mldsl skip-check row " + rowNumber + ": sign not loaded and no cache p=" + p);
+                    }
+                    return false;
                 }
                 if (!(menuOk && s2Ok))
                 {
