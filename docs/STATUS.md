@@ -69,6 +69,9 @@
   - selected code rows now render lightweight client-side highlight particles in-world for visual debugging.
   - seed hint auto-probe now also runs on code-entry transition (`editorLike: false -> true`) and checks fixed fallback `219,0,219`.
   - added world-barrier-based fallback probe: detect loaded barrier corner with max `x,z`, offset `-5,-5`, scan `x/z in [-1..1]` at `y=0` for blue glass with explicit success/miss logs.
+- Modern GUI slot-route correctness + highlight visibility fix:
+  - menu route lookups in runtime now always skip player-inventory slots to prevent accidental clicks into local inventory when menu label collides.
+  - selector highlight particles on fabric1165 now use important-particle fallback (plus visible y-offset), with concise debug trace when rows are selected but not rendered in current dimension.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).

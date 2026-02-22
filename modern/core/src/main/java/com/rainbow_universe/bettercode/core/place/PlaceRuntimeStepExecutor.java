@@ -382,7 +382,7 @@ public final class PlaceRuntimeStepExecutor {
                     }
                     return PlaceExecResult.inProgress(0, "MENU_CURSOR_WAIT");
                 }
-                int scopeSlot = findSlotByKey(view, route.scopeKey, false);
+                int scopeSlot = findSlotByKey(view, route.scopeKey, true);
                 if (scopeSlot < 0) {
                     return fail(logger, "SCOPE_MENU_NOT_FOUND", "scope menu not found: " + route.scopeKey);
                 }
@@ -415,7 +415,7 @@ public final class PlaceRuntimeStepExecutor {
             }
 
             String routeKey = route.baseKey;
-            int slot = findSlotByAnyKey(view, routeKey, false);
+            int slot = findSlotByAnyKey(view, routeKey, true);
             if (slot < 0) {
                 int learned = findSlotByLearnedMenuHints(view, routeKey);
                 if (learned >= 0) {

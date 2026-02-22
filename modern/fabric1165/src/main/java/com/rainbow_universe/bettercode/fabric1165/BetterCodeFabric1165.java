@@ -96,6 +96,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static volatile boolean LAST_EDITOR_LIKE = false;
     private static volatile String LAST_EDITOR_DIM = "";
     private static long LAST_SELECTOR_HIGHLIGHT_MS = 0L;
+    private static long LAST_SELECTOR_HIGHLIGHT_LOG_MS = 0L;
     private static int INIT_CALL_COUNT = 0;
     private static long LAST_RUNTIME_TICK_WORLD_TIME = Long.MIN_VALUE;
     private static long LAST_RUNTIME_TICK_WALL_MS = 0L;
@@ -2593,20 +2594,52 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
         LAST_SELECTOR_HIGHLIGHT_MS = now;
         String dim = String.valueOf(mc.world.getRegistryKey().getValue());
+        int selectedInDim = 0;
         int shown = 0;
         for (SelectedRow row : SELECTED.values()) {
             if (row == null || !dim.equals(row.dimension())) {
                 continue;
             }
+            selectedInDim++;
             if (shown >= 80) {
                 break;
             }
             double gx = row.x() + 0.5;
-            double gy = row.y() + 0.15;
+            double gy = row.y() + 1.08;
             double gz = row.z() + 0.5;
-            mc.world.addParticle(ParticleTypes.END_ROD, gx, gy, gz, 0.0, 0.005, 0.0);
-            mc.world.addParticle(ParticleTypes.CRIT, gx, row.y() + 1.05, gz, 0.0, 0.0, 0.0);
+            spawnHighlightParticle(mc, ParticleTypes.END_ROD, gx, gy, gz, 0.0, 0.01, 0.0);
+            spawnHighlightParticle(mc, ParticleTypes.CRIT, gx, row.y() + 1.18, gz, 0.0, 0.0, 0.0);
+            spawnHighlightParticle(mc, ParticleTypes.HAPPY_VILLAGER, gx, row.y() + 1.22, gz, 0.0, 0.0, 0.0);
             shown++;
+        }
+        if (selectedInDim > 0 && shown == 0 && now - LAST_SELECTOR_HIGHLIGHT_LOG_MS >= 1500L) {
+            LAST_SELECTOR_HIGHLIGHT_LOG_MS = now;
+            System.out.println("[printer-debug] selector_highlight_skipped dim=" + dim
+                + " selectedInDim=" + selectedInDim
+                + " shown=" + shown);
+        }
+    }
+
+    private static void spawnHighlightParticle(MinecraftClient mc, net.minecraft.particle.ParticleEffect fx,
+                                               double x, double y, double z, double vx, double vy, double vz) {
+        if (mc == null || mc.world == null || fx == null) {
+            return;
+        }
+        try {
+            java.lang.reflect.Method m = mc.world.getClass().getMethod(
+                "addImportantParticle",
+                net.minecraft.particle.ParticleEffect.class,
+                boolean.class,
+                double.class, double.class, double.class,
+                double.class, double.class, double.class
+            );
+            m.invoke(mc.world, fx, Boolean.TRUE, x, y, z, vx, vy, vz);
+            return;
+        } catch (Exception ignore) {
+        }
+        try {
+            mc.world.addParticle(fx, x, y, z, vx, vy, vz);
+        } catch (Exception ignore) {
         }
     }
 
