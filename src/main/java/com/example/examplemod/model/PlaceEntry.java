@@ -1,8 +1,10 @@
 package com.example.examplemod.model;
 
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Set;
 import java.util.List;
+import java.util.Map;
 
 import net.minecraft.block.Block;
 import net.minecraft.item.ItemStack;
@@ -53,6 +55,12 @@ public class PlaceEntry
     public int pendingArgClickSlot;
     public int pendingArgClicks;
     public long pendingArgNextMs;
+    public boolean awaitingArgsValidation;
+    public long argsValidationStartMs;
+    public long argsValidationNextMs;
+    public int argsValidationPasses;
+    public int argsValidationReapplyCount;
+    public final Map<Integer, Integer> argAppliedSlotByIndex = new HashMap<>();
     public long cursorNotEmptySinceMs;
     public int argsGuiPage;
     public boolean argsPageTurnPending;
@@ -131,6 +139,11 @@ public class PlaceEntry
         this.pendingArgClickSlot = -1;
         this.pendingArgClicks = 0;
         this.pendingArgNextMs = 0L;
+        this.awaitingArgsValidation = false;
+        this.argsValidationStartMs = 0L;
+        this.argsValidationNextMs = 0L;
+        this.argsValidationPasses = 0;
+        this.argsValidationReapplyCount = 0;
         this.cursorNotEmptySinceMs = 0L;
         this.argsGuiPage = 0;
         this.argsPageTurnPending = false;
@@ -199,6 +212,11 @@ public class PlaceEntry
         this.pendingArgClickSlot = -1;
         this.pendingArgClicks = 0;
         this.pendingArgNextMs = 0L;
+        this.awaitingArgsValidation = false;
+        this.argsValidationStartMs = 0L;
+        this.argsValidationNextMs = 0L;
+        this.argsValidationPasses = 0;
+        this.argsValidationReapplyCount = 0;
         this.cursorNotEmptySinceMs = 0L;
         this.argsGuiPage = 0;
         this.argsPageTurnPending = false;

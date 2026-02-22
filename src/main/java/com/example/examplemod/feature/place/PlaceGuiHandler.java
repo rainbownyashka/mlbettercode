@@ -97,6 +97,12 @@ final class PlaceGuiHandler
                 entry.lastArgsActionMs = nowMs + host.placeDelayMs(120L);
                 entry.argsMisses = 0;
                 entry.usedArgSlots.clear();
+                entry.argAppliedSlotByIndex.clear();
+                entry.awaitingArgsValidation = false;
+                entry.argsValidationStartMs = 0L;
+                entry.argsValidationNextMs = 0L;
+                entry.argsValidationPasses = 0;
+                entry.argsValidationReapplyCount = 0;
                 entry.argsGuiPage = 0;
                 entry.argsPageTurnPending = false;
                 entry.argsPageTurnStartMs = 0L;
@@ -396,6 +402,12 @@ final class PlaceGuiHandler
                 entry.lastArgsActionMs = 0L;
                 entry.argsMisses = 0;
                 entry.usedArgSlots.clear();
+                entry.argAppliedSlotByIndex.clear();
+                entry.awaitingArgsValidation = false;
+                entry.argsValidationStartMs = 0L;
+                entry.argsValidationNextMs = 0L;
+                entry.argsValidationPasses = 0;
+                entry.argsValidationReapplyCount = 0;
                 entry.argsGuiPage = 0;
                 entry.argsPageTurnPending = false;
                 entry.argsPageTurnStartMs = 0L;
@@ -777,7 +789,12 @@ final class PlaceGuiHandler
                 }
             }
             catch (Exception ignore) { }
+            if (!runArgsValidation(host, state, gui, entry, nowMs))
+            {
+                return;
+            }
             entry.awaitingArgs = false;
+            entry.awaitingArgsValidation = false;
             host.closeCurrentScreen();
             completeAfterArgs(host, state, entry, nowMs);
             return;
@@ -798,6 +815,7 @@ final class PlaceGuiHandler
         }
 
         PlaceArg arg = entry.advancedArgs.get(entry.advancedArgIndex);
+        int argIndex = entry.advancedArgIndex;
         Integer resolvedGuiIndex = arg.slotIndex;
         if (arg.slotIndex != null && arg.slotGuiIndex)
         {
@@ -853,6 +871,8 @@ final class PlaceGuiHandler
                     gui.inventorySlots.windowId));
             }
             entry.usedArgSlots.add(clickSlot);
+            entry.argAppliedSlotByIndex.put(argIndex, clickSlot);
+            entry.awaitingArgsValidation = false;
             entry.pendingArgClickSlot = clickSlot;
             entry.pendingArgClicks = arg.clicks > 0 ? arg.clicks : 1;
             entry.pendingArgNextMs = nowMs + host.placeDelayMs(500L);
@@ -925,6 +945,8 @@ final class PlaceGuiHandler
                 host.submitInputText(false);
 
                 entry.usedArgSlots.add(target.slotNumber);
+                entry.argAppliedSlotByIndex.put(argIndex, target.slotNumber);
+                entry.awaitingArgsValidation = false;
                 entry.advancedArgIndex++;
                 if (arg.clicks > 0)
                 {
@@ -1040,6 +1062,8 @@ final class PlaceGuiHandler
                 }
 
                 entry.usedArgSlots.add(target.slotNumber);
+                entry.argAppliedSlotByIndex.put(argIndex, target.slotNumber);
+                entry.awaitingArgsValidation = false;
                 entry.advancedArgIndex++;
                 if (arg.clicks > 0)
                 {
@@ -1064,6 +1088,8 @@ final class PlaceGuiHandler
         }
 
         entry.usedArgSlots.add(target.slotNumber);
+        entry.argAppliedSlotByIndex.put(argIndex, target.slotNumber);
+        entry.awaitingArgsValidation = false;
         entry.advancedArgIndex++;
         if (arg.clicks > 0)
         {
@@ -1075,9 +1101,217 @@ final class PlaceGuiHandler
         entry.lastArgsActionMs = nowMs;
         if (entry.advancedArgIndex >= entry.advancedArgs.size())
         {
+            if (!runArgsValidation(host, state, gui, entry, nowMs))
+            {
+                return;
+            }
             entry.awaitingArgs = false;
+            entry.awaitingArgsValidation = false;
             host.closeCurrentScreen();
             completeAfterArgs(host, state, entry, nowMs);
+        }
+    }
+
+    private static final class ArgsValidationResult
+    {
+        final boolean ok;
+        final int failedIndex;
+        final String reason;
+
+        ArgsValidationResult(boolean ok, int failedIndex, String reason)
+        {
+            this.ok = ok;
+            this.failedIndex = failedIndex;
+            this.reason = reason;
+        }
+    }
+
+    private static boolean runArgsValidation(
+        PlaceModuleHost host,
+        PlaceState state,
+        GuiContainer gui,
+        PlaceEntry entry,
+        long nowMs)
+    {
+        if (host == null || state == null || gui == null || entry == null)
+        {
+            return false;
+        }
+        if (!entry.awaitingArgsValidation)
+        {
+            entry.awaitingArgsValidation = true;
+            entry.argsValidationStartMs = nowMs;
+            entry.argsValidationNextMs = nowMs + host.placeDelayMs(120L);
+            entry.argsValidationPasses = 0;
+            return false;
+        }
+        if (nowMs < entry.argsValidationNextMs)
+        {
+            return false;
+        }
+
+        entry.argsValidationPasses++;
+        ArgsValidationResult result = validateAppliedArgs(host, gui, entry);
+        if (result.ok)
+        {
+            return true;
+        }
+
+        if (entry.argsValidationStartMs > 0L && nowMs - entry.argsValidationStartMs > 8000L)
+        {
+            host.setActionBar(false, "&c/placeadvanced: args validation timeout", 3000L);
+            abort(host, state, "args_validation_timeout");
+            return false;
+        }
+
+        if (entry.argsValidationReapplyCount >= 6)
+        {
+            host.setActionBar(false, "&c/placeadvanced: args validation failed", 3000L);
+            abort(host, state, "args_validation_failed");
+            return false;
+        }
+
+        if (result.failedIndex >= 0)
+        {
+            entry.argsValidationReapplyCount++;
+            if (host.isDebugUi())
+            {
+                host.debugChat("placeadvanced: reapply arg from index=" + result.failedIndex + " reason=" + result.reason);
+            }
+            requeueArgsFromIndex(entry, result.failedIndex);
+        }
+        entry.awaitingArgsValidation = false;
+        entry.argsValidationNextMs = nowMs + host.placeDelayMs(200L);
+        return false;
+    }
+
+    private static ArgsValidationResult validateAppliedArgs(PlaceModuleHost host, GuiContainer gui, PlaceEntry entry)
+    {
+        if (host == null || gui == null || entry == null || entry.advancedArgs == null)
+        {
+            return new ArgsValidationResult(false, -1, "validation_context_missing");
+        }
+        for (int i = 0; i < entry.advancedArgs.size(); i++)
+        {
+            PlaceArg arg = entry.advancedArgs.get(i);
+            if (arg == null || arg.clickOnly)
+            {
+                continue;
+            }
+            Integer slotNum = entry.argAppliedSlotByIndex.get(i);
+            if (slotNum == null)
+            {
+                return new ArgsValidationResult(false, i, "slot_not_recorded");
+            }
+            int clickIdx = toSafeClickIndex(gui, slotNum.intValue());
+            if (clickIdx < 0)
+            {
+                return new ArgsValidationResult(false, i, "slot_not_available");
+            }
+            Slot slot;
+            try
+            {
+                slot = gui.inventorySlots.getSlot(clickIdx);
+            }
+            catch (Exception e)
+            {
+                slot = null;
+            }
+            if (slot == null)
+            {
+                return new ArgsValidationResult(false, i, "slot_null");
+            }
+            if (!isArgAppliedInSlot(host, slot, arg))
+            {
+                return new ArgsValidationResult(false, i, "value_mismatch");
+            }
+        }
+        return new ArgsValidationResult(true, -1, "ok");
+    }
+
+    private static boolean isArgAppliedInSlot(PlaceModuleHost host, Slot slot, PlaceArg arg)
+    {
+        if (host == null || slot == null || arg == null)
+        {
+            return false;
+        }
+        ItemStack st = slot.getStack();
+        if (st == null || st.isEmpty())
+        {
+            return false;
+        }
+
+        if (arg.mode == PlaceModule.INPUT_MODE_ITEM)
+        {
+            String rawItemExpr = arg.valueRaw == null ? "" : arg.valueRaw.trim();
+            if (rawItemExpr.startsWith("var(") && rawItemExpr.endsWith(")"))
+            {
+                String varExpr = rawItemExpr.substring(4, rawItemExpr.length() - 1).trim();
+                String actualVar = host.extractEntryText(st, PlaceModule.INPUT_MODE_VARIABLE);
+                String expNorm = host.normalizeForMatch(varExpr);
+                String gotNorm = host.normalizeForMatch(actualVar);
+                return expNorm != null && !expNorm.isEmpty() && gotNorm != null && gotNorm.contains(expNorm);
+            }
+            ItemStack expected = PlaceParser.parseItemSpec(arg.valueRaw);
+            if (expected == null || expected.isEmpty())
+            {
+                return false;
+            }
+            if (st.getItem() != expected.getItem())
+            {
+                return false;
+            }
+            return st.getMetadata() == expected.getMetadata();
+        }
+
+        String expectedRaw = arg.valueRaw == null ? "" : arg.valueRaw;
+        String actualRaw = host.extractEntryText(st, arg.mode);
+        String expNorm = host.normalizeForMatch(expectedRaw);
+        String gotNorm = host.normalizeForMatch(actualRaw);
+        if (expNorm == null || expNorm.isEmpty())
+        {
+            return true;
+        }
+        if (gotNorm == null || gotNorm.isEmpty())
+        {
+            return false;
+        }
+        return gotNorm.equals(expNorm) || gotNorm.contains(expNorm) || expNorm.contains(gotNorm);
+    }
+
+    private static void requeueArgsFromIndex(PlaceEntry entry, int failedIndex)
+    {
+        if (entry == null)
+        {
+            return;
+        }
+        entry.pendingArgClicks = 0;
+        entry.pendingArgClickSlot = -1;
+        entry.pendingArgNextMs = 0L;
+        entry.advancedArgIndex = Math.max(0, failedIndex);
+        entry.lastArgsActionMs = 0L;
+        entry.argsMisses = 0;
+
+        List<Integer> drop = new ArrayList<>();
+        for (Integer i : entry.argAppliedSlotByIndex.keySet())
+        {
+            if (i != null && i.intValue() >= failedIndex)
+            {
+                drop.add(i);
+            }
+        }
+        for (Integer i : drop)
+        {
+            entry.argAppliedSlotByIndex.remove(i);
+        }
+
+        entry.usedArgSlots.clear();
+        for (Integer slot : entry.argAppliedSlotByIndex.values())
+        {
+            if (slot != null)
+            {
+                entry.usedArgSlots.add(slot);
+            }
         }
     }
 
