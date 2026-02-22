@@ -1388,6 +1388,10 @@ public final class PlaceRuntimeStepExecutor {
             if (slotText.equals(normKey)) {
                 return s.slotNumber();
             }
+            String combined = slotSearchText(s);
+            if (combined.equals(normKey)) {
+                return s.slotNumber();
+            }
         }
         for (SlotView s : view.slots()) {
             if (s == null) {
@@ -1398,6 +1402,10 @@ public final class PlaceRuntimeStepExecutor {
             }
             String slotText = norm(s.displayName());
             if (slotText.contains(normKey)) {
+                return s.slotNumber();
+            }
+            String combined = slotSearchText(s);
+            if (combined.contains(normKey)) {
                 return s.slotNumber();
             }
         }
@@ -1537,7 +1545,7 @@ public final class PlaceRuntimeStepExecutor {
             if (skipPlayer && s.playerInventory()) {
                 continue;
             }
-            String slotText = norm(s.displayName());
+            String slotText = slotSearchText(s);
             if (slotText.isEmpty()) {
                 continue;
             }
@@ -1574,7 +1582,7 @@ public final class PlaceRuntimeStepExecutor {
             if (skipPlayer && s.playerInventory()) {
                 continue;
             }
-            String hay = norm(s.nbt());
+            String hay = slotSearchText(s);
             if (hay.isEmpty()) {
                 continue;
             }
@@ -1611,7 +1619,7 @@ public final class PlaceRuntimeStepExecutor {
             if (skipPlayer && s.playerInventory()) {
                 continue;
             }
-            String hay = (norm(s.displayName()) + " " + norm(s.nbt())).trim();
+            String hay = slotSearchText(s);
             if (hay.isEmpty()) {
                 continue;
             }
@@ -1688,13 +1696,55 @@ public final class PlaceRuntimeStepExecutor {
         if (raw == null) {
             return "";
         }
-        String s = raw.replaceAll("(?i)§.", " ");
+        String s = decodeEscapedUnicode(raw);
+        s = s.replaceAll("(?i)§.", " ");
+        // Drop common JSON/NBT service keys to keep only semantic tokens used in GUI text.
+        s = s.replaceAll("(?i)\\b(text|translate|extra|italic|bold|underlined|strikethrough|obfuscated|color|clickevent|hoverevent|action|value|nbt|display|name|lore)\\b", " ");
         s = s.toLowerCase();
         s = s.replace('ё', 'е');
         s = s.replace('\u00A0', ' ');
         s = s.replaceAll("[^\\p{L}\\p{N}\\s]+", " ");
         s = s.replaceAll("\\s+", " ");
         return s.trim();
+    }
+
+    private static String slotSearchText(SlotView s) {
+        if (s == null) {
+            return "";
+        }
+        String display = norm(s.displayName());
+        String nbt = norm(s.nbt());
+        if (display.isEmpty()) {
+            return nbt;
+        }
+        if (nbt.isEmpty()) {
+            return display;
+        }
+        return (display + " " + nbt).trim();
+    }
+
+    private static String decodeEscapedUnicode(String raw) {
+        if (raw == null || raw.isEmpty() || raw.indexOf("\\u") < 0) {
+            return raw == null ? "" : raw;
+        }
+        StringBuilder out = new StringBuilder(raw.length());
+        int i = 0;
+        while (i < raw.length()) {
+            char c = raw.charAt(i);
+            if (c == '\\' && i + 5 < raw.length() && raw.charAt(i + 1) == 'u') {
+                String hex = raw.substring(i + 2, i + 6);
+                try {
+                    int v = Integer.parseInt(hex, 16);
+                    out.append((char) v);
+                    i += 6;
+                    continue;
+                } catch (Exception ignore) {
+                }
+            }
+            out.append(c);
+            i++;
+        }
+        return out.toString();
     }
 
     private static String nbtForMode(int mode, String display, boolean saveVar) {

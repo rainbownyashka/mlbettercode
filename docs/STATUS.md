@@ -74,6 +74,9 @@
   - selector highlight particles on fabric1165 now use important-particle fallback (plus visible y-offset), with concise debug trace when rows are selected but not rendered in current dimension.
 - Cross-version migration risk register added:
   - `docs/CROSS_VERSION_ADAPTER_RISKS.md` now tracks known/expected adapter failures for 1.12.2 parity migration (ids, gui slots, signs, seed detect, tp/window timing, perf, cache scope, obfuscation).
+- Modern route/selector robustness update:
+  - menu slot matching now uses normalized combined text (`display + nbt`) with unicode-escape cleanup and service-token stripping, improving compatibility with ViaVersion-style JSON/NBT wrappers without locale translation hacks.
+  - selector highlight on fabric1165 now draws a top-face pseudo-outline and auto-removes selected rows when anchor blue-glass is broken.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).

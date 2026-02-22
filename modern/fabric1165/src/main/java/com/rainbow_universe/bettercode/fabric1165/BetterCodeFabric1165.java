@@ -2596,8 +2596,18 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         String dim = String.valueOf(mc.world.getRegistryKey().getValue());
         int selectedInDim = 0;
         int shown = 0;
-        for (SelectedRow row : SELECTED.values()) {
+        java.util.Iterator<Map.Entry<String, SelectedRow>> it = SELECTED.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<String, SelectedRow> e = it.next();
+            SelectedRow row = e.getValue();
             if (row == null || !dim.equals(row.dimension())) {
+                continue;
+            }
+            BlockPos anchor = new BlockPos(row.x(), row.y(), row.z());
+            if (!isBlueGlassAt(mc, anchor)) {
+                it.remove();
+                System.out.println("[printer-debug] selector_auto_unselect reason=anchor_missing dim="
+                    + row.dimension() + " pos=" + row.x() + "," + row.y() + "," + row.z());
                 continue;
             }
             selectedInDim++;
@@ -2605,11 +2615,15 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 break;
             }
             double gx = row.x() + 0.5;
-            double gy = row.y() + 1.08;
+            double gy = row.y() + 1.02;
             double gz = row.z() + 0.5;
+            // Pseudo-outline on top face: center + four corners.
             spawnHighlightParticle(mc, ParticleTypes.END_ROD, gx, gy, gz, 0.0, 0.01, 0.0);
-            spawnHighlightParticle(mc, ParticleTypes.CRIT, gx, row.y() + 1.18, gz, 0.0, 0.0, 0.0);
-            spawnHighlightParticle(mc, ParticleTypes.HAPPY_VILLAGER, gx, row.y() + 1.22, gz, 0.0, 0.0, 0.0);
+            spawnHighlightParticle(mc, ParticleTypes.HAPPY_VILLAGER, gx - 0.32, gy, gz - 0.32, 0.0, 0.0, 0.0);
+            spawnHighlightParticle(mc, ParticleTypes.HAPPY_VILLAGER, gx + 0.32, gy, gz - 0.32, 0.0, 0.0, 0.0);
+            spawnHighlightParticle(mc, ParticleTypes.HAPPY_VILLAGER, gx - 0.32, gy, gz + 0.32, 0.0, 0.0, 0.0);
+            spawnHighlightParticle(mc, ParticleTypes.HAPPY_VILLAGER, gx + 0.32, gy, gz + 0.32, 0.0, 0.0, 0.0);
+            spawnHighlightParticle(mc, ParticleTypes.CRIT, gx, gy + 0.13, gz, 0.0, 0.0, 0.0);
             shown++;
         }
         if (selectedInDim > 0 && shown == 0 && now - LAST_SELECTOR_HIGHLIGHT_LOG_MS >= 1500L) {
