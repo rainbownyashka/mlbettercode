@@ -104,6 +104,9 @@
 - Fabric1165 selector outline visibility follow-up:
   - outline render event moved to `WorldRenderEvents.BEFORE_DEBUG_RENDER` (debug line stage).
   - line draw path reverted to direct framebuffer line render (`BufferBuilder/Tessellator`) for 1.16.5 compatibility; `RenderLayer.getLines()` path removed from selector.
+- Modern params-open spam hotfix:
+  - params stage no longer requires `switched/ack` gate when params window is already stable and valid.
+  - once valid params chest is visible (`nonPlayer > 0` + anchor chest check), runtime waits only for short window stability and then enters `APPLY_ARGS` without reopen-loop.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).

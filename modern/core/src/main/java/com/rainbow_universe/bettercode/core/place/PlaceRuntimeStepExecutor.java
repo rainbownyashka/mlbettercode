@@ -234,7 +234,7 @@ public final class PlaceRuntimeStepExecutor {
             boolean paramsStable = entry.paramsReadyWindowId() == view.windowId()
                 && entry.paramsReadySinceMs() > 0L
                 && now - entry.paramsReadySinceMs() >= PARAMS_WINDOW_STABLE_MS;
-            if (switchedOrAcked && paramsReady && paramsChestReady && paramsStable) {
+            if (paramsReady && paramsChestReady && paramsStable) {
                 if (!ensureCursorClear(entry, bridge, now)) {
                     if (isCursorTimeout(entry, now)) {
                         return fail(logger, "CURSOR_NOT_EMPTY", "cursor not empty before args stage");
@@ -256,6 +256,9 @@ public final class PlaceRuntimeStepExecutor {
                 entry.setParamsReadySinceMs(0L);
                 logger.info("printer-debug", "runtime_state=OPEN_PARAMS_CHEST switched=1");
                 return PlaceExecResult.inProgress(0, "APPLY_ARGS");
+            }
+            if (paramsReady && paramsChestReady && !paramsStable) {
+                return PlaceExecResult.inProgress(0, "WAIT_PARAMS_STABLE");
             }
             if (switchedOrAcked && (!paramsReady || !paramsChestReady)) {
                 if (!entry.needOpenParamsChest() && now - entry.paramsStartMs() >= PARAMS_REOPEN_AFTER_MS) {
