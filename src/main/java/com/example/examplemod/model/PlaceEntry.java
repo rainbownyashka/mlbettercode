@@ -67,6 +67,9 @@ public class PlaceEntry
     public int paramsOpenAttempts;
     public long paramsStartMs;
     public long nextParamsActionMs;
+    public int paramsCandidateWindowId;
+    public long paramsCandidateSinceMs;
+    public String paramsWindowHash;
 
     // Post-place configuration (functions/cycles).
     public int postPlaceKind = POST_PLACE_NONE;
@@ -140,6 +143,9 @@ public class PlaceEntry
         this.paramsOpenAttempts = 0;
         this.paramsStartMs = 0L;
         this.nextParamsActionMs = 0L;
+        this.paramsCandidateWindowId = -1;
+        this.paramsCandidateSinceMs = 0L;
+        this.paramsWindowHash = "";
         this.triedWindowId = -1;
         this.menuClicksSinceOpen = 0;
         this.menuNonEmptySinceMs = 0L;
@@ -205,6 +211,9 @@ public class PlaceEntry
         this.paramsOpenAttempts = 0;
         this.paramsStartMs = 0L;
         this.nextParamsActionMs = 0L;
+        this.paramsCandidateWindowId = -1;
+        this.paramsCandidateSinceMs = 0L;
+        this.paramsWindowHash = "";
         this.triedWindowId = -1;
         this.menuClicksSinceOpen = 0;
         this.menuNonEmptySinceMs = 0L;

@@ -46,16 +46,55 @@ final class PlaceGuiHandler
         if (entry.awaitingParamsChest)
         {
             int windowId = gui.inventorySlots == null ? -1 : gui.inventorySlots.windowId;
-            if (windowId != -1
+            boolean switchedFromMenu = windowId != -1
                 && entry.lastMenuWindowId != -1
                 && windowId != entry.lastMenuWindowId
-                && nowMs - entry.lastMenuClickMs > host.placeDelayMs(450L))
+                && nowMs - entry.lastMenuClickMs > host.placeDelayMs(450L);
+            if (switchedFromMenu)
             {
+                if (entry.paramsCandidateWindowId != windowId)
+                {
+                    entry.paramsCandidateWindowId = windowId;
+                    entry.paramsCandidateSinceMs = nowMs;
+                    entry.paramsWindowHash = "";
+                    return;
+                }
+
+                if (nowMs - entry.paramsCandidateSinceMs < host.placeDelayMs(220L))
+                {
+                    return;
+                }
+
+                int nonPlayerSlots = countNonPlayerSlots(gui);
+                int nonPlayerNonEmpty = countNonPlayerNonEmptySlots(gui);
+                if (nonPlayerSlots <= 0 || nonPlayerNonEmpty <= 0)
+                {
+                    return;
+                }
+
+                String nonPlayerHash = buildNonPlayerHash(gui);
+                if (entry.paramsWindowHash == null || entry.paramsWindowHash.isEmpty())
+                {
+                    entry.paramsWindowHash = nonPlayerHash;
+                    entry.paramsCandidateSinceMs = nowMs;
+                    return;
+                }
+                if (!entry.paramsWindowHash.equals(nonPlayerHash))
+                {
+                    entry.paramsWindowHash = nonPlayerHash;
+                    entry.paramsCandidateSinceMs = nowMs;
+                    return;
+                }
+                if (nowMs - entry.paramsCandidateSinceMs < host.placeDelayMs(200L))
+                {
+                    return;
+                }
+
                 entry.awaitingParamsChest = false;
                 entry.awaitingArgs = true;
                 entry.advancedArgIndex = 0;
                 entry.argsStartMs = nowMs;
-                entry.lastArgsActionMs = 0L;
+                entry.lastArgsActionMs = nowMs + host.placeDelayMs(120L);
                 entry.argsMisses = 0;
                 entry.usedArgSlots.clear();
                 entry.argsGuiPage = 0;
@@ -64,10 +103,15 @@ final class PlaceGuiHandler
                 entry.argsPageTurnNextMs = 0L;
                 entry.argsPageRetryCount = 0;
                 entry.argsPageLastHash = "";
-                handleArgs(host, state, gui, nowMs);
+                entry.paramsCandidateWindowId = -1;
+                entry.paramsCandidateSinceMs = 0L;
+                entry.paramsWindowHash = "";
             }
             else
             {
+                entry.paramsCandidateWindowId = -1;
+                entry.paramsCandidateSinceMs = 0L;
+                entry.paramsWindowHash = "";
                 // Some servers don't open the params chest automatically (or do it with big lag).
                 // If the window doesn't change for a while, close the menu and let the tick handler open the chest.
                 if (entry.paramsStartMs == 0L)
@@ -196,11 +240,17 @@ final class PlaceGuiHandler
                 LOGGER.info("PLACE_SCOPE_REQUIRED key={} found={}", entry.preferredMenuKey, preferred != null);
                 if (preferred != null)
                 {
-                    host.queueClick(new ClickAction(preferred.slotNumber, 0, ClickType.PICKUP));
-                    entry.triedSlots.add(preferred.slotNumber);
+                    int preferredClickSlot = toSafeClickIndex(gui, preferred.slotNumber);
+                    if (preferredClickSlot < 0)
+                    {
+                        abort(host, state, "scope_menu_slot_invalid");
+                        return;
+                    }
+                    host.queueClick(new ClickAction(preferredClickSlot, 0, ClickType.PICKUP));
+                    entry.triedSlots.add(preferredClickSlot);
                     try
                     {
-                        Slot s = gui.inventorySlots.getSlot(preferred.slotNumber);
+                        Slot s = gui.inventorySlots.getSlot(preferredClickSlot);
                         if (s != null)
                         {
                             ItemStack st = s.getStack();
@@ -221,7 +271,7 @@ final class PlaceGuiHandler
                     entry.menuClicksSinceOpen++;
                     entry.menuStartMs = nowMs;
                     entry.preferredMenuResolved = true;
-                    LOGGER.info("PLACE_SCOPE_PICK key={} slot={}", entry.preferredMenuKey, preferred.slotNumber);
+                    LOGGER.info("PLACE_SCOPE_PICK key={} slot={} raw={}", entry.preferredMenuKey, preferredClickSlot, preferred.slotNumber);
                     return;
                 }
                 host.setActionBar(false, "&c/place: scope menu not found: " + entry.preferredMenuKey, 3000L);
@@ -272,11 +322,17 @@ final class PlaceGuiHandler
                 return;
             }
 
-            host.queueClick(new ClickAction(rnd.slotNumber, 0, ClickType.PICKUP));
-            entry.triedSlots.add(rnd.slotNumber);
+            int rndClickSlot = toSafeClickIndex(gui, rnd.slotNumber);
+            if (rndClickSlot < 0)
+            {
+                abort(host, state, "random_menu_slot_invalid");
+                return;
+            }
+            host.queueClick(new ClickAction(rndClickSlot, 0, ClickType.PICKUP));
+            entry.triedSlots.add(rndClickSlot);
             try
             {
-                Slot s = gui.inventorySlots.getSlot(rnd.slotNumber);
+                Slot s = gui.inventorySlots.getSlot(rndClickSlot);
                 if (s != null)
                 {
                     ItemStack st = s.getStack();
@@ -299,11 +355,17 @@ final class PlaceGuiHandler
             return;
         }
 
-        host.queueClick(new ClickAction(step.slotNumber, 0, ClickType.PICKUP));
-        entry.triedSlots.add(step.slotNumber);
+        int stepClickSlot = toSafeClickIndex(gui, step.slotNumber);
+        if (stepClickSlot < 0)
+        {
+            abort(host, state, "menu_slot_invalid");
+            return;
+        }
+        host.queueClick(new ClickAction(stepClickSlot, 0, ClickType.PICKUP));
+        entry.triedSlots.add(stepClickSlot);
         try
         {
-            Slot s = gui.inventorySlots.getSlot(step.slotNumber);
+            Slot s = gui.inventorySlots.getSlot(stepClickSlot);
             if (s != null)
             {
                 ItemStack st = s.getStack();
@@ -343,6 +405,9 @@ final class PlaceGuiHandler
                 entry.paramsStartMs = nowMs;
                 entry.nextParamsActionMs = 0L;
                 entry.paramsOpenAttempts = 0;
+                entry.paramsCandidateWindowId = -1;
+                entry.paramsCandidateSinceMs = 0L;
+                entry.paramsWindowHash = "";
             }
             else
             {
@@ -598,7 +663,13 @@ final class PlaceGuiHandler
             }
             catch (Exception ignore) { }
 
-            host.queueClick(new ClickAction(slotToClick, 0, ClickType.PICKUP));
+            int seqClickSlot = toSafeClickIndex(gui, slotToClick);
+            if (seqClickSlot < 0)
+            {
+                abort(host, state, "item_seq_bad_slot");
+                return;
+            }
+            host.queueClick(new ClickAction(seqClickSlot, 0, ClickType.PICKUP));
             entry.tempItemSeqStage++;
             entry.pendingArgNextMs = nowMs + host.placeDelayMs(500L);
             entry.lastArgsActionMs = nowMs;
@@ -672,7 +743,14 @@ final class PlaceGuiHandler
             catch (Exception ignore) { }
             if (nowMs >= entry.pendingArgNextMs && entry.pendingArgClickSlot >= 0)
             {
-                host.queueClick(new ClickAction(entry.pendingArgClickSlot, 0, ClickType.PICKUP));
+                int pendingClickSlot = toSafeClickIndex(gui, entry.pendingArgClickSlot);
+                if (pendingClickSlot < 0)
+                {
+                    host.setActionBar(false, "&c/placeadvanced: pending arg slot is invalid", 2500L);
+                    abort(host, state, "pending_arg_slot_invalid");
+                    return;
+                }
+                host.queueClick(new ClickAction(pendingClickSlot, 0, ClickType.PICKUP));
                 entry.pendingArgClicks--;
                 entry.pendingArgNextMs = nowMs + host.placeDelayMs(500L);
                 entry.lastArgsActionMs = nowMs;
@@ -821,6 +899,43 @@ final class PlaceGuiHandler
         ItemStack presetStack = target.getStack();
         if (arg.mode == PlaceModule.INPUT_MODE_ITEM)
         {
+            String rawItemExpr = arg.valueRaw == null ? "" : arg.valueRaw.trim();
+            if (rawItemExpr.startsWith("var(") && rawItemExpr.endsWith(")"))
+            {
+                String varExpr = rawItemExpr.substring(4, rawItemExpr.length() - 1).trim();
+                if (varExpr.isEmpty())
+                {
+                    host.setActionBar(false, "&c/placeadvanced: invalid item(var())", 2500L);
+                    abort(host, state, "invalid_item_var");
+                    return;
+                }
+                String preset = presetStack == null || presetStack.isEmpty()
+                    ? ""
+                    : host.extractEntryText(presetStack, PlaceModule.INPUT_MODE_VARIABLE);
+                ItemStack template = host.templateForMode(PlaceModule.INPUT_MODE_VARIABLE);
+                host.setInputSaveVariable(arg.saveVariable);
+                host.startSlotInput(
+                    gui,
+                    target,
+                    template,
+                    PlaceModule.INPUT_MODE_VARIABLE,
+                    preset,
+                    "Arg: " + arg.keyRaw);
+                host.setInputText(varExpr);
+                host.submitInputText(false);
+
+                entry.usedArgSlots.add(target.slotNumber);
+                entry.advancedArgIndex++;
+                if (arg.clicks > 0)
+                {
+                    entry.pendingArgClickSlot = target.slotNumber;
+                    entry.pendingArgClicks = arg.clicks;
+                    entry.pendingArgNextMs = nowMs + host.placeDelayMs(500L);
+                }
+                entry.argsMisses = 0;
+                return;
+            }
+
             try
             {
                 ItemStack carried = mc.player.inventory.getItemStack();
@@ -878,12 +993,21 @@ final class PlaceGuiHandler
                 }
 
                 // Exactly like Ctrl+V flow: temp slot -> target -> back to temp if cursor is still occupied.
-                mc.playerController.windowClick(gui.inventorySlots.windowId, hotbarContainerSlot.intValue(), 0, ClickType.PICKUP, mc.player);
-                mc.playerController.windowClick(gui.inventorySlots.windowId, target.slotNumber, 0, ClickType.PICKUP, mc.player);
+                int hotbarClickSlot = toSafeClickIndex(gui, hotbarContainerSlot.intValue());
+                int targetClickSlot = toSafeClickIndex(gui, target);
+                if (hotbarClickSlot < 0 || targetClickSlot < 0)
+                {
+                    host.setActionBar(false, "&c/placeadvanced: args click slot invalid", 2500L);
+                    abort(host, state, "args_click_slot_invalid");
+                    return;
+                }
+
+                mc.playerController.windowClick(gui.inventorySlots.windowId, hotbarClickSlot, 0, ClickType.PICKUP, mc.player);
+                mc.playerController.windowClick(gui.inventorySlots.windowId, targetClickSlot, 0, ClickType.PICKUP, mc.player);
                 ItemStack cursorAfterTarget = safeCursorStackCopy(mc);
                 if (!cursorAfterTarget.isEmpty())
                 {
-                    mc.playerController.windowClick(gui.inventorySlots.windowId, hotbarContainerSlot.intValue(), 0, ClickType.PICKUP, mc.player);
+                    mc.playerController.windowClick(gui.inventorySlots.windowId, hotbarClickSlot, 0, ClickType.PICKUP, mc.player);
                 }
                 if (host.isDebugUi())
                 {
@@ -1103,7 +1227,12 @@ final class PlaceGuiHandler
                 }
                 if (!s.getHasStack())
                 {
-                    mc.playerController.windowClick(gui.inventorySlots.windowId, s.slotNumber, 0, ClickType.PICKUP, mc.player);
+                    int clearSlot = toSafeClickIndex(gui, s);
+                    if (clearSlot < 0)
+                    {
+                        continue;
+                    }
+                    mc.playerController.windowClick(gui.inventorySlots.windowId, clearSlot, 0, ClickType.PICKUP, mc.player);
                     return true;
                 }
             }
@@ -1342,7 +1471,7 @@ final class PlaceGuiHandler
             }
             if (idx == slotIndex)
             {
-                return slot.slotNumber;
+                return toSafeClickIndex(gui, slot);
             }
             idx++;
         }
@@ -1364,6 +1493,29 @@ final class PlaceGuiHandler
                 continue;
             }
             count++;
+        }
+        return count;
+    }
+
+    private static int countNonPlayerNonEmptySlots(GuiContainer gui)
+    {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (gui == null || gui.inventorySlots == null || mc == null || mc.player == null)
+        {
+            return 0;
+        }
+        int count = 0;
+        for (Slot slot : gui.inventorySlots.inventorySlots)
+        {
+            if (slot == null || slot.inventory == mc.player.inventory)
+            {
+                continue;
+            }
+            ItemStack st = slot.getStack();
+            if (st != null && !st.isEmpty())
+            {
+                count++;
+            }
         }
         return count;
     }
@@ -1508,9 +1660,17 @@ final class PlaceGuiHandler
             return new SlotRouteResult(false, true, null);
         }
 
-        host.queueClick(new ClickAction(nextArrow.slotNumber, 0, ClickType.PICKUP));
+        int arrowClickSlot = toSafeClickIndex(gui, nextArrow);
+        if (arrowClickSlot < 0)
+        {
+            host.setActionBar(false, "&cplaceadvanced: стрелка страницы недоступна для клика", 2500L);
+            LOGGER.info("PLACE_PAGE_CLICK arrow_invalid targetPage={} slot={} rawArrow={}",
+                targetPage + 1, abs, nextArrow.slotNumber);
+            return new SlotRouteResult(false, true, null);
+        }
+        host.queueClick(new ClickAction(arrowClickSlot, 0, ClickType.PICKUP));
         LOGGER.info("PLACE_PAGE_CLICK click currentPage={} targetPage={} slot={} arrowSlot={}",
-            entry.argsGuiPage + 1, targetPage + 1, abs, nextArrow.slotNumber);
+            entry.argsGuiPage + 1, targetPage + 1, abs, arrowClickSlot);
         entry.lastArgsActionMs = nowMs;
         entry.argsPageLastHash = buildNonPlayerHash(gui);
         entry.argsPageTurnPending = true;
@@ -1521,9 +1681,52 @@ final class PlaceGuiHandler
             host.debugChat("placeadvanced page click: current=" + (entry.argsGuiPage + 1)
                 + " target=" + (targetPage + 1)
                 + " slot=" + abs
-                + " arrowSlot=" + nextArrow.slotNumber);
+                + " arrowSlot=" + arrowClickSlot);
         }
         return new SlotRouteResult(true, false, null);
+    }
+
+    private static int toSafeClickIndex(GuiContainer gui, int requestedSlot)
+    {
+        if (gui == null || gui.inventorySlots == null || requestedSlot < 0)
+        {
+            return -1;
+        }
+        if (gui.inventorySlots.inventorySlots == null)
+        {
+            return -1;
+        }
+        int size = gui.inventorySlots.inventorySlots.size();
+        if (requestedSlot < size)
+        {
+            return requestedSlot;
+        }
+        for (int i = 0; i < size; i++)
+        {
+            Slot s = gui.inventorySlots.inventorySlots.get(i);
+            if (s != null && s.slotNumber == requestedSlot)
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int toSafeClickIndex(GuiContainer gui, Slot slot)
+    {
+        if (gui == null || gui.inventorySlots == null || slot == null || gui.inventorySlots.inventorySlots == null)
+        {
+            return -1;
+        }
+        for (int i = 0; i < gui.inventorySlots.inventorySlots.size(); i++)
+        {
+            Slot cur = gui.inventorySlots.inventorySlots.get(i);
+            if (cur == slot)
+            {
+                return i;
+            }
+        }
+        return toSafeClickIndex(gui, slot.slotNumber);
     }
 
     private static String buildNonPlayerHash(GuiContainer gui)

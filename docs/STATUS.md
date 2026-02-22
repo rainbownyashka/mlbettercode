@@ -37,6 +37,9 @@
 - Legacy 1.12.2 skip control-step hardening:
   - `PlaceTickHandler` now handles `moveOnly` steps before any block-confirm/menu/sign stage.
   - skip control packets no longer pass through `startAfterPlaced(...)`, so they cannot trigger imaginary sign right-click at `z-1`.
+- Legacy 1.12.2 high-ping params GUI stabilization:
+  - `PlaceGuiHandler` now starts args fill only after switched params window is stable (same `windowId`, stable non-player hash, and non-empty non-player slots) for a short delay.
+  - prevents early arg injection into transient/cached GUI state that gets overwritten when real server chest window arrives late.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).
