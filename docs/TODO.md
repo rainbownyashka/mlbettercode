@@ -9,6 +9,7 @@ Format: `id | task | priority | owner | needs_user_test | state | links`
 - MOD-141 | Add explicit printer final-state chat reason in legacy 1.12.2 (`/print finished` and `/print aborted:<reason>` at central tick stop points) | P0 | agent | yes | done | src/main/java/com/example/examplemod/feature/place/PlaceTickHandler.java
 - MOD-142 | Fix silent-finish regression in legacy printer: resolve queue completion before editor/gui early-return guards so final reason message is always emitted | P0 | agent | yes | done | src/main/java/com/example/examplemod/feature/place/PlaceTickHandler.java
 - MOD-143 | Mirror legacy printer final reasons into file logs (`latest.log`) with stable markers (`PRINT_FINISHED`/`PRINT_ABORTED`) for post-mortem debugging | P0 | agent | yes | done | src/main/java/com/example/examplemod/feature/place/PlaceTickHandler.java
+- MOD-144 | Fix action-bar chat reroute regression in non-debug sessions: replace `debugChat` path with `scheduleMainChat` in `setActionBar` | P0 | agent | yes | done | src/main/java/com/example/examplemod/ExampleMod.java
 - MOD-001 | Reconcile `legacy/pages-work` fixes into `main` via safe cherry-picks | P0 | agent | yes | open | branches:main,legacy/pages-work
 - MOD-002 | Finalize robust chest paging logs (signal/no spam balance) | P1 | agent | yes | in_progress | src/main/java/com/example/examplemod/feature/regallactions
 - MOD-003 | Implement mirror switch config (default vercel, optional duckdns mirror) | P1 | agent | yes | open | docs/AGENT_WORK_PLAN.md

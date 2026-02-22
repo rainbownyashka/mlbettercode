@@ -19,6 +19,7 @@
   - centralized in `ExampleMod#setActionBar(...)`: all action-bar texts are now emitted to chat via `debugChat(...)`,
   - on-screen action-bar HUD lines are cleared (no ephemeral-only error messages),
   - added short duplicate suppression window (`ACTIONBAR_CHAT_DUP_GAP_MS`) to avoid tick-loop chat spam.
+  - fixed delivery path: action-bar reroute now uses `scheduleMainChat(...)` (main-thread, no `debugUi` gate), so non-debug sessions also receive messages in chat.
 - Legacy 1.12.2 printer completion reason output:
   - `feature/place/PlaceTickHandler` now emits explicit final chat result when print queue completes (`/print finished: queue_completed`),
   - critical stop paths now end with unified abort reason in chat (`/print aborted: <reason>`), including params timeout, place retry exhaustion, and post-place terminal errors.

@@ -5794,7 +5794,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
             }
             actionBarPrimaryLastChatText = formatted;
             actionBarPrimaryLastChatMs = now;
-            debugChat(formatted);
+            scheduleMainChat(formatted);
             return;
         }
 
@@ -5810,7 +5810,7 @@ public class ExampleMod implements PlaceModuleHost, RegAllActionsHost, com.examp
         }
         actionBarSecondaryLastChatText = formatted;
         actionBarSecondaryLastChatMs = now;
-        debugChat(formatted);
+        scheduleMainChat(formatted);
     }
 
     private static String applyColorCodes(String text)
