@@ -40,6 +40,9 @@
 - Legacy 1.12.2 high-ping params GUI stabilization:
   - `PlaceGuiHandler` now starts args fill only after switched params window is stable (same `windowId`, stable non-player hash, and non-empty non-player slots) for a short delay.
   - prevents early arg injection into transient/cached GUI state that gets overwritten when real server chest window arrives late.
+- Legacy 1.12.2 fast params start mode:
+  - removed extra stabilization delay before args fill; once switched params window is non-empty, args start in the same tick.
+  - GUI is still protected by post-fill arg validation before close (`ARGS_VERIFY` stage).
 - Legacy 1.12.2 args close-gate validation:
   - params GUI is no longer closed immediately after arg queue end; runtime now validates applied arg slots before close.
   - on mismatch runtime re-queues from first failed arg and retries in-place; aborts only on bounded validation timeout/retry exhaustion.

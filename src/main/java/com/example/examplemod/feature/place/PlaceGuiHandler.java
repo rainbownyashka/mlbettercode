@@ -52,40 +52,9 @@ final class PlaceGuiHandler
                 && nowMs - entry.lastMenuClickMs > host.placeDelayMs(450L);
             if (switchedFromMenu)
             {
-                if (entry.paramsCandidateWindowId != windowId)
-                {
-                    entry.paramsCandidateWindowId = windowId;
-                    entry.paramsCandidateSinceMs = nowMs;
-                    entry.paramsWindowHash = "";
-                    return;
-                }
-
-                if (nowMs - entry.paramsCandidateSinceMs < host.placeDelayMs(220L))
-                {
-                    return;
-                }
-
                 int nonPlayerSlots = countNonPlayerSlots(gui);
                 int nonPlayerNonEmpty = countNonPlayerNonEmptySlots(gui);
                 if (nonPlayerSlots <= 0 || nonPlayerNonEmpty <= 0)
-                {
-                    return;
-                }
-
-                String nonPlayerHash = buildNonPlayerHash(gui);
-                if (entry.paramsWindowHash == null || entry.paramsWindowHash.isEmpty())
-                {
-                    entry.paramsWindowHash = nonPlayerHash;
-                    entry.paramsCandidateSinceMs = nowMs;
-                    return;
-                }
-                if (!entry.paramsWindowHash.equals(nonPlayerHash))
-                {
-                    entry.paramsWindowHash = nonPlayerHash;
-                    entry.paramsCandidateSinceMs = nowMs;
-                    return;
-                }
-                if (nowMs - entry.paramsCandidateSinceMs < host.placeDelayMs(200L))
                 {
                     return;
                 }
@@ -94,7 +63,7 @@ final class PlaceGuiHandler
                 entry.awaitingArgs = true;
                 entry.advancedArgIndex = 0;
                 entry.argsStartMs = nowMs;
-                entry.lastArgsActionMs = nowMs + host.placeDelayMs(120L);
+                entry.lastArgsActionMs = 0L;
                 entry.argsMisses = 0;
                 entry.usedArgSlots.clear();
                 entry.argAppliedSlotByIndex.clear();
@@ -109,15 +78,10 @@ final class PlaceGuiHandler
                 entry.argsPageTurnNextMs = 0L;
                 entry.argsPageRetryCount = 0;
                 entry.argsPageLastHash = "";
-                entry.paramsCandidateWindowId = -1;
-                entry.paramsCandidateSinceMs = 0L;
-                entry.paramsWindowHash = "";
+                handleArgs(host, state, gui, nowMs);
             }
             else
             {
-                entry.paramsCandidateWindowId = -1;
-                entry.paramsCandidateSinceMs = 0L;
-                entry.paramsWindowHash = "";
                 // Some servers don't open the params chest automatically (or do it with big lag).
                 // If the window doesn't change for a while, close the menu and let the tick handler open the chest.
                 if (entry.paramsStartMs == 0L)
@@ -417,9 +381,6 @@ final class PlaceGuiHandler
                 entry.paramsStartMs = nowMs;
                 entry.nextParamsActionMs = 0L;
                 entry.paramsOpenAttempts = 0;
-                entry.paramsCandidateWindowId = -1;
-                entry.paramsCandidateSinceMs = 0L;
-                entry.paramsWindowHash = "";
             }
             else
             {
