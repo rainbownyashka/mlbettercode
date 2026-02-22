@@ -62,6 +62,9 @@
 - Legacy 1.12.2 input-stage stall recovery:
   - `awaitingArgs` now has explicit `inputActive` watchdog: if input stage hangs for 15s, runtime force-resets input and reopens params chest path.
   - bounded reset attempts with explicit abort reason (`args_input_stage_timeout`) instead of infinite wait.
+- Fabric 1.16.5 command UX + block-id compatibility update:
+  - `/mldsl run` now has greedy auto-fallback branch that accepts direct local plan paths (`.json`) without explicit `local` keyword.
+  - local path resolver now accepts quoted paths, and legacy block id mapping includes `minecraft:nether_brick -> minecraft:nether_bricks`.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).

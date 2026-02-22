@@ -38,6 +38,7 @@ public final class LegacyBlockIdCompat {
         out.put("minecraft:wooden_button", "minecraft:oak_button");
         out.put("minecraft:wooden_pressure_plate", "minecraft:oak_pressure_plate");
         out.put("minecraft:wooden_slab", "minecraft:oak_slab");
+        out.put("minecraft:nether_brick", "minecraft:nether_bricks");
         return Collections.unmodifiableMap(out);
     }
 }

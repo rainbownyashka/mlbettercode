@@ -184,7 +184,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                                 StringArgumentType.getString(ctx, "postId"),
                                 StringArgumentType.getString(ctx, "config"),
                                 "positional"
-                            )))))
+                            ))))
+                    .then(ClientCommandManager.argument("targetAuto", StringArgumentType.greedyString())
+                        .executes(ctx -> runMldslAuto(ctx.getSource(), StringArgumentType.getString(ctx, "targetAuto")))))
                 .then(ClientCommandManager.literal("check")
                     .then(ClientCommandManager.literal("local")
                         .then(ClientCommandManager.argument("path", StringArgumentType.greedyString())
@@ -323,6 +325,85 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
         source.sendError(new LiteralText("[" + result.errorCode() + "] " + result.message()));
         return 0;
+    }
+
+    private static int runMldslAuto(FabricClientCommandSource source, String targetAuto) {
+        String raw = targetAuto == null ? "" : targetAuto.trim();
+        if (raw.isEmpty()) {
+            source.sendError(new LiteralText("Usage: /mldsl run <postId|path.json> [config|--config <id>]"));
+            return 0;
+        }
+        String unquoted = stripOuterQuotes(raw);
+        if (looksLikeLocalPath(unquoted) && !containsConfigTail(unquoted)) {
+            return runLocal(source, unquoted);
+        }
+
+        // Keep compatibility with /mldsl run <postId> [config] and --config form in greedy fallback.
+        String postId = unquoted;
+        String config = null;
+        String syntax = "auto";
+        int cfgIdx = unquoted.indexOf(" --config ");
+        if (cfgIdx > 0) {
+            postId = unquoted.substring(0, cfgIdx).trim();
+            config = unquoted.substring(cfgIdx + " --config ".length()).trim();
+            syntax = "auto_flag";
+        } else {
+            String[] parts = unquoted.split("\\s+");
+            if (parts.length >= 2) {
+                postId = parts[0];
+                config = parts[1];
+                syntax = "auto_positional";
+            }
+        }
+        postId = stripOuterQuotes(postId);
+        if (postId.isEmpty()) {
+            source.sendError(new LiteralText("Usage: /mldsl run <postId|path.json> [config|--config <id>]"));
+            return 0;
+        }
+        return runMldsl(source, postId, (config == null || config.isEmpty()) ? null : stripOuterQuotes(config), syntax);
+    }
+
+    private static String stripOuterQuotes(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String v = raw.trim();
+        if (v.length() >= 2) {
+            char a = v.charAt(0);
+            char b = v.charAt(v.length() - 1);
+            if ((a == '"' && b == '"') || (a == '\'' && b == '\'')) {
+                return v.substring(1, v.length() - 1).trim();
+            }
+        }
+        return v;
+    }
+
+    private static boolean looksLikeLocalPath(String v) {
+        if (v == null) {
+            return false;
+        }
+        String s = v.trim();
+        if (s.isEmpty()) {
+            return false;
+        }
+        String low = s.toLowerCase();
+        if (low.endsWith(".json")) {
+            return true;
+        }
+        if (s.contains("\\") || s.contains("/")) {
+            return true;
+        }
+        return s.length() >= 3
+            && Character.isLetter(s.charAt(0))
+            && s.charAt(1) == ':'
+            && (s.charAt(2) == '\\' || s.charAt(2) == '/');
+    }
+
+    private static boolean containsConfigTail(String v) {
+        if (v == null) {
+            return false;
+        }
+        return v.contains(" --config ");
     }
 
     private static int issueCodeSelectorTool(FabricClientCommandSource source) {
