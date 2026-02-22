@@ -1083,9 +1083,17 @@ public final class RuntimeCore {
     }
 
     private static Path resolveLocalPath(String rawPath, Path runDir) {
-        Path p = Paths.get(rawPath);
+        String src = rawPath == null ? "" : rawPath.trim();
+        if (src.length() >= 2) {
+            char a = src.charAt(0);
+            char b = src.charAt(src.length() - 1);
+            if ((a == '"' && b == '"') || (a == '\'' && b == '\'')) {
+                src = src.substring(1, src.length() - 1).trim();
+            }
+        }
+        Path p = Paths.get(src);
         if (!p.isAbsolute()) {
-            p = runDir.resolve(rawPath);
+            p = runDir.resolve(src);
         }
         return p.normalize();
     }
