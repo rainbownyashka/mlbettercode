@@ -778,6 +778,13 @@ final class PlaceGuiHandler
 
         PlaceArg arg = entry.advancedArgs.get(entry.advancedArgIndex);
         int argIndex = entry.advancedArgIndex;
+        if (isNoOpArg(arg))
+        {
+            entry.advancedArgIndex++;
+            entry.lastArgsActionMs = nowMs;
+            entry.argsMisses = 0;
+            return;
+        }
         Integer resolvedGuiIndex = arg.slotIndex;
         if (arg.slotIndex != null && arg.slotGuiIndex)
         {
@@ -1156,7 +1163,7 @@ final class PlaceGuiHandler
         for (int i = 0; i < entry.advancedArgs.size(); i++)
         {
             PlaceArg arg = entry.advancedArgs.get(i);
-            if (arg == null || arg.clickOnly)
+            if (arg == null || arg.clickOnly || isNoOpArg(arg))
             {
                 continue;
             }
@@ -1251,6 +1258,20 @@ final class PlaceGuiHandler
         }
         return gotNorm.equals(expNorm) || gotNorm.contains(expNorm) || expNorm.contains(gotNorm);
         */
+    }
+
+    private static boolean isNoOpArg(PlaceArg arg)
+    {
+        if (arg == null || arg.clickOnly)
+        {
+            return false;
+        }
+        if (arg.mode == PlaceModule.INPUT_MODE_ITEM)
+        {
+            return false;
+        }
+        String raw = arg.valueRaw == null ? "" : arg.valueRaw.trim();
+        return raw.isEmpty();
     }
 
     private static void requeueArgsFromIndex(PlaceEntry entry, int failedIndex)
