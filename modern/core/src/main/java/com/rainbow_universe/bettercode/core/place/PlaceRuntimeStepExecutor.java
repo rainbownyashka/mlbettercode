@@ -248,6 +248,21 @@ public final class PlaceRuntimeStepExecutor {
                         + " hash=" + safe(paramsHash)
                         + " expectedWindow=" + expectedWindowId
                         + " ack=" + ack);
+                if (!paramsChestReady) {
+                    if (!entry.needOpenParamsChest() && now - entry.paramsStartMs() >= PARAMS_REOPEN_AFTER_MS) {
+                        bridge.closeScreen();
+                        entry.setNeedOpenParamsChest(true);
+                        entry.setNextParamsActionMs(now + Math.max(120, delay));
+                        entry.setParamsReadyWindowId(-1);
+                        entry.setParamsReadySinceMs(0L);
+                        logger.info("printer-debug",
+                            "runtime_state=WAIT_PARAMS_CHEST action=close_for_reopen reason=guard_chest_missing window=" + view.windowId()
+                                + " nonPlayer=" + countNonPlayerSlots(view)
+                                + " title=" + safe(view.title())
+                                + " hash=" + safe(paramsHash));
+                    }
+                    return PlaceExecResult.inProgress(0, "WAIT_PARAMS_CHEST");
+                }
                 if (!ensureCursorClear(entry, bridge, now)) {
                     if (isCursorTimeout(entry, now)) {
                         return fail(logger, "CURSOR_NOT_EMPTY", "cursor not empty before args stage");

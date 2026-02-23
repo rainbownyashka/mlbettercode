@@ -270,7 +270,6 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis());
         });
         WorldRenderEvents.AFTER_ENTITIES.register(BetterCodeFabric1165::renderSelectionOutlinesBuffered);
-        WorldRenderEvents.BEFORE_DEBUG_RENDER.register(BetterCodeFabric1165::renderSelectionOutlines);
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
             if (hand != Hand.MAIN_HAND || player == null || world == null || hitResult == null) {
                 return ActionResult.PASS;
