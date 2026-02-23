@@ -74,6 +74,7 @@ public final class PlaceRuntimeStepExecutor {
         if (delay < 0) {
             delay = 0;
         }
+        logStepTrace(logger, entry, hasMenuPayload, now);
         boolean verboseTrace = settings.getBoolean("printer.verboseRuntimeTrace", false) && shouldEmitVerboseTrace(now);
         boolean verboseMenuSnapshot = settings.getBoolean("printer.verboseMenuSnapshot", false);
         if (verboseTrace) {
@@ -902,6 +903,109 @@ public final class PlaceRuntimeStepExecutor {
             lastVerboseTraceMs = now;
             return true;
         }
+    }
+
+    private static void logStepTrace(CoreLogger logger, PlaceRuntimeEntry entry, boolean hasMenuPayload, long now) {
+        if (logger == null || entry == null) {
+            return;
+        }
+        String phase = resolvePhase(entry, hasMenuPayload);
+        int argIdx = entry.advancedArgIndex();
+        String argMode = "";
+        String argKey = "";
+        int argClicks = 0;
+        boolean argClickOnly = false;
+        if (entry.awaitingArgs() && entry.args() != null && argIdx >= 0 && argIdx < entry.args().size()) {
+            PlaceArgSpec arg = entry.args().get(argIdx);
+            if (arg != null) {
+                argMode = inputModeName(arg.mode());
+                argKey = safe(arg.keyRaw());
+                argClicks = arg.clicks();
+                argClickOnly = arg.clickOnly();
+            }
+        }
+        logger.info("printer-debug",
+            "step_trace ts=" + now
+                + " phase=" + phase
+                + " block=" + safe(entry.blockId())
+                + " name=" + safe(entry.name())
+                + " flags={place=" + (!entry.placedBlock())
+                + ",menu=" + entry.awaitingMenu()
+                + ",params=" + entry.awaitingParamsChest()
+                + ",args=" + entry.awaitingArgs()
+                + ",postPlace=" + (entry.postPlaceKind() != PlaceRuntimeEntry.POST_PLACE_NONE)
+                + ",negate=" + (entry.postPlaceKind() == PlaceRuntimeEntry.POST_PLACE_NEGATE || entry.negated())
+                + ",needOpenMenu=" + entry.needOpenMenu()
+                + ",needOpenParams=" + entry.needOpenParamsChest()
+                + ",forceRePlace=" + entry.forceRePlaceRequested()
+                + ",moveOnly=" + entry.moveOnly()
+                + "}"
+                + " windows={menuLast=" + entry.lastMenuWindowId()
+                + ",args=" + entry.argsWindowId()
+                + ",paramsReady=" + entry.paramsReadyWindowId()
+                + "}"
+                + " counts={menuAttempts=" + entry.menuOpenAttempts()
+                + ",paramsAttempts=" + entry.paramsOpenAttempts()
+                + ",randomClicks=" + entry.randomClicks()
+                + ",argIdx=" + argIdx
+                + ",pendingArgSlot=" + entry.pendingArgClickSlot()
+                + ",pendingArgClicks=" + entry.pendingArgClicks()
+                + "}"
+                + " arg={mode=" + argMode
+                + ",key=" + argKey
+                + ",clicks=" + argClicks
+                + ",clickOnly=" + argClickOnly
+                + "}");
+    }
+
+    private static String resolvePhase(PlaceRuntimeEntry entry, boolean hasMenuPayload) {
+        if (entry == null) {
+            return "UNKNOWN";
+        }
+        if (!hasMenuPayload) {
+            return "PLACE_ONLY";
+        }
+        if (!entry.placedBlock()) {
+            return "PLACE_BLOCK";
+        }
+        if (entry.awaitingMenu()) {
+            return "FIND_ACTION_SIGN_ROUTE_MENU";
+        }
+        if (entry.awaitingParamsChest()) {
+            return "FILLING_CHEST_OPEN_PARAMS";
+        }
+        if (entry.awaitingArgs()) {
+            return "FILLING_CHEST_APPLY_ARGS";
+        }
+        if (entry.postPlaceKind() != PlaceRuntimeEntry.POST_PLACE_NONE) {
+            return "POST_PLACE";
+        }
+        return "FINISH_STEP";
+    }
+
+    private static String inputModeName(int mode) {
+        if (mode == PlaceInputMode.TEXT) {
+            return "TEXT";
+        }
+        if (mode == PlaceInputMode.NUMBER) {
+            return "NUMBER";
+        }
+        if (mode == PlaceInputMode.VARIABLE) {
+            return "VARIABLE";
+        }
+        if (mode == PlaceInputMode.ARRAY) {
+            return "ARRAY";
+        }
+        if (mode == PlaceInputMode.LOCATION) {
+            return "LOCATION";
+        }
+        if (mode == PlaceInputMode.APPLE) {
+            return "APPLE";
+        }
+        if (mode == PlaceInputMode.ITEM) {
+            return "ITEM";
+        }
+        return "UNKNOWN(" + mode + ")";
     }
 
     private static PlaceExecResult finishOrPostPlace(
