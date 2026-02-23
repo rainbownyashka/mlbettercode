@@ -39,6 +39,7 @@ public final class PlaceRuntimeStepExecutor {
     private static final long RANDOM_ROUTE_MIN_GAP_MS = 220L;
     private static final long MENU_CLICK_MIN_GAP_MS = 300L;
     private static final long MENU_NEXT_ACTION_MIN_GAP_MS = 220L;
+    private static final long MENU_TARGET_CURSOR_SETTLE_MS = 80L;
     private static final long MENU_TARGET_CLOSE_ACK_MS = 850L;
     private static final int MAX_PLACED_LOST_COUNT = 6;
     private static final long BLOCK_RECHECK_MIN_ELAPSED_MS = 1200L;
@@ -413,6 +414,13 @@ public final class PlaceRuntimeStepExecutor {
             if (entry.menuTargetAckPending()) {
                 int targetWindow = entry.menuTargetWindowId();
                 long elapsed = entry.menuTargetClickMs() <= 0L ? 0L : (now - entry.menuTargetClickMs());
+                CursorState cursor = bridge.getCursorStack();
+                if (!cursor.isEmpty()) {
+                    return PlaceExecResult.inProgress(0, "WAIT_MENU_TARGET_CURSOR_CLEAR");
+                }
+                if (elapsed < MENU_TARGET_CURSOR_SETTLE_MS) {
+                    return PlaceExecResult.inProgress(0, "WAIT_MENU_TARGET_CURSOR_SETTLE");
+                }
                 if (view.windowId() < 0) {
                     entry.setMenuTargetAckPending(false);
                     entry.setMenuTargetWindowId(-1);
