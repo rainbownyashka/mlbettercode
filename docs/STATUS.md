@@ -114,6 +114,9 @@
   - added secondary Fabric-docs-aligned render path in `WorldRenderEvents.AFTER_ENTITIES` using `context.consumers()` + `RenderLayer.getLines()` (camera-relative boxes), while keeping debug-pass fallback.
   - added throttled trace marker (`testcase_outline_rendered`) to confirm render callback execution in `latest.log`.
   - debug-pass outline now uses explicit x-ray depth state (`depthFunc=ALWAYS`, `depthMask=false`) so marker/selection lines remain visible through blocks.
+- World-load cleanup + crash guard:
+  - on any new world/session instance, mod now clears selector rows and testcase marker (`world_session_reset`), preventing stale debug highlights after reconnect/world change.
+  - `refreshCodeEntrySeedHint` now guards scoreboard parse with `Throwable` catch + throttled log marker (`scoreboard_parse_failed`) to prevent hard client crash on missing runtime class.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).

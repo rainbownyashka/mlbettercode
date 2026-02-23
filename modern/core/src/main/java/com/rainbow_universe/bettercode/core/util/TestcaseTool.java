@@ -16,6 +16,10 @@ public final class TestcaseTool {
         return Result.ok("testcase setpos dim=" + d + " pos=" + x + "," + y + "," + z);
     }
 
+    public static synchronized void clearMarker() {
+        marker = null;
+    }
+
     public static MarkerView markerView() {
         Marker m = marker;
         if (m == null) {

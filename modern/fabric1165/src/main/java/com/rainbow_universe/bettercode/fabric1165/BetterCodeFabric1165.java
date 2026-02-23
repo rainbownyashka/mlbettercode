@@ -119,6 +119,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static long LAST_LEGACY_CLICK_MS = 0L;
     private static int LAST_LEGACY_CLICK_BURST = 0;
     private static long LAST_TESTCASE_RENDER_LOG_MS = 0L;
+    private static int LAST_WORLD_INSTANCE_ID = -1;
+    private static long LAST_SCOREBOARD_PARSE_ERR_LOG_MS = 0L;
     private static long SNAPSHOT_CACHE_TICK = Long.MIN_VALUE;
     private static int SNAPSHOT_CACHE_SYNC_ID = -1;
     private static int SNAPSHOT_CACHE_SCREEN_ID = -1;
@@ -255,6 +257,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 clearLocalTpQueue();
                 return;
             }
+            refreshWorldSessionState(client);
             traceRuntimeTickProbe(client);
             handleLocalTpPath(client);
             refreshWorldLoadSeedHint(client);
@@ -2527,6 +2530,24 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         tryResolveSeedHint(mc, "world_load");
     }
 
+    private static void refreshWorldSessionState(MinecraftClient mc) {
+        if (mc == null || mc.world == null) {
+            LAST_WORLD_INSTANCE_ID = -1;
+            return;
+        }
+        int worldId = System.identityHashCode(mc.world);
+        if (worldId == LAST_WORLD_INSTANCE_ID) {
+            return;
+        }
+        LAST_WORLD_INSTANCE_ID = worldId;
+        int selectedCount = SELECTED.size();
+        if (selectedCount > 0) {
+            SELECTED.clear();
+        }
+        TestcaseTool.clearMarker();
+        System.out.println("[printer-debug] world_session_reset selectedCleared=" + selectedCount + " testcaseMarkerCleared=1");
+    }
+
     private static void refreshCodeEntrySeedHint(MinecraftClient mc) {
         if (mc == null || mc.player == null || mc.world == null) {
             LAST_EDITOR_LIKE = false;
@@ -2538,8 +2559,15 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         try {
             ScoreboardContext ctx = ScoreboardParser.parse(new FabricBridge(null).scoreboardLines());
             editorLike = ctx.editorLike();
-        } catch (Exception ignore) {
+        } catch (Throwable t) {
             editorLike = false;
+            long now = System.currentTimeMillis();
+            if (now - LAST_SCOREBOARD_PARSE_ERR_LOG_MS >= 1800L) {
+                LAST_SCOREBOARD_PARSE_ERR_LOG_MS = now;
+                System.out.println("[printer-debug] scoreboard_parse_failed type="
+                    + t.getClass().getSimpleName()
+                    + " message=" + String.valueOf(t.getMessage()));
+            }
         }
         boolean dimChanged = !dim.equals(LAST_EDITOR_DIM);
         boolean entered = !LAST_EDITOR_LIKE && editorLike;
