@@ -14,13 +14,13 @@
     - `agentslock/tablesexports/1.12.2/regallactions_export.latest.txt`.
   - keeps source-of-truth legacy export inside project for recovery/audit even if runtime file is overwritten.
 - Build-matrix legacy parity snapshot sync (2026-02-23):
-  - `tools/build_matrix.py` now runs best-effort legacy conversion for modern targets (`fabric1165/120/121/forge1165/modern_all/all`):
-    - source: `.minecraft/regallactions_export.txt`
+  - `tools/build_matrix.py` now runs strict legacy conversion for modern targets (`fabric1165/120/121/forge1165/modern_all/all`):
+    - source: `agentslock/tablesexports/1.12.2/regallactions_export.latest.txt`
     - converter: `tools/legacy_regallactions_to_tablesexport.py --item-id-mode none`
     - outputs:
       - `agentslock/tablesexports/1.12.2/tablesexport.from_legacy.names.txt`
       - `.minecraft/mldsl_tables/1.12.2/tablesexport.from_legacy.names.txt`
-  - sync failures/missing source do not fail build targets.
+  - sync failures/missing source now fail build targets (fail-fast parity gate).
   - opt-out: `--no-legacy-tables-sync`.
 - Legacy 1.12.2 -> tablesexport converter added (2026-02-23):
   - new tool `tools/legacy_regallactions_to_tablesexport.py` converts `regallactions_export.txt` into lightweight `tablesexport` format.
