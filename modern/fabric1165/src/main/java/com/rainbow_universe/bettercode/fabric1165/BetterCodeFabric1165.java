@@ -42,10 +42,7 @@ import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.Tessellator;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.util.math.MatrixStack;
@@ -251,6 +248,20 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     .executes(ctx -> testcaseTp(ctx.getSource())))
                 .then(ClientCommandManager.literal("trapcheck")
                     .executes(ctx -> testcaseTrapcheck(ctx.getSource())))
+                .then(ClientCommandManager.literal("outline1")
+                    .executes(ctx -> testcaseOutlineMode(ctx.getSource(), 1)))
+                .then(ClientCommandManager.literal("outline2")
+                    .executes(ctx -> testcaseOutlineMode(ctx.getSource(), 2)))
+                .then(ClientCommandManager.literal("outline3")
+                    .executes(ctx -> testcaseOutlineMode(ctx.getSource(), 3)))
+                .then(ClientCommandManager.literal("outline4")
+                    .executes(ctx -> testcaseOutlineMode(ctx.getSource(), 4)))
+                .then(ClientCommandManager.literal("outline")
+                    .then(ClientCommandManager.argument("mode", IntegerArgumentType.integer(1, 4))
+                        .executes(ctx -> testcaseOutlineMode(
+                            ctx.getSource(),
+                            IntegerArgumentType.getInteger(ctx, "mode")
+                        ))))
         );
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -502,6 +513,16 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
     private static int testcaseTrapcheck(FabricClientCommandSource source) {
         TestcaseTool.Result result = TestcaseTool.checkTrapChest(new FabricBridge(source));
+        if (result.ok()) {
+            source.sendFeedback(new LiteralText("[testcase] " + result.message()));
+            return 1;
+        }
+        source.sendError(new LiteralText("[testcase] " + result.message()));
+        return 0;
+    }
+
+    private static int testcaseOutlineMode(FabricClientCommandSource source, int mode) {
+        TestcaseTool.Result result = TestcaseTool.setOutlineMode(mode);
         if (result.ok()) {
             source.sendFeedback(new LiteralText("[testcase] " + result.message()));
             return 1;
@@ -2902,46 +2923,122 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         if (matrices == null) {
             return;
         }
+        List<Box> boxes = collectRenderBoxes(mc, dim, marker);
+        if (boxes.isEmpty()) {
+            return;
+        }
+        int mode = TestcaseTool.outlineMode();
+        if (mode == 1) {
+            drawBoxesTessellatorWorld(boxes, false, 2.0F);
+        } else if (mode == 2) {
+            drawBoxesTessellatorCamera(boxes, context, false, 2.0F);
+        } else if (mode == 3) {
+            drawBoxesTessellatorCamera(boxes, context, true, 2.0F);
+        } else {
+            drawBoxesTessellatorCamera(boxes, context, false, 3.0F);
+        }
+        long now = System.currentTimeMillis();
+        if (now - LAST_TESTCASE_RENDER_LOG_MS > 1200L) {
+            LAST_TESTCASE_RENDER_LOG_MS = now;
+            System.out.println("[printer-debug] testcase_outline_rendered mode=" + mode + " boxes=" + boxes.size());
+        }
+    }
+
+    private static List<Box> collectRenderBoxes(MinecraftClient mc, String dim, TestcaseTool.MarkerView marker) {
+        List<Box> boxes = new ArrayList<>();
+        int drawn = 0;
+        for (SelectedRow row : SELECTED.values()) {
+            if (row == null || !dim.equals(row.dimension())) {
+                continue;
+            }
+            BlockPos anchor = new BlockPos(row.x(), row.y(), row.z());
+            if (!isBlueGlassAt(mc, anchor)) {
+                continue;
+            }
+            boxes.add(new Box(anchor.up()).expand(0.003));
+            drawn++;
+            if (drawn >= 120) {
+                break;
+            }
+        }
+        if (marker != null && dim.equals(marker.dimension())) {
+            BlockPos markerPos = new BlockPos(marker.x(), marker.y(), marker.z());
+            boxes.add(new Box(markerPos).expand(0.01));
+        }
+        return boxes;
+    }
+
+    private static void drawBoxesTessellatorWorld(List<Box> boxes, boolean depthEnabled, float lineWidth) {
+        float[] outline = selectionOutlineColor();
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        RenderSystem.lineWidth(2.0F);
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
+        RenderSystem.lineWidth(lineWidth);
+        if (depthEnabled) {
+            RenderSystem.enableDepthTest();
+            RenderSystem.depthMask(true);
+        } else {
+            RenderSystem.disableDepthTest();
+            RenderSystem.depthMask(false);
+        }
         RenderSystem.disableTexture();
         try {
             BufferBuilder bb = Tessellator.getInstance().getBuffer();
             bb.begin(GL11.GL_LINES, VertexFormats.POSITION_COLOR);
-            float[] outline = selectionOutlineColor();
-            int drawn = 0;
-            for (SelectedRow row : SELECTED.values()) {
-                if (row == null || !dim.equals(row.dimension())) {
-                    continue;
-                }
-                BlockPos anchor = new BlockPos(row.x(), row.y(), row.z());
-                if (!isBlueGlassAt(mc, anchor)) {
-                    continue;
-                }
-                BlockPos top = anchor.up();
-                Box box = new Box(top).expand(0.003);
+            for (Box box : boxes) {
                 WorldRenderer.drawBox(
                     bb,
                     box.minX, box.minY, box.minZ,
                     box.maxX, box.maxY, box.maxZ,
                     outline[0], outline[1], outline[2], 1.0F
                 );
-                drawn++;
-                if (drawn >= 120) {
-                    break;
-                }
             }
-            if (marker != null && dim.equals(marker.dimension())) {
-                BlockPos markerPos = new BlockPos(marker.x(), marker.y(), marker.z());
-                Box markerBox = new Box(markerPos).expand(0.01);
+            Tessellator.getInstance().draw();
+        } finally {
+            RenderSystem.enableTexture();
+            RenderSystem.depthMask(true);
+            RenderSystem.enableDepthTest();
+            RenderSystem.lineWidth(1.0F);
+            RenderSystem.disableBlend();
+        }
+    }
+
+    private static void drawBoxesTessellatorCamera(
+        List<Box> boxes,
+        WorldRenderContext context,
+        boolean depthEnabled,
+        float lineWidth
+    ) {
+        if (context == null || context.camera() == null) {
+            return;
+        }
+        Vec3d cam = context.camera().getPos();
+        float[] outline = selectionOutlineColor();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.lineWidth(lineWidth);
+        if (depthEnabled) {
+            RenderSystem.enableDepthTest();
+            RenderSystem.depthMask(true);
+        } else {
+            RenderSystem.disableDepthTest();
+            RenderSystem.depthMask(false);
+        }
+        RenderSystem.disableTexture();
+        try {
+            BufferBuilder bb = Tessellator.getInstance().getBuffer();
+            bb.begin(GL11.GL_LINES, VertexFormats.POSITION_COLOR);
+            for (Box box : boxes) {
+                double minX = box.minX - cam.x;
+                double minY = box.minY - cam.y;
+                double minZ = box.minZ - cam.z;
+                double maxX = box.maxX - cam.x;
+                double maxY = box.maxY - cam.y;
+                double maxZ = box.maxZ - cam.z;
                 WorldRenderer.drawBox(
                     bb,
-                    markerBox.minX, markerBox.minY, markerBox.minZ,
-                    markerBox.maxX, markerBox.maxY, markerBox.maxZ,
-                    1.0F, 0.45F, 0.15F, 1.0F
+                    minX, minY, minZ,
+                    maxX, maxY, maxZ,
+                    outline[0], outline[1], outline[2], 1.0F
                 );
             }
             Tessellator.getInstance().draw();

@@ -6,6 +6,7 @@ import com.rainbow_universe.bettercode.core.bridge.ClickResult;
 
 public final class TestcaseTool {
     private static volatile Marker marker;
+    private static volatile int outlineMode = 2;
 
     private TestcaseTool() {
     }
@@ -18,6 +19,18 @@ public final class TestcaseTool {
 
     public static synchronized void clearMarker() {
         marker = null;
+    }
+
+    public static synchronized Result setOutlineMode(int mode) {
+        if (mode < 1 || mode > 4) {
+            return Result.fail("testcase outline mode invalid: " + mode + " (expected 1..4)");
+        }
+        outlineMode = mode;
+        return Result.ok("testcase outline mode=" + mode);
+    }
+
+    public static int outlineMode() {
+        return outlineMode;
     }
 
     public static MarkerView markerView() {

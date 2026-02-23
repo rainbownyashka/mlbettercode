@@ -203,6 +203,14 @@
   - if GUI remains open after click, runtime treats it as category/submenu navigation (not action-selected) and continues menu routing.
   - added explicit target-click ack state in runtime entry (`menuTargetAckPending/window/clickMs/needsParams`) and step-trace exposure (`menuTargetAck`, `menuTarget` window) for deterministic log triage.
   - target-click ACK resolution is additionally gated by cursor-clear and short settle wait, so category/action decision never happens in the same immediate click moment.
+- Fabric1165 testcase outline A/B harness (2026-02-23):
+  - `/testcase outline1..outline4` (and `/testcase outline <1..4>`) now switch runtime outline renderer implementation for fast live comparison.
+  - mode split:
+    - `outline1`: tessellator world-space lines (legacy baseline).
+    - `outline2`: tessellator camera-relative lines with xray depth-off.
+    - `outline3`: tessellator camera-relative lines with depth-on.
+    - `outline4`: camera-relative xray variant with thicker line width.
+  - render trace emits `testcase_outline_rendered mode=<n> boxes=<count>` (throttled) for deterministic log-side validation during tests.
   - latest live-log stabilization slice (2026-02-19):
     - fixed menu-payload step cursor progression: adapters now advance cursor on explicit step completion callback from core, not only on immediate block confirm,
     - reduced wrong-target click risk: sign/params y-offset probes are now tried top-down (`dy=0..-2`) in core/adapters,
