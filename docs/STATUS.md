@@ -5,6 +5,10 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Fabric1165 `/regalltables` replay terminal-node fix (2026-02-23):
+  - replay clicks now snapshot menu signature and wait for settle before classifying next phase.
+  - if replay click closes GUI (`windowId < 0`) it is treated as terminal action path (no `WAIT_MENU`).
+  - if GUI stays on the same window with identical menu signature past settle timeout, node is also treated as terminal (`replay_terminal reason=same_menu_timeout`) to avoid `category > action` false submenu waits.
 - engineering workflow policy recorded:
   - runtime printer/scanner stays minimal and cross-version portable,
   - complex logic/validation should be shifted to compiler side by default.

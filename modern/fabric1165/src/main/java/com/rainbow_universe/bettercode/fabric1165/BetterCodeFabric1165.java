@@ -764,6 +764,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 return;
             }
             REGALL_TABLES.pendingWindowId = view.windowId();
+            REGALL_TABLES.pendingMenuSignature = menuSignature(view);
             REGALL_TABLES.pendingClickMs = now;
             REGALL_TABLES.phase = "WAIT_REPLAY_CLICK";
             REGALL_TABLES.nextActionMs = now + 220L;
@@ -778,6 +779,36 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 REGALL_TABLES.nextActionMs = now + 80L;
                 return;
             }
+            ContainerView afterReplay = bridge.getContainerSnapshot();
+            long elapsed = now - REGALL_TABLES.pendingClickMs;
+            if (afterReplay.windowId() < 0) {
+                // Replayed path node behaved like terminal action (no submenu opened).
+                // Do not continue waiting submenu for this path.
+                REGALL_TABLES.visitedMenuKeys.add(pathKeyOf(REGALL_TABLES.currentPath));
+                System.out.println("[printer-debug] regalltables replay_terminal reason=closed path=" + String.join(" > ", REGALL_TABLES.currentPath));
+                REGALL_TABLES.pendingMenuSignature = "";
+                REGALL_TABLES.phase = "ADVANCE_MENU";
+                REGALL_TABLES.nextActionMs = now + 120L;
+                REGALL_TABLES.lastProgressMs = now;
+                return;
+            }
+            String replaySig = menuSignature(afterReplay);
+            if (afterReplay.windowId() == REGALL_TABLES.pendingWindowId
+                && replaySig.equals(REGALL_TABLES.pendingMenuSignature)) {
+                if (elapsed < 700L) {
+                    REGALL_TABLES.nextActionMs = now + 120L;
+                    return;
+                }
+                REGALL_TABLES.visitedMenuKeys.add(pathKeyOf(REGALL_TABLES.currentPath));
+                System.out.println("[printer-debug] regalltables replay_terminal reason=same_menu_timeout path=" + String.join(" > ", REGALL_TABLES.currentPath)
+                    + " window=" + afterReplay.windowId());
+                REGALL_TABLES.pendingMenuSignature = "";
+                REGALL_TABLES.phase = "ADVANCE_MENU";
+                REGALL_TABLES.nextActionMs = now + 120L;
+                REGALL_TABLES.lastProgressMs = now;
+                return;
+            }
+            REGALL_TABLES.pendingMenuSignature = "";
             REGALL_TABLES.replayIndex++;
             REGALL_TABLES.phase = "WAIT_MENU";
             REGALL_TABLES.nextActionMs = now + 100L;
@@ -813,6 +844,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             REGALL_TABLES.pendingSlot = target;
             REGALL_TABLES.pendingMenuSnapshot = snapshotMenuSlots(view);
             REGALL_TABLES.pendingWindowId = view.windowId();
+            REGALL_TABLES.pendingMenuSignature = menuSignature(view);
             REGALL_TABLES.pendingClickMs = now;
             REGALL_TABLES.phase = "WAIT_TEST_RESULT";
             REGALL_TABLES.nextActionMs = now + 220L;
@@ -829,7 +861,15 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 REGALL_TABLES.nextActionMs = now + 80L;
                 return;
             }
+            long elapsed = now - REGALL_TABLES.pendingClickMs;
             ContainerView after = bridge.getContainerSnapshot();
+            if (after.windowId() >= 0
+                && after.windowId() == REGALL_TABLES.pendingWindowId
+                && menuSignature(after).equals(REGALL_TABLES.pendingMenuSignature)
+                && elapsed < 700L) {
+                REGALL_TABLES.nextActionMs = now + 120L;
+                return;
+            }
             boolean closed = after.windowId() < 0;
             String type = closed ? "action" : "category";
             String menuPath = String.join(" > ", REGALL_TABLES.currentPath);
@@ -864,6 +904,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             REGALL_TABLES.pendingMenuKey = "";
             REGALL_TABLES.pendingSlot = null;
             REGALL_TABLES.pendingMenuSnapshot = new ArrayList<SlotView>();
+            REGALL_TABLES.pendingMenuSignature = "";
             return;
         }
         if ("ADVANCE_MENU".equals(REGALL_TABLES.phase)) {
@@ -921,6 +962,24 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             return;
         }
         REGALL_TABLES.records.add(new RegAllTablesRecord(p, i, id, t));
+    }
+
+    private static String menuSignature(ContainerView view) {
+        if (view == null || view.windowId() < 0 || view.slots() == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(view.windowId()).append('|');
+        for (SlotView s : view.slots()) {
+            if (s == null || s.playerInventory()) {
+                continue;
+            }
+            sb.append(s.slotNumber()).append(':')
+                .append(s.empty() ? "0" : "1").append(':')
+                .append(safeText(s.itemId())).append(':')
+                .append(slotLabel(s)).append(';');
+        }
+        return sb.toString();
     }
 
     private static boolean hasNonPlayerMenuContent(ContainerView view) {
@@ -1407,6 +1466,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         SlotView pendingSlot = null;
         List<SlotView> pendingMenuSnapshot = new ArrayList<SlotView>();
         int pendingWindowId = -1;
+        String pendingMenuSignature = "";
         long pendingClickMs = 0L;
         final Set<String> recordKeys = new HashSet<String>();
 
@@ -1433,6 +1493,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             pendingSlot = null;
             pendingMenuSnapshot = new ArrayList<SlotView>();
             pendingWindowId = -1;
+            pendingMenuSignature = "";
             pendingClickMs = 0L;
             recordKeys.clear();
         }
