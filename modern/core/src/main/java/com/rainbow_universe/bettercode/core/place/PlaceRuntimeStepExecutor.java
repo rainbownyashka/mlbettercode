@@ -427,6 +427,10 @@ public final class PlaceRuntimeStepExecutor {
                     entry.setNeedOpenMenu(true);
                     entry.setMenuRetrySinceMs(now);
                     entry.setNextMenuActionMs(now + Math.max(MENU_NEXT_ACTION_MIN_GAP_MS, delay));
+                    logger.info("printer-debug",
+                        "menu_reopen_gate reason=window_missing elapsed=" + (now - entry.menuRetrySinceMs())
+                            + " attempts=" + entry.menuOpenAttempts()
+                            + " nextMs=" + entry.nextMenuActionMs());
                 }
                 if (entry.needOpenMenu() && now >= entry.nextMenuActionMs()) {
                     if (!ensureCursorClear(entry, bridge, now)) {
@@ -435,8 +439,12 @@ public final class PlaceRuntimeStepExecutor {
                         }
                         return PlaceExecResult.inProgress(0, "MENU_CURSOR_WAIT");
                     }
-                    if (!hasSignAtMenuAnchor(bridge)) {
+                    boolean signAtAnchor = hasSignAtMenuAnchor(bridge);
+                    if (!signAtAnchor) {
                         entry.setMenuOpenAttempts(entry.menuOpenAttempts() + 1);
+                        logger.info("printer-debug",
+                            "menu_open_blocked reason=sign_missing anchor=" + describeAnchor(bridge)
+                                + " attempts=" + entry.menuOpenAttempts());
                         if (!startMenuForceReplace(entry, now, delay, logger, "menu_sign_missing")) {
                             return fail(logger, "MENU_SIGN_NOT_FOUND", "menu sign missing near runtime entry");
                         }
@@ -453,7 +461,8 @@ public final class PlaceRuntimeStepExecutor {
                     logger.info("printer-debug",
                         "runtime_state=OPEN_MENU opened=" + opened
                             + " attempt=" + openAttempt
-                            + " target=sign_z-1_or_block purpose=menu_open");
+                            + " target=sign_z-1_or_block purpose=menu_open"
+                            + " anchor=" + describeAnchor(bridge));
                     if (!opened && entry.menuOpenAttempts() >= MAX_MENU_OPEN_ATTEMPTS) {
                         if (!startMenuForceReplace(entry, now, delay, logger, "menu_target_not_found")) {
                             return fail(logger, "MENU_OPEN_REPLACE_EXHAUSTED", "menu target missing after replace cycles");
@@ -517,6 +526,10 @@ public final class PlaceRuntimeStepExecutor {
                 "menu_route raw=" + safe(entry.name())
                     + " base=" + route.baseKey
                     + " scope=" + route.scopeKey);
+            logger.info("printer-debug",
+                "menu_route_debug raw_u=" + unicodeEscape(safe(entry.name()))
+                    + " base_u=" + unicodeEscape(route.baseKey)
+                    + " scope_u=" + unicodeEscape(route.scopeKey));
             if (!route.scopeKey.isEmpty() && entry.menuClicksSinceOpen() == 0) {
                 if (!ensureCursorClear(entry, bridge, now)) {
                     if (isCursorTimeout(entry, now)) {
@@ -581,11 +594,14 @@ public final class PlaceRuntimeStepExecutor {
                     logger.info("printer-debug",
                         "menu_route_miss key=" + routeKey
                             + " normalized=" + norm(routeKey)
-                            + " summary=" + summarizeNonPlayerSlots(view, 20));
+                            + " summary=" + summarizeNonPlayerSlots(view, 20)
+                            + " altKeys=" + summarizeAltKeys(routeKey, 12)
+                            + " randomCandidates=" + summarizeRandomMenuCandidates(view, entry, 24));
                 } else {
                     logger.info("printer-debug",
                         "menu_route_miss key=" + routeKey
-                            + " normalized=" + norm(routeKey));
+                            + " normalized=" + norm(routeKey)
+                            + " altKeys=" + summarizeAltKeys(routeKey, 8));
                 }
                 if (!route.scopeKey.isEmpty()) {
                     return fail(logger, "SCOPE_TARGET_NOT_FOUND", "menu key not found: " + routeKey);
@@ -617,6 +633,10 @@ public final class PlaceRuntimeStepExecutor {
                         return fail(logger, "NO_PATH_GUI", "menu key not found and random path unavailable: " + routeKey);
                     }
                     bridge.closeScreen();
+                    logger.info("printer-debug",
+                        "menu_route_reopen reason=random_unavailable route=" + safe(routeKey)
+                            + " clickedInWindow=" + entry.menuClicksSinceOpen()
+                            + " window=" + view.windowId());
                     entry.setNeedOpenMenu(true);
                     entry.setMenuRetrySinceMs(now);
                     entry.setNextMenuActionMs(now + Math.max(MENU_NEXT_ACTION_MIN_GAP_MS, delay));
@@ -693,6 +713,13 @@ public final class PlaceRuntimeStepExecutor {
             entry.setMenuClicksSinceOpen(0);
             entry.setNextMenuActionMs(now + Math.max(MENU_NEXT_ACTION_MIN_GAP_MS, delay));
             logger.info("printer-debug", "runtime_state=ROUTE_MENU slot=" + slot + " key=" + routeKey);
+            logger.info("printer-debug",
+                "menu_to_params_transition window=" + view.windowId()
+                    + " slot=" + slot
+                    + " route=" + safe(routeKey)
+                    + " trappedYPlus1=" + hasTrappedChestNearTarget(bridge)
+                    + " chestAnyYPlus1=" + hasParamsChestNearTarget(bridge)
+                    + " anchor=" + describeAnchor(bridge));
             return PlaceExecResult.inProgress(0, "OPEN_PARAMS_CHEST");
         }
 
@@ -2386,6 +2413,7 @@ public final class PlaceRuntimeStepExecutor {
         if (entry == null) {
             return PlaceExecResult.inProgress(0, "WAIT_PARAMS_CHEST");
         }
+        ContainerView v = bridge == null ? null : bridge.getContainerSnapshot();
         int misses = entry.argsMisses() + 1;
         entry.setArgsMisses(misses);
         entry.setAwaitingArgs(false);
@@ -2404,7 +2432,11 @@ public final class PlaceRuntimeStepExecutor {
         bridge.closeScreen();
         if (logger != null) {
             logger.info("printer-debug",
-                "runtime_state=ARGS_RECOVER_TO_PARAMS reason=" + safe(reason) + " misses=" + misses);
+                "runtime_state=ARGS_RECOVER_TO_PARAMS reason=" + safe(reason) + " misses=" + misses
+                    + " window=" + (v == null ? -1 : v.windowId())
+                    + " nonPlayer=" + countNonPlayerSlots(v)
+                    + " title=" + safe(v == null ? "" : v.title())
+                    + " hash=" + buildNonPlayerHash(v));
         }
         return PlaceExecResult.inProgress(0, "WAIT_PARAMS_CHEST");
     }
@@ -2521,6 +2553,58 @@ public final class PlaceRuntimeStepExecutor {
         int seed = entry == null || entry.randomClicks() < 0 ? 0 : entry.randomClicks();
         int idx = seed % candidates.size();
         return candidates.get(idx).intValue();
+    }
+
+    private static String summarizeRandomMenuCandidates(ContainerView view, PlaceRuntimeEntry entry, int limit) {
+        if (view == null || view.slots() == null) {
+            return "-";
+        }
+        StringBuilder sb = new StringBuilder();
+        int count = 0;
+        for (SlotView s : view.slots()) {
+            if (s == null || s.playerInventory() || s.empty()) {
+                continue;
+            }
+            if (entry != null && entry.isTriedMenuSlot(s.slotNumber())) {
+                continue;
+            }
+            if (count > 0) {
+                sb.append(" | ");
+            }
+            sb.append('#').append(s.slotNumber())
+                .append(" item=").append(safe(s.itemId()))
+                .append(" name=").append(safe(norm(s.displayName())));
+            count++;
+            if (count >= limit) {
+                sb.append(" ...");
+                break;
+            }
+        }
+        return sb.length() == 0 ? "-" : sb.toString();
+    }
+
+    private static String summarizeAltKeys(String key, int limit) {
+        List<String> keys = alternateMenuKeys(key);
+        if (keys == null || keys.isEmpty()) {
+            return "-";
+        }
+        StringBuilder sb = new StringBuilder();
+        int c = 0;
+        for (String k : keys) {
+            if (k == null || k.isEmpty()) {
+                continue;
+            }
+            if (c > 0) {
+                sb.append(" | ");
+            }
+            sb.append(k);
+            c++;
+            if (c >= limit) {
+                sb.append(" ...");
+                break;
+            }
+        }
+        return sb.length() == 0 ? "-" : sb.toString();
     }
 
     private static boolean isArrowItem(SlotView s) {
@@ -2714,6 +2798,27 @@ public final class PlaceRuntimeStepExecutor {
 
     private static String safe(String v) {
         return v == null ? "" : v;
+    }
+
+    private static String unicodeEscape(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(raw.length() * 2);
+        for (int i = 0; i < raw.length(); i++) {
+            char ch = raw.charAt(i);
+            if (ch >= 32 && ch <= 126) {
+                sb.append(ch);
+            } else {
+                sb.append("\\u");
+                String hx = Integer.toHexString(ch);
+                for (int p = hx.length(); p < 4; p++) {
+                    sb.append('0');
+                }
+                sb.append(hx);
+            }
+        }
+        return sb.toString();
     }
 }
 
