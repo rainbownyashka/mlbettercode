@@ -2733,6 +2733,17 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 break;
             }
         }
+        TestcaseTool.MarkerView marker = TestcaseTool.markerView();
+        if (marker != null && dim.equals(marker.dimension())) {
+            BlockPos markerPos = new BlockPos(marker.x(), marker.y(), marker.z());
+            Box markerBox = new Box(markerPos).expand(0.01);
+            WorldRenderer.drawBox(
+                bb,
+                markerBox.minX, markerBox.minY, markerBox.minZ,
+                markerBox.maxX, markerBox.maxY, markerBox.maxZ,
+                1.0F, 0.45F, 0.15F, 1.0F
+            );
+        }
         Tessellator.getInstance().draw();
         RenderSystem.enableDepthTest();
         RenderSystem.enableTexture();

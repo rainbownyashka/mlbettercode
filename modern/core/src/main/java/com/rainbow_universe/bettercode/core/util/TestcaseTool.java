@@ -16,6 +16,14 @@ public final class TestcaseTool {
         return Result.ok("testcase setpos dim=" + d + " pos=" + x + "," + y + "," + z);
     }
 
+    public static MarkerView markerView() {
+        Marker m = marker;
+        if (m == null) {
+            return null;
+        }
+        return new MarkerView(m.dimension, m.x, m.y, m.z);
+    }
+
     public static Result rightClick(GameBridge bridge) {
         if (bridge == null) {
             return Result.fail("testcase rightclick failed: bridge unavailable");
@@ -78,6 +86,36 @@ public final class TestcaseTool {
             this.x = x;
             this.y = y;
             this.z = z;
+        }
+    }
+
+    public static final class MarkerView {
+        private final String dimension;
+        private final int x;
+        private final int y;
+        private final int z;
+
+        private MarkerView(String dimension, int x, int y, int z) {
+            this.dimension = dimension;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+
+        public String dimension() {
+            return dimension;
+        }
+
+        public int x() {
+            return x;
+        }
+
+        public int y() {
+            return y;
+        }
+
+        public int z() {
+            return z;
         }
     }
 
