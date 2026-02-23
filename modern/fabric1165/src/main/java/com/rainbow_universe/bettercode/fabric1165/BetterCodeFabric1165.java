@@ -78,6 +78,7 @@ import org.lwjgl.glfw.GLFW;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -1104,6 +1105,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
         Path out = regAllTablesExportPath(mc);
         ArrayList<String> lines = new ArrayList<String>();
+        lines.add("");
+        lines.add("# ==== regalltables export session ====");
+        lines.add("ts=" + System.currentTimeMillis());
         lines.add("reason=" + safeText(reason));
         lines.add("dimension=" + safeText(state.dimension));
         lines.add("sign=" + state.signX + "," + state.signY + "," + state.signZ);
@@ -1118,7 +1122,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             lines.add("type=" + safeText(r.type));
         }
         try {
-            Files.write(out, lines);
+            Files.write(out, lines, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
             return state.records.size();
         } catch (Exception e) {
             System.out.println("[printer-debug] regalltables export failed: " + e.getClass().getSimpleName() + " " + e.getMessage());

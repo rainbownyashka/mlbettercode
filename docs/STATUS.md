@@ -5,6 +5,10 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Fabric1165 `/regalltables` export persistence update (2026-02-23):
+  - export writer now uses append mode for `tablesexport.txt` (`CREATE + APPEND`) instead of overwrite.
+  - each export run writes a timestamped session header (`# ==== regalltables export session ====`, `ts=...`) before `reason/dimension/sign/records`.
+  - prevents accidental loss of previous crawls when running `/regalltables` repeatedly.
 - Fabric1165 `/regalltables` replay terminal-node fix (2026-02-23):
   - replay clicks now snapshot menu signature and wait for settle before classifying next phase.
   - if replay click closes GUI (`windowId < 0`) it is treated as terminal action path (no `WAIT_MENU`).
