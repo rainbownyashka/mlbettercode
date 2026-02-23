@@ -28,6 +28,12 @@ Optional custom Gradle task:
 python tools/build_matrix.py fabric120 --task runClient
 ```
 
+Disable legacy->tablesexport sync step (if needed):
+
+```powershell
+python tools/build_matrix.py fabric1165 --no-legacy-tables-sync
+```
+
 Notes:
 
 - `legacy112` requires JDK 8.
@@ -37,6 +43,12 @@ Notes:
 - `fabric121` requires JDK 21.
 - `modern_all` builds: `fabric1165`, `fabric120`, `fabric121`, `forge1165`.
 - `all` keeps legacy compatibility behavior: `legacy112`, `fabric120`, `fabric121`.
+- For modern targets (`fabric1165/120/121/forge1165/modern_all/all`), `build_matrix.py` runs best-effort sync:
+  - `regallactions_export.txt` -> `tablesexport.from_legacy.names.txt` (name-based, no item ids)
+  - outputs:
+    - `agentslock/tablesexports/1.12.2/tablesexport.from_legacy.names.txt`
+    - `.minecraft/mldsl_tables/1.12.2/tablesexport.from_legacy.names.txt`
+  - sync is skipped (without failing build) if source file is missing.
 
 ## Modern command set (bootstrap)
 

@@ -151,6 +151,42 @@ def build_forge1165(repo: Path, task: str) -> None:
     run([*gradle_cmd_for_module(module, repo), "-p", str(module), task], repo, env=env)
 
 
+def _legacy_export_source_path() -> Path | None:
+    appdata = os.environ.get("APPDATA", "").strip()
+    if not appdata:
+        return None
+    return Path(appdata) / ".minecraft" / "regallactions_export.txt"
+
+
+def sync_legacy_tablesexport_snapshot(repo: Path) -> None:
+    src = _legacy_export_source_path()
+    if src is None:
+        print("[build-matrix] legacy tablesexport sync skipped: APPDATA is not set")
+        return
+    if not src.exists():
+        print(f"[build-matrix] legacy tablesexport sync skipped: source not found: {src}")
+        return
+
+    tool = repo / "tools" / "legacy_regallactions_to_tablesexport.py"
+    if not tool.exists():
+        print(f"[build-matrix] legacy tablesexport sync skipped: tool not found: {tool}")
+        return
+
+    out_repo = repo / "agentslock" / "tablesexports" / "1.12.2" / "tablesexport.from_legacy.names.txt"
+    out_mc = Path(src.parent) / "mldsl_tables" / "1.12.2" / "tablesexport.from_legacy.names.txt"
+    cmd_base = [sys.executable, str(tool), "--in", str(src), "--item-id-mode", "none"]
+
+    try:
+        run([*cmd_base, "--out", str(out_repo)], repo)
+        run([*cmd_base, "--out", str(out_mc)], repo)
+        print("[build-matrix] legacy tablesexport sync ok")
+        print(f"[build-matrix] legacy tablesexport repo={out_repo}")
+        print(f"[build-matrix] legacy tablesexport mc={out_mc}")
+    except Exception as e:
+        # Best-effort sync must not fail build targets.
+        print(f"[build-matrix] legacy tablesexport sync failed: {e.__class__.__name__}: {e}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build matrix for BetterCode multi-version targets")
     parser.add_argument(
@@ -163,9 +199,23 @@ def main() -> int:
         default="build",
         help="Gradle task (default: build)",
     )
+    parser.add_argument(
+        "--no-legacy-tables-sync",
+        action="store_true",
+        help="Disable best-effort sync of legacy 1.12.2 export into name-based tablesexport snapshots.",
+    )
     args = parser.parse_args()
 
     repo = Path(__file__).resolve().parents[1]
+    run_legacy_sync = not args.no_legacy_tables_sync and args.target in {
+        "fabric1165",
+        "fabric120",
+        "fabric121",
+        "forge1165",
+        "modern_all",
+        "all",
+    }
+
     if args.target == "legacy112":
         build_legacy112(repo, args.task)
     elif args.target == "fabric1165":
@@ -185,6 +235,9 @@ def main() -> int:
         build_legacy112(repo, args.task)
         build_fabric120(repo, args.task)
         build_fabric121(repo, args.task)
+
+    if run_legacy_sync:
+        sync_legacy_tablesexport_snapshot(repo)
     return 0
 
 

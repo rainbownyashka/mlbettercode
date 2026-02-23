@@ -5,6 +5,15 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Build-matrix legacy parity snapshot sync (2026-02-23):
+  - `tools/build_matrix.py` now runs best-effort legacy conversion for modern targets (`fabric1165/120/121/forge1165/modern_all/all`):
+    - source: `.minecraft/regallactions_export.txt`
+    - converter: `tools/legacy_regallactions_to_tablesexport.py --item-id-mode none`
+    - outputs:
+      - `agentslock/tablesexports/1.12.2/tablesexport.from_legacy.names.txt`
+      - `.minecraft/mldsl_tables/1.12.2/tablesexport.from_legacy.names.txt`
+  - sync failures/missing source do not fail build targets.
+  - opt-out: `--no-legacy-tables-sync`.
 - Legacy 1.12.2 -> tablesexport converter added (2026-02-23):
   - new tool `tools/legacy_regallactions_to_tablesexport.py` converts `regallactions_export.txt` into lightweight `tablesexport` format.
   - default mode is name-based parity (`--item-id-mode none`): emits `path/item/type` without `itemId`.
