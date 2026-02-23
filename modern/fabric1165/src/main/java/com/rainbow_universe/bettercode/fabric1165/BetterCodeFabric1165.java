@@ -42,8 +42,10 @@ import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.render.BufferBuilder;
+import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.util.math.MatrixStack;
@@ -116,6 +118,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static String LAST_LEGACY_CLICK_KEY = "";
     private static long LAST_LEGACY_CLICK_MS = 0L;
     private static int LAST_LEGACY_CLICK_BURST = 0;
+    private static long LAST_TESTCASE_RENDER_LOG_MS = 0L;
     private static long SNAPSHOT_CACHE_TICK = Long.MIN_VALUE;
     private static int SNAPSHOT_CACHE_SYNC_ID = -1;
     private static int SNAPSHOT_CACHE_SCREEN_ID = -1;
@@ -259,6 +262,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             renderSelectionHighlights(client);
             runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis());
         });
+        WorldRenderEvents.AFTER_ENTITIES.register(BetterCodeFabric1165::renderSelectionOutlinesBuffered);
         WorldRenderEvents.BEFORE_DEBUG_RENDER.register(BetterCodeFabric1165::renderSelectionOutlines);
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
             if (hand != Hand.MAIN_HAND || player == null || world == null || hitResult == null) {
@@ -2748,6 +2752,51 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         RenderSystem.enableDepthTest();
         RenderSystem.enableTexture();
         RenderSystem.disableBlend();
+    }
+
+    private static void renderSelectionOutlinesBuffered(WorldRenderContext context) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (context == null || mc == null || mc.world == null || mc.player == null || context.camera() == null) {
+            return;
+        }
+        MatrixStack matrices = context.matrixStack();
+        VertexConsumerProvider consumers = context.consumers();
+        if (matrices == null || consumers == null) {
+            return;
+        }
+        String dim = String.valueOf(mc.world.getRegistryKey().getValue());
+        TestcaseTool.MarkerView marker = TestcaseTool.markerView();
+        if (SELECTED.isEmpty() && (marker == null || !dim.equals(marker.dimension()))) {
+            return;
+        }
+        Vec3d cam = context.camera().getPos();
+        VertexConsumer line = consumers.getBuffer(RenderLayer.getLines());
+        int drawn = 0;
+        for (SelectedRow row : SELECTED.values()) {
+            if (row == null || !dim.equals(row.dimension())) {
+                continue;
+            }
+            BlockPos anchor = new BlockPos(row.x(), row.y(), row.z());
+            if (!isBlueGlassAt(mc, anchor)) {
+                continue;
+            }
+            Box box = new Box(anchor.up()).expand(0.003).offset(-cam.x, -cam.y, -cam.z);
+            WorldRenderer.drawBox(matrices, line, box, 0.15F, 0.95F, 1.0F, 1.0F);
+            drawn++;
+            if (drawn >= 120) {
+                break;
+            }
+        }
+        if (marker != null && dim.equals(marker.dimension())) {
+            Box markerBox = new Box(new BlockPos(marker.x(), marker.y(), marker.z())).expand(0.01).offset(-cam.x, -cam.y, -cam.z);
+            WorldRenderer.drawBox(matrices, line, markerBox, 1.0F, 0.45F, 0.15F, 1.0F);
+            long now = System.currentTimeMillis();
+            if (now - LAST_TESTCASE_RENDER_LOG_MS >= 1800L) {
+                LAST_TESTCASE_RENDER_LOG_MS = now;
+                System.out.println("[printer-debug] testcase_outline_rendered event=AFTER_ENTITIES dim=" + dim
+                    + " pos=" + marker.x() + "," + marker.y() + "," + marker.z());
+            }
+        }
     }
 
     private static void traceRuntimeTickProbe(MinecraftClient mc) {

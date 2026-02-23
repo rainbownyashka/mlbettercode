@@ -111,6 +111,8 @@
   - `/testcase setpos` marker is now exposed via core tool API and rendered as a dedicated orange line-outline in 1.16.5.
   - allows local verification of outline renderer without running full printer/server flow.
   - fixed render guard regression: testcase marker now renders even when selector set is empty.
+  - added secondary Fabric-docs-aligned render path in `WorldRenderEvents.AFTER_ENTITIES` using `context.consumers()` + `RenderLayer.getLines()` (camera-relative boxes), while keeping debug-pass fallback.
+  - added throttled trace marker (`testcase_outline_rendered`) to confirm render callback execution in `latest.log`.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).
