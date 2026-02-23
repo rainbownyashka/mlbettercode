@@ -2713,6 +2713,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         RenderSystem.defaultBlendFunc();
         RenderSystem.disableTexture();
         RenderSystem.disableDepthTest();
+        RenderSystem.depthMask(false);
+        RenderSystem.depthFunc(GL11.GL_ALWAYS);
         RenderSystem.lineWidth(2.0F);
         BufferBuilder bb = Tessellator.getInstance().getBuffer();
         bb.begin(GL11.GL_LINES, VertexFormats.POSITION_COLOR);
@@ -2749,6 +2751,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             );
         }
         Tessellator.getInstance().draw();
+        RenderSystem.depthFunc(GL11.GL_LEQUAL);
+        RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
         RenderSystem.enableTexture();
         RenderSystem.disableBlend();
