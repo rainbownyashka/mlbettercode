@@ -5,6 +5,12 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Legacy 1.12.2 -> tablesexport converter added (2026-02-23):
+  - new tool `tools/legacy_regallactions_to_tablesexport.py` converts `regallactions_export.txt` into lightweight `tablesexport` format.
+  - default mode is name-based parity (`--item-id-mode none`): emits `path/item/type` without `itemId`.
+  - optional diagnostics mode `--item-id-mode legacy` keeps legacy item ids.
+  - documented in `docs/LEGACY_TO_TABLESEXPORT.md`.
+  - baseline generated and stored at `agentslock/tablesexports/1.12.2/tablesexport.from_legacy.names.txt`.
 - Fabric1165 regalltables snapshot embedding + versioned archive layout (2026-02-23):
   - current `tablesexport.txt` snapshot is embedded into mod resources at:
     - `modern/fabric1165/src/main/resources/regalltables/1.16.5/tablesexport.current.txt`.

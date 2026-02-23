@@ -1,0 +1,2144 @@
+reason=converted_from_legacy_regallactions
+dimension=legacy:1.12.2
+sign=0,0,0
+records=428
+
+# record 1
+path=Действие игрока
+item=Установить предметы
+type=action
+
+# record 2
+path=Действие игрока
+item=Установить предметы в эндер сундуке
+type=action
+
+# record 3
+path=Действие игрока
+item=Установить броню
+type=action
+
+# record 4
+path=Действие игрока
+item=Установить предмет в руку
+type=action
+
+# record 5
+path=Действие игрока
+item=Установить предмет в курсор
+type=action
+
+# record 6
+path=Действие игрока
+item=Удалить предметы
+type=action
+
+# record 7
+path=Действие игрока
+item=Очистить инвентарь
+type=action
+
+# record 8
+path=Действие игрока
+item=Очистить эндер сундук
+type=action
+
+# record 9
+path=Действие игрока
+item=Выдать рандомный предмет
+type=action
+
+# record 10
+path=Действие игрока
+item=Сохранить инвентарь
+type=action
+
+# record 11
+path=Действие игрока
+item=Загрузить инвентарь
+type=action
+
+# record 12
+path=Действие игрока
+item=Установить задержку предмета
+type=action
+
+# record 13
+path=Действие игрока
+item=Получить предмет
+type=action
+
+# record 14
+path=Действие игрока
+item=Установить предмет
+type=action
+
+# record 15
+path=Действие игрока
+item=Получить задержку предмета
+type=action
+
+# record 16
+path=Действие игрока
+item=Отправить сообщение
+type=action
+
+# record 17
+path=Действие игрока
+item=Отправить диалог
+type=action
+
+# record 18
+path=Действие игрока
+item=Очистить чат
+type=action
+
+# record 19
+path=Действие игрока
+item=Проиграть звук
+type=action
+
+# record 20
+path=Действие игрока
+item=Остановить звук
+type=action
+
+# record 21
+path=Действие игрока
+item=Сообщение на экран (Титл)
+type=action
+
+# record 22
+path=Действие игрока
+item=Сообщение в Экшн бар
+type=action
+
+# record 23
+path=Действие игрока
+item=Показать книжку с ссылкой
+type=action
+
+# record 24
+path=Действие игрока
+item=Показать книжку
+type=action
+
+# record 25
+path=Действие игрока
+item=Открыть инвентарное меню
+type=action
+
+# record 26
+path=Действие игрока
+item=Расширить инвентарное меню
+type=action
+
+# record 27
+path=Действие игрока
+item=Установить предмет в меню
+type=action
+
+# record 28
+path=Действие игрока
+item=Получить предмет из меню
+type=action
+
+# record 29
+path=Действие игрока
+item=Установить название меню
+type=action
+
+# record 30
+path=Действие игрока
+item=Добавить строку меню
+type=action
+
+# record 31
+path=Действие игрока
+item=Удалить строку меню
+type=action
+
+# record 32
+path=Действие игрока
+item=Закрыть инвентарь
+type=action
+
+# record 33
+path=Действие игрока
+item=Открыть инвентарь блока из игры
+type=action
+
+# record 34
+path=Действие игрока
+item=Открыть инвентарь сущности из игры
+type=action
+
+# record 35
+path=Действие игрока
+item=Телепортация
+type=action
+
+# record 36
+path=Действие игрока
+item=Повернуть к местоположению
+type=action
+
+# record 37
+path=Действие игрока
+item=Случайная телепортация
+type=action
+
+# record 38
+path=Действие игрока
+item=Очередь телепортаций
+type=action
+
+# record 39
+path=Действие игрока
+item=Запустить Вверх/Вниз
+type=action
+
+# record 40
+path=Действие игрока
+item=Запустить Вперед/Назад
+type=action
+
+# record 41
+path=Действие игрока
+item=Запустить в сторону
+type=action
+
+# record 42
+path=Действие игрока
+item=Запустить к местоположению
+type=action
+
+# record 43
+path=Действие игрока
+item=Кикнуть игрока из игры
+type=action
+
+# record 44
+path=Действие игрока
+item=Переместить на другой плот
+type=action
+
+# record 45
+path=Действие игрока
+item=Урон
+type=action
+
+# record 46
+path=Действие игрока
+item=Установка здоровья
+type=action
+
+# record 47
+path=Действие игрока
+item=Выдать эффект зелья
+type=action
+
+# record 48
+path=Действие игрока
+item=Очистить все эффекты зелий
+type=action
+
+# record 49
+path=Действие игрока
+item=Удалить эффект зелья
+type=action
+
+# record 50
+path=Действие игрока
+item=Установить уровень опыта
+type=action
+
+# record 51
+path=Действие игрока
+item=Поставить шкалу опыта
+type=action
+
+# record 52
+path=Действие игрока
+item=Установить уровень голода
+type=action
+
+# record 53
+path=Действие игрока
+item=Установить истощение
+type=action
+
+# record 54
+path=Действие игрока
+item=Установить максимальное здоровье
+type=action
+
+# record 55
+path=Действие игрока
+item=Горение
+type=action
+
+# record 56
+path=Действие игрока
+item=Установить скорость полёта
+type=action
+
+# record 57
+path=Действие игрока
+item=Поставить скорость ходьбы
+type=action
+
+# record 58
+path=Действие игрока
+item=Установить остаток воздуха
+type=action
+
+# record 59
+path=Действие игрока
+item=Установить максимум воздуха
+type=action
+
+# record 60
+path=Действие игрока
+item=Установить имя
+type=action
+
+# record 61
+path=Действие игрока
+item=Установить урон
+type=action
+
+# record 62
+path=Действие игрока
+item=Установить размер
+type=action
+
+# record 63
+path=Действие игрока
+item=Установить звуки
+type=action
+
+# record 64
+path=Действие игрока
+item=Установить свечение
+type=action
+
+# record 65
+path=Действие игрока
+item=Видимость игрока
+type=action
+
+# record 66
+path=Действие игрока
+item=Установить гравитацию
+type=action
+
+# record 67
+path=Действие игрока
+item=Установить неуязвимость
+type=action
+
+# record 68
+path=Действие игрока
+item=Удалить сущность
+type=action
+
+# record 69
+path=Действие игрока
+item=Отобразить частицу
+type=action
+
+# record 70
+path=Действие игрока
+item=Отобразить линию из частиц
+type=action
+
+# record 71
+path=Действие игрока
+item=Отобразить луч из частиц
+type=action
+
+# record 72
+path=Действие игрока
+item=Отобразить окружность из частиц
+type=action
+
+# record 73
+path=Действие игрока
+item=Отобразить куб из частиц
+type=action
+
+# record 74
+path=Действие игрока
+item=Отобразить сферу из частиц
+type=action
+
+# record 75
+path=Действие игрока
+item=Полёт
+type=action
+
+# record 76
+path=Действие игрока
+item=Установить режим игры
+type=action
+
+# record 77
+path=Действие игрока
+item=Сохранение инвентаря при смерти
+type=action
+
+# record 78
+path=Действие игрока
+item=Показать панель скорборда
+type=action
+
+# record 79
+path=Действие игрока
+item=Скрыть панель скорборда
+type=action
+
+# record 80
+path=Действие игрока
+item=Показать боссбар
+type=action
+
+# record 81
+path=Действие игрока
+item=Скрыть боссбар
+type=action
+
+# record 82
+path=Действие игрока
+item=Отображения лежания
+type=action
+
+# record 83
+path=Действие игрока
+item=Игрок встаёт с кровати
+type=action
+
+# record 84
+path=Действие игрока
+item=Анимация руки
+type=action
+
+# record 85
+path=Действие игрока
+item=Сделать игрока приседающим
+type=action
+
+# record 86
+path=Действие игрока
+item=Анимация урона
+type=action
+
+# record 87
+path=Действие игрока
+item=Попросить транзакцию креатив-коинов
+type=action
+
+# record 88
+path=Если игрок
+item=Имя равно
+type=action
+
+# record 89
+path=Если игрок
+item=Сообщение равно
+type=action
+
+# record 90
+path=Если игрок
+item=Тип взаимодействия с блоком
+type=action
+
+# record 91
+path=Если игрок
+item=Тип слота снаряжения равен
+type=action
+
+# record 92
+path=Если игрок
+item=Имеет транзакцию креатив-коинов
+type=action
+
+# record 93
+path=Если игрок
+item=Проверить режим игры
+type=action
+
+# record 94
+path=Если игрок
+item=Проверить права игрока
+type=action
+
+# record 95
+path=Если игрок
+item=Держит предмет
+type=action
+
+# record 96
+path=Если игрок
+item=Имеет предмет
+type=action
+
+# record 97
+path=Если игрок
+item=Надет предмет
+type=action
+
+# record 98
+path=Если игрок
+item=Предмет равен
+type=action
+
+# record 99
+path=Если игрок
+item=Предмет в курсоре равен
+type=action
+
+# record 100
+path=Если игрок
+item=Предмет имеет задержку
+type=action
+
+# record 101
+path=Если игрок
+item=Тип клика равен
+type=action
+
+# record 102
+path=Если игрок
+item=Кликнутый слот равен
+type=action
+
+# record 103
+path=Если игрок
+item=Выбранный слот равен
+type=action
+
+# record 104
+path=Если игрок
+item=Название открытого инвентаря
+type=action
+
+# record 105
+path=Если игрок
+item=Заполнен ли инвентарь игрока
+type=action
+
+# record 106
+path=Если игрок
+item=Смотрит на блок
+type=action
+
+# record 107
+path=Если игрок
+item=Стоит на блоке
+type=action
+
+# record 108
+path=Если игрок
+item=Находится рядом
+type=action
+
+# record 109
+path=Если игрок
+item=Блок равен
+type=action
+
+# record 110
+path=Если игрок
+item=Крадётся
+type=action
+
+# record 111
+path=Если игрок
+item=Использует щит
+type=action
+
+# record 112
+path=Если игрок
+item=Летит на элитрах
+type=action
+
+# record 113
+path=Если игрок
+item=Бежит
+type=action
+
+# record 114
+path=Если игрок
+item=Летает
+type=action
+
+# record 115
+path=Если игрок
+item=Плавает
+type=action
+
+# record 116
+path=Если игрок
+item=Голосовал
+type=action
+
+# record 117
+path=Выбрать обьект
+item=Выбрать игрока по умолчанию
+type=action
+
+# record 118
+path=Выбрать обьект
+item=Выбрать сущность по умолчанию
+type=action
+
+# record 119
+path=Выбрать обьект
+item=Выбрать случайного игрока
+type=action
+
+# record 120
+path=Выбрать обьект
+item=Выбрать случайного моба
+type=action
+
+# record 121
+path=Выбрать обьект
+item=Выбрать случайную сущность
+type=action
+
+# record 122
+path=Выбрать обьект
+item=Выбрать всех игроков
+type=action
+
+# record 123
+path=Выбрать обьект
+item=Выбрать всех мобов
+type=action
+
+# record 124
+path=Выбрать обьект
+item=Выбрать всех сущностей
+type=action
+
+# record 125
+path=Выбрать обьект
+item=Выбрать последнего заспавненого моба
+type=action
+
+# record 126
+path=Выбрать обьект
+item=Выбор фильтра случайным образом
+type=action
+
+# record 127
+path=Выбрать обьект
+item=Значение равно (=)
+type=action
+
+# record 128
+path=Выбрать обьект
+item=Значение не равно (!=)
+type=action
+
+# record 129
+path=Выбрать обьект
+item=Сравнить числа (Облегчённая версия)
+type=action
+
+# record 130
+path=Выбрать обьект
+item=Сравнить числа
+type=action
+
+# record 131
+path=Выбрать обьект
+item=Текст равняется
+type=action
+
+# record 132
+path=Выбрать обьект
+item=Текст содержит
+type=action
+
+# record 133
+path=Выбрать обьект
+item=Переменная существует
+type=action
+
+# record 134
+path=Выбрать обьект
+item=Если местоположение в регионе
+type=action
+
+# record 135
+path=Выбрать обьект
+item=Текст начинается на
+type=action
+
+# record 136
+path=Выбрать обьект
+item=Текст заканчивается на
+type=action
+
+# record 137
+path=Выбрать обьект
+item=Имя равно
+type=action
+
+# record 138
+path=Выбрать обьект
+item=Сообщение равно
+type=action
+
+# record 139
+path=Выбрать обьект
+item=Тип взаимодействия с блоком
+type=action
+
+# record 140
+path=Выбрать обьект
+item=Тип слота снаряжения равен
+type=action
+
+# record 141
+path=Выбрать обьект
+item=Имеет транзакцию креатив-коинов
+type=action
+
+# record 142
+path=Выбрать обьект
+item=Проверить режим игры
+type=action
+
+# record 143
+path=Выбрать обьект
+item=Проверить права игрока
+type=action
+
+# record 144
+path=Выбрать обьект
+item=Держит предмет
+type=action
+
+# record 145
+path=Выбрать обьект
+item=Имеет предмет
+type=action
+
+# record 146
+path=Выбрать обьект
+item=Надет предмет
+type=action
+
+# record 147
+path=Выбрать обьект
+item=Предмет равен
+type=action
+
+# record 148
+path=Выбрать обьект
+item=Предмет в курсоре равен
+type=action
+
+# record 149
+path=Выбрать обьект
+item=Предмет имеет задержку
+type=action
+
+# record 150
+path=Выбрать обьект
+item=Тип клика равен
+type=action
+
+# record 151
+path=Выбрать обьект
+item=Кликнутый слот равен
+type=action
+
+# record 152
+path=Выбрать обьект
+item=Выбранный слот равен
+type=action
+
+# record 153
+path=Выбрать обьект
+item=Название открытого инвентаря
+type=action
+
+# record 154
+path=Выбрать обьект
+item=Заполнен ли инвентарь игрока
+type=action
+
+# record 155
+path=Выбрать обьект
+item=Смотрит на блок
+type=action
+
+# record 156
+path=Выбрать обьект
+item=Стоит на блоке
+type=action
+
+# record 157
+path=Выбрать обьект
+item=Находится рядом
+type=action
+
+# record 158
+path=Выбрать обьект
+item=Блок равен
+type=action
+
+# record 159
+path=Выбрать обьект
+item=Крадётся
+type=action
+
+# record 160
+path=Выбрать обьект
+item=Использует щит
+type=action
+
+# record 161
+path=Выбрать обьект
+item=Летит на элитрах
+type=action
+
+# record 162
+path=Выбрать обьект
+item=Бежит
+type=action
+
+# record 163
+path=Выбрать обьект
+item=Летает
+type=action
+
+# record 164
+path=Выбрать обьект
+item=Плавает
+type=action
+
+# record 165
+path=Выбрать обьект
+item=Голосовал
+type=action
+
+# record 166
+path=Выбрать обьект
+item=Тип
+type=action
+
+# record 167
+path=Выбрать обьект
+item=Является мобом
+type=action
+
+# record 168
+path=Выбрать обьект
+item=Является НИПом (NPC)
+type=action
+
+# record 169
+path=Выбрать обьект
+item=Является снарядом
+type=action
+
+# record 170
+path=Выбрать обьект
+item=Имеет ли эффект
+type=action
+
+# record 171
+path=Событие игрока
+item=Вход игрока
+type=action
+
+# record 172
+path=Событие игрока
+item=Выход игрока
+type=action
+
+# record 173
+path=Событие игрока
+item=Игрок перезашел в игру
+type=action
+
+# record 174
+path=Событие игрока
+item=Взаимодействие с блоком
+type=action
+
+# record 175
+path=Событие игрока
+item=Игрок кликает правой кнопкой
+type=action
+
+# record 176
+path=Событие игрока
+item=Игрок кликает левой кнопкой
+type=action
+
+# record 177
+path=Событие игрока
+item=Правый клик по существу
+type=action
+
+# record 178
+path=Событие игрока
+item=Игрок привязал сущность
+type=action
+
+# record 179
+path=Событие игрока
+item=Игрок приручил сущность
+type=action
+
+# record 180
+path=Событие игрока
+item=Игрок поставил блок
+type=action
+
+# record 181
+path=Событие игрока
+item=Игрок ломает блок
+type=action
+
+# record 182
+path=Событие игрока
+item=Игрок рыбачит
+type=action
+
+# record 183
+path=Событие игрока
+item=Игрок дамажит блок
+type=action
+
+# record 184
+path=Событие игрока
+item=Игрок подобрал опыт
+type=action
+
+# record 185
+path=Событие игрока
+item=Игрок лайкает игру
+type=action
+
+# record 186
+path=Событие игрока
+item=Транзакция креатив-коинов
+type=action
+
+# record 187
+path=Событие игрока
+item=Событие покупки рекламы как транзакции
+type=action
+
+# record 188
+path=Событие игрока
+item=Игрок приобрел баллы игре
+type=action
+
+# record 189
+path=Событие игрока
+item=Транзакция Mineland Studio
+type=action
+
+# record 190
+path=Событие игрока
+item=Игрок открыл инвентарь
+type=action
+
+# record 191
+path=Событие игрока
+item=Игрок закрыл инвентарь
+type=action
+
+# record 192
+path=Событие игрока
+item=Игрок изменил книгу
+type=action
+
+# record 193
+path=Событие игрока
+item=Предмет потратил прочность
+type=action
+
+# record 194
+path=Событие игрока
+item=Игрок сломал предмет
+type=action
+
+# record 195
+path=Событие игрока
+item=Игрок кликнул по инвентарю
+type=action
+
+# record 196
+path=Событие игрока
+item=Игрок перетащил предметы по слотам
+type=action
+
+# record 197
+path=Событие игрока
+item=Игрок поднимает предмет
+type=action
+
+# record 198
+path=Событие игрока
+item=Игрок выбрасывает предмет
+type=action
+
+# record 199
+path=Событие игрока
+item=Смена рук
+type=action
+
+# record 200
+path=Событие игрока
+item=Игрок скрафтил предмет
+type=action
+
+# record 201
+path=Событие игрока
+item=Игрок достал предмет из печи
+type=action
+
+# record 202
+path=Событие игрока
+item=Игрок сменил слот
+type=action
+
+# record 203
+path=Событие игрока
+item=Игрок убил игрока
+type=action
+
+# record 204
+path=Событие игрока
+item=Смерть игрока
+type=action
+
+# record 205
+path=Событие игрока
+item=Игрок нанёс урон игроку
+type=action
+
+# record 206
+path=Событие игрока
+item=Урон от снаряда
+type=action
+
+# record 207
+path=Событие игрока
+item=Игрок получает урон
+type=action
+
+# record 208
+path=Событие игрока
+item=Урон от падения
+type=action
+
+# record 209
+path=Событие игрока
+item=Игрок убил моба
+type=action
+
+# record 210
+path=Событие игрока
+item=Моб убил игрока
+type=action
+
+# record 211
+path=Событие игрока
+item=Игрок нанёс урон мобу
+type=action
+
+# record 212
+path=Событие игрока
+item=Моб наносит урон игроку
+type=action
+
+# record 213
+path=Событие игрока
+item=Игрок нанёс урон мобу при помощи снаряда
+type=action
+
+# record 214
+path=Событие игрока
+item=Игрок убил моба при помощи снаряда
+type=action
+
+# record 215
+path=Событие игрока
+item=Смерть моба
+type=action
+
+# record 216
+path=Событие игрока
+item=Моб получает урон
+type=action
+
+# record 217
+path=Событие игрока
+item=Сущность восстановила здоровье
+type=action
+
+# record 218
+path=Событие игрока
+item=Игрок крадётся
+type=action
+
+# record 219
+path=Событие игрока
+item=Игрок перестаёт красться
+type=action
+
+# record 220
+path=Событие игрока
+item=Игрок бежит
+type=action
+
+# record 221
+path=Событие игрока
+item=Прыжок
+type=action
+
+# record 222
+path=Событие игрока
+item=Игрок прекратил бежать
+type=action
+
+# record 223
+path=Событие игрока
+item=Передвижение
+type=action
+
+# record 224
+path=Событие игрока
+item=Игрок повернулся
+type=action
+
+# record 225
+path=Событие игрока
+item=Событие чата
+type=action
+
+# record 226
+path=Событие игрока
+item=Игрок запустил снаряд
+type=action
+
+# record 227
+path=Событие игрока
+item=Игрок потребляет предмет
+type=action
+
+# record 228
+path=Событие игрока
+item=Изменение уровня голода
+type=action
+
+# record 229
+path=Игровое действие
+item=Заспавнить моба/сущность
+type=action
+
+# record 230
+path=Игровое действие
+item=Заспавнить НИПа (NPC)
+type=action
+
+# record 231
+path=Игровое действие
+item=Создать предмет
+type=action
+
+# record 232
+path=Игровое действие
+item=Запустить фейерверк
+type=action
+
+# record 233
+path=Игровое действие
+item=Создать активированный динамит
+type=action
+
+# record 234
+path=Игровое действие
+item=Создать транспортное средство
+type=action
+
+# record 235
+path=Игровое действие
+item=Создать сферу опыта
+type=action
+
+# record 236
+path=Игровое действие
+item=Заспавнить молнию
+type=action
+
+# record 237
+path=Игровое действие
+item=Ждать
+type=action
+
+# record 238
+path=Игровое действие
+item=Запустить цикл
+type=action
+
+# record 239
+path=Игровое действие
+item=Остановить цикл
+type=action
+
+# record 240
+path=Игровое действие
+item=Отменить событие
+type=action
+
+# record 241
+path=Игровое действие
+item=Вызвать функцию
+type=action
+
+# record 242
+path=Игровое действие
+item=Поставить блок(и)
+type=action
+
+# record 243
+path=Игровое действие
+item=Заполнить область блоками
+type=action
+
+# record 244
+path=Игровое действие
+item=Сломать блок
+type=action
+
+# record 245
+path=Игровое действие
+item=Копировать блоки
+type=action
+
+# record 246
+path=Игровое действие
+item=Заполнить контейнер
+type=action
+
+# record 247
+path=Игровое действие
+item=Удалить предметы с контейнера
+type=action
+
+# record 248
+path=Игровое действие
+item=Установить предмет в контейнер
+type=action
+
+# record 249
+path=Игровое действие
+item=Очистить контейнер
+type=action
+
+# record 250
+path=Игровое действие
+item=Изменить табличку
+type=action
+
+# record 251
+path=Игровое действие
+item=Изменить название блока
+type=action
+
+# record 252
+path=Игровое действие
+item=Получить название блока
+type=action
+
+# record 253
+path=Игровое действие
+item=Получить предмет из контейнера
+type=action
+
+# record 254
+path=Игровое действие
+item=Установить предметы в эндер сундук
+type=action
+
+# record 255
+path=Игровое действие
+item=Получить предмет из эндер сундука
+type=action
+
+# record 256
+path=Игровое действие
+item=Получить предметы из контейнера
+type=action
+
+# record 257
+path=Игровое действие
+item=Получить значение из таблички
+type=action
+
+# record 258
+path=Игровое действие
+item=Сгенерировать дерево
+type=action
+
+# record 259
+path=Игровое действие
+item=Создать взрыв
+type=action
+
+# record 260
+path=Игровое действие
+item=Воспроизвести взрыв фейерверка
+type=action
+
+# record 261
+path=Игровое действие
+item=Создать Голограмму
+type=action
+
+# record 262
+path=Игровое действие
+item=Удалить Голограмму
+type=action
+
+# record 263
+path=Игровое действие
+item=Создать скорборд
+type=action
+
+# record 264
+path=Игровое действие
+item=Удалить панель скорборда
+type=action
+
+# record 265
+path=Игровое действие
+item=Выставить очки скорборда
+type=action
+
+# record 266
+path=Игровое действие
+item=Удалить очки в скорборде
+type=action
+
+# record 267
+path=Игровое действие
+item=Установить погоду
+type=action
+
+# record 268
+path=Игровое действие
+item=Установить время
+type=action
+
+# record 269
+path=Игровое действие
+item=Установить игровое правило
+type=action
+
+# record 270
+path=Игровое действие
+item=Создать боссбар
+type=action
+
+# record 271
+path=Игровое действие
+item=Удалить боссбар
+type=action
+
+# record 272
+path=Игровое действие
+item=Установить титл
+type=action
+
+# record 273
+path=Игровое действие
+item=Установить цвет боссбара
+type=action
+
+# record 274
+path=Игровое действие
+item=Установить стиль боссбара
+type=action
+
+# record 275
+path=Игровое действие
+item=Установить прогресс боссбара
+type=action
+
+# record 276
+path=Игровое действие
+item=Считать данные из канала
+type=action
+
+# record 277
+path=Игровое действие
+item=Отправить данные через канал
+type=action
+
+# record 278
+path=Игровое действие
+item=Отправить массив через канал
+type=action
+
+# record 279
+path=Если переменная
+item=Значение равно (=)
+type=action
+
+# record 280
+path=Если переменная
+item=Значение не равно (!=)
+type=action
+
+# record 281
+path=Если переменная
+item=Сравнить числа (Облегчённая версия)
+type=action
+
+# record 282
+path=Если переменная
+item=Сравнить числа
+type=action
+
+# record 283
+path=Если переменная
+item=Текст равняется
+type=action
+
+# record 284
+path=Если переменная
+item=Текст содержит
+type=action
+
+# record 285
+path=Если переменная
+item=Переменная существует
+type=action
+
+# record 286
+path=Если переменная
+item=Если местоположение в регионе
+type=action
+
+# record 287
+path=Если переменная
+item=Текст начинается на
+type=action
+
+# record 288
+path=Если переменная
+item=Текст заканчивается на
+type=action
+
+# record 289
+path=Присв. переменную
+item=Установить (=)
+type=action
+
+# record 290
+path=Присв. переменную
+item=Установить предмет
+type=action
+
+# record 291
+path=Присв. переменную
+item=Установить случайное значение
+type=action
+
+# record 292
+path=Присв. переменную
+item=Установить время в виде даты
+type=action
+
+# record 293
+path=Присв. переменную
+item=Установить время в виде миллисекунд
+type=action
+
+# record 294
+path=Присв. переменную
+item=Установить (+)
+type=action
+
+# record 295
+path=Присв. переменную
+item=Установить (-)
+type=action
+
+# record 296
+path=Присв. переменную
+item=Установить (*)
+type=action
+
+# record 297
+path=Присв. переменную
+item=Установить (÷)
+type=action
+
+# record 298
+path=Присв. переменную
+item=Установить (%)
+type=action
+
+# record 299
+path=Присв. переменную
+item=Прибавить (+=)
+type=action
+
+# record 300
+path=Присв. переменную
+item=Отнять (-=)
+type=action
+
+# record 301
+path=Присв. переменную
+item=Установить случайное число
+type=action
+
+# record 302
+path=Присв. переменную
+item=Округлить число
+type=action
+
+# record 303
+path=Присв. переменную
+item=Модуль (abs)
+type=action
+
+# record 304
+path=Присв. переменную
+item=Минимальное число (min)
+type=action
+
+# record 305
+path=Присв. переменную
+item=Максимальное число (max)
+type=action
+
+# record 306
+path=Присв. переменную
+item=Возведение в степень (pow)
+type=action
+
+# record 307
+path=Присв. переменную
+item=Косинус (cos)
+type=action
+
+# record 308
+path=Присв. переменную
+item=Синус (sin)
+type=action
+
+# record 309
+path=Присв. переменную
+item=Тангенс (tan)
+type=action
+
+# record 310
+path=Присв. переменную
+item=Арксинус (asin)
+type=action
+
+# record 311
+path=Присв. переменную
+item=Арккосинус (acos)
+type=action
+
+# record 312
+path=Присв. переменную
+item=Арктангенс (atan)
+type=action
+
+# record 313
+path=Присв. переменную
+item=Градусы (deg)
+type=action
+
+# record 314
+path=Присв. переменную
+item=Натуральный логарифм (ln)
+type=action
+
+# record 315
+path=Присв. переменную
+item=Корень (sqrt)
+type=action
+
+# record 316
+path=Присв. переменную
+item=Экспонента (exp)
+type=action
+
+# record 317
+path=Присв. переменную
+item=Радианы (rad)
+type=action
+
+# record 318
+path=Присв. переменную
+item=Шум Перлина
+type=action
+
+# record 319
+path=Присв. переменную
+item=Шум Симплекс
+type=action
+
+# record 320
+path=Присв. переменную
+item=Шум Вороного
+type=action
+
+# record 321
+path=Присв. переменную
+item=Объединить тексты
+type=action
+
+# record 322
+path=Присв. переменную
+item=Парсить число
+type=action
+
+# record 323
+path=Присв. переменную
+item=Обрезает текст от и до указанной буквы по счёту.
+type=action
+
+# record 324
+path=Присв. переменную
+item=Разделить текст на элементы
+type=action
+
+# record 325
+path=Присв. переменную
+item=Узнать длину строки
+type=action
+
+# record 326
+path=Присв. переменную
+item=Заменить символы в тексте
+type=action
+
+# record 327
+path=Присв. переменную
+item=Установить регистр тексту
+type=action
+
+# record 328
+path=Присв. переменную
+item=Создать формат времени
+type=action
+
+# record 329
+path=Присв. переменную
+item=Получить символ по числу
+type=action
+
+# record 330
+path=Присв. переменную
+item=Получить число по символу
+type=action
+
+# record 331
+path=Присв. переменную
+item=Очистить цвета текста
+type=action
+
+# record 332
+path=Присв. переменную
+item=Получить символ по индексу
+type=action
+
+# record 333
+path=Присв. переменную
+item=Получить индекс подтекста
+type=action
+
+# record 334
+path=Присв. переменную
+item=Получить значение из местоположения
+type=action
+
+# record 335
+path=Присв. переменную
+item=Получить координаты
+type=action
+
+# record 336
+path=Присв. переменную
+item=Получить расстояние между 2 местоположениями
+type=action
+
+# record 337
+path=Присв. переменную
+item=Установить значения в местоположении
+type=action
+
+# record 338
+path=Присв. переменную
+item=Получить блок из местоположения
+type=action
+
+# record 339
+path=Присв. переменную
+item=Установить направление местоположения
+type=action
+
+# record 340
+path=Присв. переменную
+item=Получить направление местоположения
+type=action
+
+# record 341
+path=Присв. переменную
+item=Получить центр региона
+type=action
+
+# record 342
+path=Присв. переменную
+item=Получить значение из предмета
+type=action
+
+# record 343
+path=Присв. переменную
+item=Получить описание предмета
+type=action
+
+# record 344
+path=Присв. переменную
+item=Установить количество предмета
+type=action
+
+# record 345
+path=Присв. переменную
+item=Установить прочность предмета
+type=action
+
+# record 346
+path=Присв. переменную
+item=Установить описание предмету
+type=action
+
+# record 347
+path=Присв. переменную
+item=Установить имя предмету
+type=action
+
+# record 348
+path=Присв. переменную
+item=Добавить описание предмету
+type=action
+
+# record 349
+path=Присв. переменную
+item=Удалить строку описания
+type=action
+
+# record 350
+path=Присв. переменную
+item=Получить текст из книги
+type=action
+
+# record 351
+path=Присв. переменную
+item=Установить текст в книгу
+type=action
+
+# record 352
+path=Присв. переменную
+item=Установить всплывающий текст
+type=action
+
+# record 353
+path=Присв. переменную
+item=Установить событие при клике
+type=action
+
+# record 354
+path=Присв. переменную
+item=Объединить текст. компоненты
+type=action
+
+# record 355
+path=Присв. переменную
+item=Создать вектор
+type=action
+
+# record 356
+path=Присв. переменную
+item=Создать вектор между местоположениями
+type=action
+
+# record 357
+path=Присв. переменную
+item=Создать вектор из кардинального направления
+type=action
+
+# record 358
+path=Присв. переменную
+item=Получить координату вектора
+type=action
+
+# record 359
+path=Присв. переменную
+item=Получить все координаты вектора
+type=action
+
+# record 360
+path=Присв. переменную
+item=Установить координату вектора
+type=action
+
+# record 361
+path=Присв. переменную
+item=Получить длину вектора
+type=action
+
+# record 362
+path=Присв. переменную
+item=Установить длину вектора
+type=action
+
+# record 363
+path=Присв. переменную
+item=Сумма векторов
+type=action
+
+# record 364
+path=Присв. переменную
+item=Разница векторов
+type=action
+
+# record 365
+path=Присв. переменную
+item=Умножить вектор на число
+type=action
+
+# record 366
+path=Присв. переменную
+item=Деление векторов
+type=action
+
+# record 367
+path=Присв. переменную
+item=Скалярное произведение двух векторов
+type=action
+
+# record 368
+path=Присв. переменную
+item=Векторное произведение двух векторов
+type=action
+
+# record 369
+path=Присв. переменную
+item=Адамарово произведение двух векторов
+type=action
+
+# record 370
+path=Присв. переменную
+item=Выровнять вектор
+type=action
+
+# record 371
+path=Присв. переменную
+item=Получить центральное значение между векторами
+type=action
+
+# record 372
+path=Присв. переменную
+item=Получить угол между двумя векторами
+type=action
+
+# record 373
+path=Присв. переменную
+item=Отразить вектор относительно второго вектора
+type=action
+
+# record 374
+path=Присв. переменную
+item=Повернуть вектор вокруг другого вектора
+type=action
+
+# record 375
+path=Присв. переменную
+item=Повернуть вектор вокруг оси
+type=action
+
+# record 376
+path=Присв. переменную
+item=Получить кардинальное направление вектора
+type=action
+
+# record 377
+path=Массивы
+item=Получить элемент массива
+type=action
+
+# record 378
+path=Массивы
+item=Вставить в массив
+type=action
+
+# record 379
+path=Массивы
+item=Заменить элемент массива
+type=action
+
+# record 380
+path=Массивы
+item=Удалить элемент массива
+type=action
+
+# record 381
+path=Массивы
+item=Добавить в конец массива
+type=action
+
+# record 382
+path=Массивы
+item=Присоединить массив
+type=action
+
+# record 383
+path=Массивы
+item=Скопировать массив
+type=action
+
+# record 384
+path=Массивы
+item=Получить размер массива
+type=action
+
+# record 385
+path=Массивы
+item=Сортировать массив
+type=action
+
+# record 386
+path=Массивы
+item=Вывести массив в строку
+type=action
+
+# record 387
+path=Если игра
+item=Блок равен
+type=action
+
+# record 388
+path=Если игра
+item=Контейнер имеет предмет
+type=action
+
+# record 389
+path=Если игра
+item=Табличка содержит текст
+type=action
+
+# record 390
+path=Событие мира
+item=Запуск мира
+type=action
+
+# record 391
+path=Событие мира
+item=Остановка мира
+type=action
+
+# record 392
+path=Событие мира
+item=Прием данных
+type=action
+
+# record 393
+path=Событие мира
+item=Блок загорелся
+type=action
+
+# record 394
+path=Событие мира
+item=Блок сгорел
+type=action
+
+# record 395
+path=Событие мира
+item=Блок пропал
+type=action
+
+# record 396
+path=Событие мира
+item=Поршень выдвигается
+type=action
+
+# record 397
+path=Событие мира
+item=Поршень вдвигается
+type=action
+
+# record 398
+path=Событие мира
+item=Блок взорвался
+type=action
+
+# record 399
+path=Событие мира
+item=Спавн существа
+type=action
+
+# record 400
+path=Событие мира
+item=Сущность взорвалась
+type=action
+
+# record 401
+path=Событие мира
+item=Сущность решила взорваться
+type=action
+
+# record 402
+path=Событие мира
+item=Опадение листьев
+type=action
+
+# record 403
+path=Событие мира
+item=Дерево выросло
+type=action
+
+# record 404
+path=Событие мира
+item=Блок вырос
+type=action
+
+# record 405
+path=Событие мира
+item=Блок переместился
+type=action
+
+# record 406
+path=Событие мира
+item=Зельеварка приготовила зелье(я)
+type=action
+
+# record 407
+path=Событие мира
+item=Зельеварка увеличила уровень топлива
+type=action
+
+# record 408
+path=Событие мира
+item=Блок сгенерировался
+type=action
+
+# record 409
+path=Событие мира
+item=Генерация блока из-за сущности
+type=action
+
+# record 410
+path=Событие мира
+item=Блок распространился
+type=action
+
+# record 411
+path=Событие мира
+item=Падающий блок приземляется
+type=action
+
+# record 412
+path=Событие мира
+item=Создание портала
+type=action
+
+# record 413
+path=Событие мира
+item=Нотный блок проиграл звук
+type=action
+
+# record 414
+path=Событие мира
+item=Блок выкинул предмет
+type=action
+
+# record 415
+path=Событие мира
+item=Предмет пропал
+type=action
+
+# record 416
+path=Событие мира
+item=Предметы объединились
+type=action
+
+# record 417
+path=Событие мира
+item=Котел изменил уровень воды
+type=action
+
+# record 418
+path=Событие мира
+item=Табличка была изменена
+type=action
+
+# record 419
+path=Событие мира
+item=Блок выделил опыт
+type=action
+
+# record 420
+path=Событие мира
+item=Предмет переместился в контейнер
+type=action
+
+# record 421
+path=Событие мира
+item=Воронка подбирает предмет
+type=action
+
+# record 422
+path=Событие мира
+item=Печь закончила плавку
+type=action
+
+# record 423
+path=Событие мира
+item=Печь использует топливо
+type=action
+
+# record 424
+path=Действие игрока
+item=Выдать предметы
+type=action
+
+# record 425
+path=Массивы
+item=Очистить\Создать массив
+type=action
+
+# record 426
+path=Присв. переменную
+item=Получить случайное местоположение
+type=action
+
+# record 427
+path=Действие игрока
+item=Установить уровень сытости
+type=action
+
+# record 428
+path=Действие игрока
+item=Установить слот
+type=action
