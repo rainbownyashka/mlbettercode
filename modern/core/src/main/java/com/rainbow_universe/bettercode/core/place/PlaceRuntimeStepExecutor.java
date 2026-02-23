@@ -649,7 +649,8 @@ public final class PlaceRuntimeStepExecutor {
             }
 
             String routeKey = route.baseKey;
-            int slot = findSlotByAnyKey(view, routeKey, true);
+            MenuMatchResult match = findSlotByAnyKeyDetailed(view, routeKey, true);
+            int slot = match.slot;
             if (slot < 0) {
                 int learned = findSlotByLearnedMenuHints(view, routeKey);
                 if (learned >= 0) {
@@ -675,6 +676,9 @@ public final class PlaceRuntimeStepExecutor {
                             + " summary=" + summarizeNonPlayerSlots(view, 20)
                             + " altKeys=" + summarizeAltKeys(routeKey, 12)
                             + " randomCandidates=" + summarizeRandomMenuCandidates(view, entry, 24));
+                    logger.info("printer-debug",
+                        "menu_route_diag key=" + safe(routeKey)
+                            + " diagnostics=" + summarizeMenuRouteDiagnostics(view, routeKey, true, 18, 6));
                 } else {
                     logger.info("printer-debug",
                         "menu_route_miss key=" + routeKey
@@ -759,6 +763,15 @@ public final class PlaceRuntimeStepExecutor {
             if (!click.accepted()) {
                 return fail(logger, "MENU_CLICK_FAILED", click.reason());
             }
+            SlotView matchedSlot = findSlotBySlotNumber(view, slot);
+            logger.info("printer-debug",
+                "menu_route_match key=" + safe(routeKey)
+                    + " method=" + safe(match.method)
+                    + " candidate=" + safe(match.candidate)
+                    + " slot=" + slot
+                    + " item=" + safe(matchedSlot == null ? "" : matchedSlot.itemId())
+                    + " display=" + safe(norm(matchedSlot == null ? "" : matchedSlot.displayName()))
+                    + " nbt=" + safe(norm(matchedSlot == null ? "" : matchedSlot.nbt())));
             entry.markTriedMenuSlot(slot);
             entry.setLastMenuClickedKey(menuSlotKey(view, slot));
             entry.setMenuRouteSameHashMisses(0);
@@ -1932,6 +1945,28 @@ public final class PlaceRuntimeStepExecutor {
         return -1;
     }
 
+    private static MenuMatchResult findSlotByAnyKeyDetailed(ContainerView view, String key, boolean skipPlayer) {
+        for (String candidate : alternateMenuKeys(key)) {
+            int slot = findSlotByKey(view, candidate, skipPlayer);
+            if (slot >= 0) {
+                return new MenuMatchResult(slot, "exact_or_contains", candidate);
+            }
+            slot = findSlotByTokenMatch(view, candidate, skipPlayer);
+            if (slot >= 0) {
+                return new MenuMatchResult(slot, "token_all", candidate);
+            }
+            slot = findSlotByNbtTokenMatch(view, candidate, skipPlayer);
+            if (slot >= 0) {
+                return new MenuMatchResult(slot, "nbt_token_all", candidate);
+            }
+            slot = findSlotByCombinedTokenMatch(view, candidate, skipPlayer);
+            if (slot >= 0) {
+                return new MenuMatchResult(slot, "combined_token_all", candidate);
+            }
+        }
+        return MenuMatchResult.notFound();
+    }
+
     private static List<String> alternateMenuKeys(String key) {
         ArrayList<String> out = new ArrayList<String>();
         String base = norm(key);
@@ -2678,6 +2713,89 @@ public final class PlaceRuntimeStepExecutor {
         return sb.length() == 0 ? "-" : sb.toString();
     }
 
+    private static String summarizeMenuRouteDiagnostics(
+        ContainerView view,
+        String key,
+        boolean skipPlayer,
+        int slotLimit,
+        int keyLimit
+    ) {
+        if (view == null || view.slots() == null) {
+            return "no_view";
+        }
+        List<String> keys = alternateMenuKeys(key);
+        if (keys == null || keys.isEmpty()) {
+            return "no_keys";
+        }
+        StringBuilder sb = new StringBuilder();
+        int shown = 0;
+        for (SlotView s : view.slots()) {
+            if (s == null) {
+                continue;
+            }
+            if (skipPlayer && s.playerInventory()) {
+                continue;
+            }
+            if (shown > 0) {
+                sb.append(" || ");
+            }
+            String display = norm(s.displayName());
+            String combined = slotSearchText(s);
+            sb.append('#').append(s.slotNumber())
+                .append(" item=").append(safe(s.itemId()))
+                .append(" dn=").append(safe(display));
+            int keyShown = 0;
+            for (String candidate : keys) {
+                if (candidate == null || candidate.isEmpty()) {
+                    continue;
+                }
+                if (keyShown >= keyLimit) {
+                    sb.append(" {k=...}");
+                    break;
+                }
+                String n = norm(candidate);
+                if (n.isEmpty()) {
+                    continue;
+                }
+                boolean exactDn = display.equals(n);
+                boolean exactCombined = combined.equals(n);
+                boolean containsDn = display.contains(n);
+                boolean containsCombined = combined.contains(n);
+                boolean tokenAll = containsAllTokens(combined, n);
+                sb.append(" {k=").append(safe(n))
+                    .append(" exDn=").append(exactDn ? '1' : '0')
+                    .append(" exAll=").append(exactCombined ? '1' : '0')
+                    .append(" inDn=").append(containsDn ? '1' : '0')
+                    .append(" inAll=").append(containsCombined ? '1' : '0')
+                    .append(" tok=").append(tokenAll ? '1' : '0')
+                    .append('}');
+                keyShown++;
+            }
+            shown++;
+            if (shown >= slotLimit) {
+                sb.append(" || ...");
+                break;
+            }
+        }
+        return sb.length() == 0 ? "no_non_player_slots" : sb.toString();
+    }
+
+    private static boolean containsAllTokens(String hay, String wanted) {
+        if (wanted == null || wanted.isEmpty()) {
+            return false;
+        }
+        String[] tokens = wanted.split(" ");
+        for (String t : tokens) {
+            if (t == null || t.isEmpty()) {
+                continue;
+            }
+            if (hay == null || !hay.contains(t)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static boolean isArrowItem(SlotView s) {
         if (s == null) {
             return false;
@@ -2869,6 +2987,22 @@ public final class PlaceRuntimeStepExecutor {
 
     private static String safe(String v) {
         return v == null ? "" : v;
+    }
+
+    private static final class MenuMatchResult {
+        final int slot;
+        final String method;
+        final String candidate;
+
+        private MenuMatchResult(int slot, String method, String candidate) {
+            this.slot = slot;
+            this.method = method == null ? "" : method;
+            this.candidate = candidate == null ? "" : candidate;
+        }
+
+        static MenuMatchResult notFound() {
+            return new MenuMatchResult(-1, "none", "");
+        }
     }
 
     private static String unicodeEscape(String raw) {

@@ -219,6 +219,12 @@
     - replaced `WorldRenderer.drawBox(...)` line emission in testcase outline path with explicit 12-edge emit (`emitBoxEdges`), to eliminate diagonal/partial-edge artifacts observed in debug pass.
 - Selector outline default color update:
   - default `selector.outlineColor` switched to `255,255,0` (yellow) in settings definition and runtime fallback parser.
+- Pathfinding diagnostics expansion (2026-02-23):
+  - menu route success now logs explicit matcher metadata:
+    - `menu_route_match key=... method=... candidate=... slot=... item=... display=... nbt=...`
+  - route miss diagnostics now include per-slot/per-key flags for exact/contains/token checks:
+    - `menu_route_diag ... {k=<candidate> exDn= exAll= inDn= inAll= tok=}`
+  - goal: deterministic visibility of why GUI item path does not match legacy 1.12.2 expectations.
   - latest live-log stabilization slice (2026-02-19):
     - fixed menu-payload step cursor progression: adapters now advance cursor on explicit step completion callback from core, not only on immediate block confirm,
     - reduced wrong-target click risk: sign/params y-offset probes are now tried top-down (`dy=0..-2`) in core/adapters,
