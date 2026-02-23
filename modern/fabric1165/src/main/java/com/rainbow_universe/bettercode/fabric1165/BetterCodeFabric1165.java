@@ -44,7 +44,6 @@ import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexFormats;
-import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -2985,7 +2984,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             BufferBuilder bb = Tessellator.getInstance().getBuffer();
             bb.begin(GL11.GL_LINES, VertexFormats.POSITION_COLOR);
             for (Box box : boxes) {
-                WorldRenderer.drawBox(
+                emitBoxEdges(
                     bb,
                     box.minX, box.minY, box.minZ,
                     box.maxX, box.maxY, box.maxZ,
@@ -3034,7 +3033,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 double maxX = box.maxX - cam.x;
                 double maxY = box.maxY - cam.y;
                 double maxZ = box.maxZ - cam.z;
-                WorldRenderer.drawBox(
+                emitBoxEdges(
                     bb,
                     minX, minY, minZ,
                     maxX, maxY, maxZ,
@@ -3051,9 +3050,42 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
     }
 
+    private static void emitBoxEdges(
+        BufferBuilder bb,
+        double minX, double minY, double minZ,
+        double maxX, double maxY, double maxZ,
+        float r, float g, float b, float a
+    ) {
+        // Bottom face edges
+        emitLine(bb, minX, minY, minZ, maxX, minY, minZ, r, g, b, a);
+        emitLine(bb, maxX, minY, minZ, maxX, minY, maxZ, r, g, b, a);
+        emitLine(bb, maxX, minY, maxZ, minX, minY, maxZ, r, g, b, a);
+        emitLine(bb, minX, minY, maxZ, minX, minY, minZ, r, g, b, a);
+        // Top face edges
+        emitLine(bb, minX, maxY, minZ, maxX, maxY, minZ, r, g, b, a);
+        emitLine(bb, maxX, maxY, minZ, maxX, maxY, maxZ, r, g, b, a);
+        emitLine(bb, maxX, maxY, maxZ, minX, maxY, maxZ, r, g, b, a);
+        emitLine(bb, minX, maxY, maxZ, minX, maxY, minZ, r, g, b, a);
+        // Vertical edges
+        emitLine(bb, minX, minY, minZ, minX, maxY, minZ, r, g, b, a);
+        emitLine(bb, maxX, minY, minZ, maxX, maxY, minZ, r, g, b, a);
+        emitLine(bb, maxX, minY, maxZ, maxX, maxY, maxZ, r, g, b, a);
+        emitLine(bb, minX, minY, maxZ, minX, maxY, maxZ, r, g, b, a);
+    }
+
+    private static void emitLine(
+        BufferBuilder bb,
+        double x1, double y1, double z1,
+        double x2, double y2, double z2,
+        float r, float g, float b, float a
+    ) {
+        bb.vertex(x1, y1, z1).color(r, g, b, a).next();
+        bb.vertex(x2, y2, z2).color(r, g, b, a).next();
+    }
+
     private static float[] selectionOutlineColor() {
-        String raw = settings().getString("selector.outlineColor", "0,242,255");
-        float[] fallback = new float[] {0.15F, 0.95F, 1.0F};
+        String raw = settings().getString("selector.outlineColor", "255,255,0");
+        float[] fallback = new float[] {1.0F, 1.0F, 0.0F};
         if (raw == null) {
             return fallback;
         }

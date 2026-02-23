@@ -84,9 +84,9 @@ public final class ModSettingsService implements SettingsProvider {
         defs.put("selector.outlineColor", new SettingDef(
             "selector.outlineColor",
             "Selector Outline Color",
-            "RGB color for selected rows, format: r,g,b (0..255), e.g. 0,242,255",
+            "RGB color for selected rows, format: r,g,b (0..255), e.g. 255,255,0",
             SettingType.STRING,
-            "0,242,255",
+            "255,255,0",
             null,
             null
         ));

@@ -215,6 +215,10 @@
     - `outline2` and `outline4`: visually correct and stable.
     - `outline3`: stable, but depth-on (not xray).
     - `outline1`: not usable (no correct visible outline).
+  - renderer edge-path hardening:
+    - replaced `WorldRenderer.drawBox(...)` line emission in testcase outline path with explicit 12-edge emit (`emitBoxEdges`), to eliminate diagonal/partial-edge artifacts observed in debug pass.
+- Selector outline default color update:
+  - default `selector.outlineColor` switched to `255,255,0` (yellow) in settings definition and runtime fallback parser.
   - latest live-log stabilization slice (2026-02-19):
     - fixed menu-payload step cursor progression: adapters now advance cursor on explicit step completion callback from core, not only on immediate block confirm,
     - reduced wrong-target click risk: sign/params y-offset probes are now tried top-down (`dy=0..-2`) in core/adapters,
