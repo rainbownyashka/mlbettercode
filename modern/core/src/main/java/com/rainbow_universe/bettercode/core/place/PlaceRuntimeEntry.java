@@ -38,6 +38,10 @@ public final class PlaceRuntimeEntry {
     private int menuClicksSinceOpen;
     private long menuNonEmptySinceMs;
     private int menuNonEmptyWindowId;
+    private boolean menuTargetAckPending;
+    private int menuTargetWindowId;
+    private long menuTargetClickMs;
+    private boolean menuTargetNeedsParams;
     private String menuRouteLastHash;
     private int menuRouteSameHashMisses;
     private String lastMenuClickedKey;
@@ -109,6 +113,10 @@ public final class PlaceRuntimeEntry {
         this.menuClicksSinceOpen = 0;
         this.menuNonEmptySinceMs = 0L;
         this.menuNonEmptyWindowId = -1;
+        this.menuTargetAckPending = false;
+        this.menuTargetWindowId = -1;
+        this.menuTargetClickMs = 0L;
+        this.menuTargetNeedsParams = false;
         this.menuRouteLastHash = "";
         this.menuRouteSameHashMisses = 0;
         this.lastMenuClickedKey = "";
@@ -225,6 +233,14 @@ public final class PlaceRuntimeEntry {
     public void setMenuNonEmptySinceMs(long menuNonEmptySinceMs) { this.menuNonEmptySinceMs = menuNonEmptySinceMs; }
     public int menuNonEmptyWindowId() { return menuNonEmptyWindowId; }
     public void setMenuNonEmptyWindowId(int menuNonEmptyWindowId) { this.menuNonEmptyWindowId = menuNonEmptyWindowId; }
+    public boolean menuTargetAckPending() { return menuTargetAckPending; }
+    public void setMenuTargetAckPending(boolean menuTargetAckPending) { this.menuTargetAckPending = menuTargetAckPending; }
+    public int menuTargetWindowId() { return menuTargetWindowId; }
+    public void setMenuTargetWindowId(int menuTargetWindowId) { this.menuTargetWindowId = menuTargetWindowId; }
+    public long menuTargetClickMs() { return menuTargetClickMs; }
+    public void setMenuTargetClickMs(long menuTargetClickMs) { this.menuTargetClickMs = menuTargetClickMs; }
+    public boolean menuTargetNeedsParams() { return menuTargetNeedsParams; }
+    public void setMenuTargetNeedsParams(boolean menuTargetNeedsParams) { this.menuTargetNeedsParams = menuTargetNeedsParams; }
     public String menuRouteLastHash() { return menuRouteLastHash; }
     public void setMenuRouteLastHash(String menuRouteLastHash) { this.menuRouteLastHash = menuRouteLastHash == null ? "" : menuRouteLastHash; }
     public int menuRouteSameHashMisses() { return menuRouteSameHashMisses; }

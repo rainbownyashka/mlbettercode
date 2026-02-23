@@ -39,6 +39,7 @@ public final class PlaceRuntimeStepExecutor {
     private static final long RANDOM_ROUTE_MIN_GAP_MS = 220L;
     private static final long MENU_CLICK_MIN_GAP_MS = 300L;
     private static final long MENU_NEXT_ACTION_MIN_GAP_MS = 220L;
+    private static final long MENU_TARGET_CLOSE_ACK_MS = 850L;
     private static final int MAX_PLACED_LOST_COUNT = 6;
     private static final long BLOCK_RECHECK_MIN_ELAPSED_MS = 1200L;
     private static final int BLOCK_RECHECK_MISS_REQUIRED = 3;
@@ -134,6 +135,10 @@ public final class PlaceRuntimeStepExecutor {
             entry.setForceRePlaceRequested(false);
             entry.setMenuReplaceCount(0);
             entry.setNextMenuActionMs(now + Math.max(MENU_NEXT_ACTION_MIN_GAP_MS, delay));
+            entry.setMenuTargetAckPending(false);
+            entry.setMenuTargetWindowId(-1);
+            entry.setMenuTargetClickMs(0L);
+            entry.setMenuTargetNeedsParams(false);
             logger.info("printer-debug", "runtime_state=PLACE_BLOCK confirmed=1");
             return PlaceExecResult.inProgress(0, "OPEN_MENU");
         }
@@ -180,6 +185,7 @@ public final class PlaceRuntimeStepExecutor {
 
         if (entry.placedBlock()
             && entry.awaitingMenu()
+            && !entry.menuTargetAckPending()
             && !entry.needOpenMenu()
             && entry.lastMenuWindowId() != -1
             && now - entry.lastMenuClickMs() > 300L) {
@@ -190,6 +196,10 @@ public final class PlaceRuntimeStepExecutor {
             entry.setTriedWindowId(-1);
             entry.setMenuNonEmptySinceMs(0L);
             entry.setMenuNonEmptyWindowId(-1);
+            entry.setMenuTargetAckPending(false);
+            entry.setMenuTargetWindowId(-1);
+            entry.setMenuTargetClickMs(0L);
+            entry.setMenuTargetNeedsParams(false);
         }
 
         if (entry.postPlaceKind() != PlaceRuntimeEntry.POST_PLACE_NONE
@@ -400,6 +410,66 @@ public final class PlaceRuntimeStepExecutor {
 
         if (entry.awaitingMenu()) {
             ContainerView view = bridge.getContainerSnapshot();
+            if (entry.menuTargetAckPending()) {
+                int targetWindow = entry.menuTargetWindowId();
+                long elapsed = entry.menuTargetClickMs() <= 0L ? 0L : (now - entry.menuTargetClickMs());
+                if (view.windowId() < 0) {
+                    entry.setMenuTargetAckPending(false);
+                    entry.setMenuTargetWindowId(-1);
+                    entry.setMenuTargetClickMs(0L);
+                    boolean needsParams = entry.menuTargetNeedsParams();
+                    entry.setMenuTargetNeedsParams(false);
+                    if (!needsParams) {
+                        entry.setAwaitingMenu(false);
+                        entry.setAwaitingParamsChest(false);
+                        entry.setNeedOpenParamsChest(false);
+                        entry.setAwaitingArgs(false);
+                        entry.setArgsWindowId(-1);
+                        entry.setParamsReadyWindowId(-1);
+                        entry.setParamsReadySinceMs(0L);
+                        logger.info("printer-debug",
+                            "menu_target_ack result=server_closed_finalize elapsed=" + elapsed + " window=" + targetWindow);
+                        return finishOrPostPlace(entry, bridge, logger, now, delay);
+                    }
+                    entry.setAwaitingMenu(false);
+                    entry.setAwaitingParamsChest(true);
+                    entry.setParamsStartMs(now);
+                    entry.setNextParamsActionMs(now + delay);
+                    entry.setParamsOpenAttempts(0);
+                    entry.setNeedOpenParamsChest(false);
+                    entry.setParamsReadyWindowId(-1);
+                    entry.setParamsReadySinceMs(0L);
+                    entry.setArgsWindowId(-1);
+                    entry.setMenuClicksSinceOpen(0);
+                    entry.setNextMenuActionMs(now + Math.max(MENU_NEXT_ACTION_MIN_GAP_MS, delay));
+                    logger.info("printer-debug",
+                        "menu_target_ack result=server_closed_to_params elapsed=" + elapsed + " window=" + targetWindow);
+                    return PlaceExecResult.inProgress(0, "OPEN_PARAMS_CHEST");
+                }
+                if (targetWindow >= 0 && view.windowId() != targetWindow) {
+                    entry.setMenuTargetAckPending(false);
+                    entry.setMenuTargetWindowId(-1);
+                    entry.setMenuTargetClickMs(0L);
+                    entry.setMenuTargetNeedsParams(false);
+                    entry.setMenuClicksSinceOpen(0);
+                    entry.setTriedWindowId(-1);
+                    entry.setMenuNonEmptySinceMs(0L);
+                    entry.setMenuNonEmptyWindowId(-1);
+                    entry.clearTriedMenuSlots();
+                    logger.info("printer-debug",
+                        "menu_target_ack result=window_changed_without_close from=" + targetWindow
+                            + " to=" + view.windowId() + " elapsed=" + elapsed);
+                } else if (elapsed < MENU_TARGET_CLOSE_ACK_MS) {
+                    return PlaceExecResult.inProgress(0, "WAIT_MENU_TARGET_ACK");
+                } else {
+                    entry.setMenuTargetAckPending(false);
+                    entry.setMenuTargetWindowId(-1);
+                    entry.setMenuTargetClickMs(0L);
+                    entry.setMenuTargetNeedsParams(false);
+                    logger.info("printer-debug",
+                        "menu_target_ack result=no_close_timeout window=" + view.windowId() + " elapsed=" + elapsed);
+                }
+            }
             if (view.windowId() < 0) {
                 if (entry.lastMenuWindowId() >= 0) {
                     entry.setLastMenuWindowId(-1);
@@ -685,34 +755,17 @@ public final class PlaceRuntimeStepExecutor {
             entry.setLastMenuClickedKey(menuSlotKey(view, slot));
             entry.setMenuRouteSameHashMisses(0);
             entry.setMenuRouteLastHash("");
-            if (!hasAdvancedArgs(entry)) {
-                entry.setAwaitingMenu(false);
-                entry.setAwaitingParamsChest(false);
-                entry.setNeedOpenParamsChest(false);
-                entry.setAwaitingArgs(false);
-                entry.setArgsWindowId(-1);
-                entry.setParamsReadyWindowId(-1);
-                entry.setParamsReadySinceMs(0L);
-                entry.setLastMenuWindowId(view.windowId());
-                entry.setLastMenuClickMs(now);
-                entry.setMenuClicksSinceOpen(0);
-                logger.info("printer-debug", "runtime_state=SKIP_PARAMS_NO_ARGS");
-                return finishOrPostPlace(entry, bridge, logger, now, delay);
-            }
-            entry.setAwaitingMenu(false);
-            entry.setAwaitingParamsChest(true);
-            entry.setParamsStartMs(now);
-            entry.setNextParamsActionMs(now + delay);
-            entry.setParamsOpenAttempts(0);
-            entry.setNeedOpenParamsChest(false);
-            entry.setParamsReadyWindowId(-1);
-            entry.setParamsReadySinceMs(0L);
-            entry.setArgsWindowId(-1);
             entry.setLastMenuWindowId(view.windowId());
             entry.setLastMenuClickMs(now);
-            entry.setMenuClicksSinceOpen(0);
+            entry.setMenuClicksSinceOpen(entry.menuClicksSinceOpen() + 1);
             entry.setNextMenuActionMs(now + Math.max(MENU_NEXT_ACTION_MIN_GAP_MS, delay));
-            logger.info("printer-debug", "runtime_state=ROUTE_MENU slot=" + slot + " key=" + routeKey);
+            entry.setMenuTargetAckPending(true);
+            entry.setMenuTargetWindowId(view.windowId());
+            entry.setMenuTargetClickMs(now);
+            entry.setMenuTargetNeedsParams(hasAdvancedArgs(entry));
+            logger.info("printer-debug",
+                "runtime_state=ROUTE_MENU slot=" + slot + " key=" + routeKey
+                    + " waitServerClose=1 needsParams=" + entry.menuTargetNeedsParams());
             logger.info("printer-debug",
                 "menu_to_params_transition window=" + view.windowId()
                     + " slot=" + slot
@@ -720,7 +773,7 @@ public final class PlaceRuntimeStepExecutor {
                     + " trappedYPlus1=" + hasTrappedChestNearTarget(bridge)
                     + " chestAnyYPlus1=" + hasParamsChestNearTarget(bridge)
                     + " anchor=" + describeAnchor(bridge));
-            return PlaceExecResult.inProgress(0, "OPEN_PARAMS_CHEST");
+            return PlaceExecResult.inProgress(0, "WAIT_MENU_TARGET_ACK");
         }
 
         if (entry.awaitingArgs()) {
@@ -1043,6 +1096,7 @@ public final class PlaceRuntimeStepExecutor {
                 + " name=" + safe(entry.name())
                 + " flags={place=" + (!entry.placedBlock())
                 + ",menu=" + entry.awaitingMenu()
+                + ",menuTargetAck=" + entry.menuTargetAckPending()
                 + ",params=" + entry.awaitingParamsChest()
                 + ",args=" + entry.awaitingArgs()
                 + ",postPlace=" + (entry.postPlaceKind() != PlaceRuntimeEntry.POST_PLACE_NONE)
@@ -1053,6 +1107,7 @@ public final class PlaceRuntimeStepExecutor {
                 + ",moveOnly=" + entry.moveOnly()
                 + "}"
                 + " windows={menuLast=" + entry.lastMenuWindowId()
+                + ",menuTarget=" + entry.menuTargetWindowId()
                 + ",args=" + entry.argsWindowId()
                 + ",paramsReady=" + entry.paramsReadyWindowId()
                 + "}"
@@ -1588,6 +1643,10 @@ public final class PlaceRuntimeStepExecutor {
         entry.clearTriedMenuSlots();
         entry.setMenuNonEmptySinceMs(0L);
         entry.setMenuNonEmptyWindowId(-1);
+        entry.setMenuTargetAckPending(false);
+        entry.setMenuTargetWindowId(-1);
+        entry.setMenuTargetClickMs(0L);
+        entry.setMenuTargetNeedsParams(false);
         entry.setRandomClicks(0);
         entry.setNeedOpenMenu(true);
         entry.setNextMenuActionMs(now + Math.max(120, delay));
@@ -2449,6 +2508,10 @@ public final class PlaceRuntimeStepExecutor {
         entry.setMenuNonEmptySinceMs(0L);
         entry.setMenuNonEmptyWindowId(-1);
         entry.setTriedWindowId(-1);
+        entry.setMenuTargetAckPending(false);
+        entry.setMenuTargetWindowId(-1);
+        entry.setMenuTargetClickMs(0L);
+        entry.setMenuTargetNeedsParams(false);
         entry.setAwaitingParamsChest(false);
         entry.setNeedOpenParamsChest(false);
         entry.setParamsOpenAttempts(0);
