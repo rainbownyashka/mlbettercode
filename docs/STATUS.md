@@ -125,6 +125,9 @@
   - added `/modsettings` keys `sprintfly.enabled` + `sprintfly.ctrlFlySpeed`: while sprint key (`Ctrl`) is held and flight is allowed, fly speed is boosted; on release/disallow it restores previous baseline/server speed.
   - moved `AFTER_ENTITIES` outline path to explicit immediate x-ray line render (`depthFunc=ALWAYS`) to keep lines visible through blocks on common client stacks.
   - fixed `BEFORE_DEBUG_RENDER` outline coordinates to camera-relative space (subtract camera position), preventing vanishing/distant outlines after x-ray pass refactors.
+- Params-stage diagnostics reinforcement (no behavior change):
+  - added structured logs around params->args gate with container identity details: `window`, `title`, `nonPlayer`, `hash`, `ack`, and `chestReady`.
+  - new marker `params_apply_guard` shows exact snapshot used before entering `APPLY_ARGS`, for root-cause analysis of wrong-GUI arg injection.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).
