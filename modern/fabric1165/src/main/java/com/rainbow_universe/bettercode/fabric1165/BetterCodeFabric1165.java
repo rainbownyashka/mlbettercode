@@ -124,6 +124,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static int SNAPSHOT_CACHE_SYNC_ID = -1;
     private static int SNAPSHOT_CACHE_SCREEN_ID = -1;
     private static ContainerView SNAPSHOT_CACHE_VIEW = ContainerView.empty();
+    private static final RegAllTablesState REGALL_TABLES = new RegAllTablesState();
 
     @Override
     public void onInitializeClient() {
@@ -263,6 +264,18 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                         ))))
         );
 
+        ClientCommandManager.DISPATCHER.register(
+            ClientCommandManager.literal("regalltables")
+                .executes(ctx -> regAllTablesStart(ctx.getSource()))
+                .then(ClientCommandManager.literal("stop")
+                    .executes(ctx -> regAllTablesStop(ctx.getSource())))
+        );
+
+        ClientCommandManager.DISPATCHER.register(
+            ClientCommandManager.literal("modhelp")
+                .executes(ctx -> modHelp(ctx.getSource()))
+        );
+
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (shouldSkipDuplicateEndTick(client)) {
                 return;
@@ -276,6 +289,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             traceRuntimeTickProbe(client);
             handleLocalTpPath(client);
             handleSprintFlyBoost(client);
+            handleRegAllTablesTick(client);
             refreshWorldLoadSeedHint(client);
             refreshCodeEntrySeedHint(client);
             renderSelectionHighlights(client);
@@ -528,6 +542,419 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
         source.sendError(new LiteralText("[testcase] " + result.message()));
         return 0;
+    }
+
+    private static int regAllTablesStart(FabricClientCommandSource source) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.player == null || mc.world == null) {
+            source.sendError(new LiteralText("[regalltables] player/world unavailable"));
+            return 0;
+        }
+        TestcaseTool.MarkerView marker = TestcaseTool.markerView();
+        if (marker == null) {
+            source.sendError(new LiteralText("[regalltables] no marker. use /testcase setpos on action sign"));
+            return 0;
+        }
+        String dim = String.valueOf(mc.world.getRegistryKey().getValue());
+        if (!dim.equals(marker.dimension())) {
+            source.sendError(new LiteralText("[regalltables] dimension mismatch current=" + dim + " marker=" + marker.dimension()));
+            return 0;
+        }
+        synchronized (REGALL_TABLES) {
+            REGALL_TABLES.reset();
+            REGALL_TABLES.active = true;
+            REGALL_TABLES.dimension = dim;
+            REGALL_TABLES.signX = marker.x();
+            REGALL_TABLES.signY = marker.y();
+            REGALL_TABLES.signZ = marker.z();
+            REGALL_TABLES.currentPath = new ArrayList<String>();
+            REGALL_TABLES.queuePathKeys.add(pathKeyOf(REGALL_TABLES.currentPath));
+            REGALL_TABLES.phase = "OPEN_ROOT";
+            REGALL_TABLES.startedMs = System.currentTimeMillis();
+            REGALL_TABLES.nextActionMs = 0L;
+            REGALL_TABLES.lastProgressMs = REGALL_TABLES.startedMs;
+        }
+        source.sendFeedback(new LiteralText("[regalltables] started sign=" + marker.x() + "," + marker.y() + "," + marker.z()));
+        System.out.println("[printer-debug] regalltables start dim=" + dim + " sign=" + marker.x() + "," + marker.y() + "," + marker.z());
+        return 1;
+    }
+
+    private static int regAllTablesStop(FabricClientCommandSource source) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        int saved;
+        synchronized (REGALL_TABLES) {
+            if (!REGALL_TABLES.active) {
+                source.sendFeedback(new LiteralText("[regalltables] not running"));
+                return 1;
+            }
+            REGALL_TABLES.active = false;
+            saved = writeRegAllTablesExport(mc, REGALL_TABLES, "manual_stop");
+            REGALL_TABLES.reset();
+        }
+        source.sendFeedback(new LiteralText("[regalltables] stopped. exported records=" + saved));
+        return 1;
+    }
+
+    private static int modHelp(FabricClientCommandSource source) {
+        source.sendFeedback(new LiteralText("[modhelp] /mldsl run <postId|path.json> [config]"));
+        source.sendFeedback(new LiteralText("[modhelp] /module publish - publish selected rows"));
+        source.sendFeedback(new LiteralText("[modhelp] /testcase setpos|rightclick|tp|trapcheck|outline1..4"));
+        source.sendFeedback(new LiteralText("[modhelp] /regalltables - crawl menu tables from /testcase marker and export tablesexport.txt"));
+        source.sendFeedback(new LiteralText("[modhelp] /regalltables stop - stop crawl and export partial result"));
+        source.sendFeedback(new LiteralText("[modhelp] /modsettings - runtime settings"));
+        return 1;
+    }
+
+    private static void handleRegAllTablesTick(MinecraftClient mc) {
+        if (mc == null || mc.player == null || mc.world == null) {
+            return;
+        }
+        synchronized (REGALL_TABLES) {
+            if (!REGALL_TABLES.active) {
+                return;
+            }
+            long now = System.currentTimeMillis();
+            if (now < REGALL_TABLES.nextActionMs) {
+                return;
+            }
+            String dim = String.valueOf(mc.world.getRegistryKey().getValue());
+            if (!dim.equals(REGALL_TABLES.dimension)) {
+                int saved = writeRegAllTablesExport(mc, REGALL_TABLES, "dimension_changed");
+                System.out.println("[printer-debug] regalltables stop reason=dimension_changed exported=" + saved);
+                REGALL_TABLES.reset();
+                return;
+            }
+            if (now - REGALL_TABLES.startedMs > 15L * 60L * 1000L) {
+                int saved = writeRegAllTablesExport(mc, REGALL_TABLES, "timeout_15m");
+                System.out.println("[printer-debug] regalltables stop reason=timeout exported=" + saved);
+                REGALL_TABLES.reset();
+                return;
+            }
+            if (now - REGALL_TABLES.lastProgressMs > 20_000L) {
+                REGALL_TABLES.phase = "OPEN_ROOT";
+                REGALL_TABLES.replayIndex = 0;
+                closeScreenQuiet(mc);
+                REGALL_TABLES.nextActionMs = now + 160L;
+                return;
+            }
+            stepRegAllTables(mc, now);
+        }
+    }
+
+    private static void stepRegAllTables(MinecraftClient mc, long now) {
+        FabricBridge bridge = new FabricBridge(null);
+        ContainerView view = bridge.getContainerSnapshot();
+        if ("OPEN_ROOT".equals(REGALL_TABLES.phase)) {
+            if (!bridge.getCursorStack().isEmpty()) {
+                REGALL_TABLES.nextActionMs = now + 120L;
+                return;
+            }
+            closeScreenQuiet(mc);
+            ClickResult click = bridge.clickBlockLegacy(REGALL_TABLES.signX, REGALL_TABLES.signY, REGALL_TABLES.signZ, "regalltables_open_sign", true);
+            REGALL_TABLES.phase = "WAIT_MENU";
+            REGALL_TABLES.nextActionMs = now + (click != null && click.accepted() ? 260L : 420L);
+            return;
+        }
+        if ("WAIT_MENU".equals(REGALL_TABLES.phase)) {
+            if (view.windowId() < 0 || !hasNonPlayerMenuContent(view)) {
+                REGALL_TABLES.nextActionMs = now + 120L;
+                return;
+            }
+            if (REGALL_TABLES.replayIndex < REGALL_TABLES.currentPath.size()) {
+                REGALL_TABLES.phase = "REPLAY_PATH";
+                REGALL_TABLES.nextActionMs = now + 20L;
+                return;
+            }
+            REGALL_TABLES.phase = "SCAN_MENU";
+            REGALL_TABLES.nextActionMs = now + 20L;
+            return;
+        }
+        if ("REPLAY_PATH".equals(REGALL_TABLES.phase)) {
+            if (view.windowId() < 0) {
+                REGALL_TABLES.phase = "OPEN_ROOT";
+                REGALL_TABLES.nextActionMs = now + 160L;
+                return;
+            }
+            String wanted = REGALL_TABLES.currentPath.get(REGALL_TABLES.replayIndex);
+            SlotView slot = findSlotByName(view, wanted);
+            if (slot == null) {
+                REGALL_TABLES.phase = "ADVANCE_MENU";
+                REGALL_TABLES.nextActionMs = now + 20L;
+                return;
+            }
+            if (!bridge.getCursorStack().isEmpty()) {
+                REGALL_TABLES.nextActionMs = now + 120L;
+                return;
+            }
+            ClickResult click = bridge.clickSlot(view.windowId(), slot.slotNumber(), 0, "PICKUP");
+            if (click == null || !click.accepted()) {
+                REGALL_TABLES.phase = "ADVANCE_MENU";
+                REGALL_TABLES.nextActionMs = now + 20L;
+                return;
+            }
+            REGALL_TABLES.pendingWindowId = view.windowId();
+            REGALL_TABLES.pendingClickMs = now;
+            REGALL_TABLES.phase = "WAIT_REPLAY_CLICK";
+            REGALL_TABLES.nextActionMs = now + 220L;
+            return;
+        }
+        if ("WAIT_REPLAY_CLICK".equals(REGALL_TABLES.phase)) {
+            if (!bridge.getCursorStack().isEmpty()) {
+                REGALL_TABLES.nextActionMs = now + 120L;
+                return;
+            }
+            if (now - REGALL_TABLES.pendingClickMs < 180L) {
+                REGALL_TABLES.nextActionMs = now + 80L;
+                return;
+            }
+            REGALL_TABLES.replayIndex++;
+            REGALL_TABLES.phase = "WAIT_MENU";
+            REGALL_TABLES.nextActionMs = now + 100L;
+            return;
+        }
+        if ("SCAN_MENU".equals(REGALL_TABLES.phase)) {
+            if (view.windowId() < 0 || !hasNonPlayerMenuContent(view)) {
+                REGALL_TABLES.phase = "OPEN_ROOT";
+                REGALL_TABLES.replayIndex = 0;
+                REGALL_TABLES.nextActionMs = now + 180L;
+                return;
+            }
+            String menuKey = pathKeyOf(REGALL_TABLES.currentPath);
+            List<SlotView> candidates = collectUntestedMenuSlots(view, menuKey);
+            if (candidates.isEmpty()) {
+                REGALL_TABLES.visitedMenuKeys.add(menuKey);
+                REGALL_TABLES.phase = "ADVANCE_MENU";
+                REGALL_TABLES.nextActionMs = now + 20L;
+                return;
+            }
+            SlotView target = candidates.get(0);
+            if (!bridge.getCursorStack().isEmpty()) {
+                REGALL_TABLES.nextActionMs = now + 120L;
+                return;
+            }
+            ClickResult click = bridge.clickSlot(view.windowId(), target.slotNumber(), 0, "PICKUP");
+            if (click == null || !click.accepted()) {
+                markMenuSlotTested(menuKey, target);
+                REGALL_TABLES.nextActionMs = now + 120L;
+                return;
+            }
+            REGALL_TABLES.pendingMenuKey = menuKey;
+            REGALL_TABLES.pendingSlot = target;
+            REGALL_TABLES.pendingWindowId = view.windowId();
+            REGALL_TABLES.pendingClickMs = now;
+            REGALL_TABLES.phase = "WAIT_TEST_RESULT";
+            REGALL_TABLES.nextActionMs = now + 220L;
+            REGALL_TABLES.lastProgressMs = now;
+            return;
+        }
+        if ("WAIT_TEST_RESULT".equals(REGALL_TABLES.phase)) {
+            if (!bridge.getCursorStack().isEmpty()) {
+                REGALL_TABLES.nextActionMs = now + 120L;
+                return;
+            }
+            if (now - REGALL_TABLES.pendingClickMs < 180L) {
+                REGALL_TABLES.nextActionMs = now + 80L;
+                return;
+            }
+            ContainerView after = bridge.getContainerSnapshot();
+            boolean closed = after.windowId() < 0;
+            String type = closed ? "action" : "category";
+            String menuPath = String.join(" > ", REGALL_TABLES.currentPath);
+            String name = slotLabel(REGALL_TABLES.pendingSlot);
+            String itemId = REGALL_TABLES.pendingSlot == null ? "" : safeText(REGALL_TABLES.pendingSlot.itemId());
+            REGALL_TABLES.records.add(new RegAllTablesRecord(menuPath, name, itemId, type));
+            markMenuSlotTested(REGALL_TABLES.pendingMenuKey, REGALL_TABLES.pendingSlot);
+            if (!closed) {
+                ArrayList<String> child = new ArrayList<String>(REGALL_TABLES.currentPath);
+                if (!name.isEmpty()) {
+                    child.add(name);
+                }
+                String childKey = pathKeyOf(child);
+                if (!REGALL_TABLES.visitedMenuKeys.contains(childKey) && REGALL_TABLES.queuePathKeys.add(childKey)) {
+                    REGALL_TABLES.pendingMenus.addLast(child);
+                }
+            }
+            closeScreenQuiet(mc);
+            REGALL_TABLES.replayIndex = 0;
+            REGALL_TABLES.phase = "OPEN_ROOT";
+            REGALL_TABLES.nextActionMs = now + 180L;
+            REGALL_TABLES.lastProgressMs = now;
+            REGALL_TABLES.pendingMenuKey = "";
+            REGALL_TABLES.pendingSlot = null;
+            return;
+        }
+        if ("ADVANCE_MENU".equals(REGALL_TABLES.phase)) {
+            while (!REGALL_TABLES.pendingMenus.isEmpty()) {
+                List<String> next = REGALL_TABLES.pendingMenus.removeFirst();
+                String key = pathKeyOf(next);
+                if (REGALL_TABLES.visitedMenuKeys.contains(key)) {
+                    continue;
+                }
+                REGALL_TABLES.currentPath = new ArrayList<String>(next);
+                REGALL_TABLES.replayIndex = 0;
+                REGALL_TABLES.phase = "OPEN_ROOT";
+                REGALL_TABLES.nextActionMs = now + 160L;
+                REGALL_TABLES.lastProgressMs = now;
+                return;
+            }
+            int saved = writeRegAllTablesExport(mc, REGALL_TABLES, "done");
+            System.out.println("[printer-debug] regalltables done records=" + saved);
+            REGALL_TABLES.reset();
+        }
+    }
+
+    private static void closeScreenQuiet(MinecraftClient mc) {
+        if (mc != null && mc.player != null && mc.currentScreen != null) {
+            mc.player.closeHandledScreen();
+        }
+    }
+
+    private static boolean hasNonPlayerMenuContent(ContainerView view) {
+        if (view == null || view.slots() == null || view.windowId() < 0) {
+            return false;
+        }
+        for (SlotView s : view.slots()) {
+            if (s == null || s.playerInventory() || s.empty()) {
+                continue;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private static SlotView findSlotByName(ContainerView view, String wanted) {
+        String key = normalizeMenuText(wanted);
+        if (key.isEmpty() || view == null || view.slots() == null) {
+            return null;
+        }
+        for (SlotView s : view.slots()) {
+            if (s == null || s.playerInventory() || s.empty()) {
+                continue;
+            }
+            String n = normalizeMenuText(s.displayName());
+            if (!n.isEmpty() && n.equals(key)) {
+                return s;
+            }
+        }
+        for (SlotView s : view.slots()) {
+            if (s == null || s.playerInventory() || s.empty()) {
+                continue;
+            }
+            String n = normalizeMenuText(s.displayName());
+            if (!n.isEmpty() && (n.contains(key) || key.contains(n))) {
+                return s;
+            }
+        }
+        return null;
+    }
+
+    private static List<SlotView> collectUntestedMenuSlots(ContainerView view, String menuKey) {
+        ArrayList<SlotView> out = new ArrayList<SlotView>();
+        if (view == null || view.slots() == null) {
+            return out;
+        }
+        Set<String> tested = REGALL_TABLES.testedSlotKeysByMenu.get(menuKey);
+        for (SlotView s : view.slots()) {
+            if (s == null || s.playerInventory() || s.empty()) {
+                continue;
+            }
+            String itemId = safeText(s.itemId()).toLowerCase();
+            if (itemId.endsWith(":arrow")) {
+                continue;
+            }
+            String k = slotIdentityKey(s);
+            if (tested != null && tested.contains(k)) {
+                continue;
+            }
+            out.add(s);
+        }
+        out.sort(Comparator.comparingInt(SlotView::slotNumber));
+        return out;
+    }
+
+    private static void markMenuSlotTested(String menuKey, SlotView slot) {
+        if (menuKey == null) {
+            menuKey = "";
+        }
+        Set<String> tested = REGALL_TABLES.testedSlotKeysByMenu.get(menuKey);
+        if (tested == null) {
+            tested = new HashSet<String>();
+            REGALL_TABLES.testedSlotKeysByMenu.put(menuKey, tested);
+        }
+        tested.add(slotIdentityKey(slot));
+    }
+
+    private static String slotIdentityKey(SlotView slot) {
+        if (slot == null) {
+            return "";
+        }
+        return normalizeMenuText(slot.displayName()) + "|" + safeText(slot.itemId()).toLowerCase();
+    }
+
+    private static String slotLabel(SlotView slot) {
+        return normalizeMenuText(slot == null ? "" : slot.displayName());
+    }
+
+    private static String normalizeMenuText(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String s = raw.replaceAll("(?i)§.", " ").toLowerCase();
+        s = s.replace('ё', 'е');
+        s = s.replace('\u00A0', ' ');
+        s = s.replaceAll("[^\\p{L}\\p{N}\\s]+", " ");
+        s = s.replaceAll("\\s+", " ").trim();
+        return s;
+    }
+
+    private static String pathKeyOf(List<String> path) {
+        if (path == null || path.isEmpty()) {
+            return "/";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String p : path) {
+            String n = normalizeMenuText(p);
+            if (n.isEmpty()) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append(" > ");
+            }
+            sb.append(n);
+        }
+        return sb.length() == 0 ? "/" : sb.toString();
+    }
+
+    private static int writeRegAllTablesExport(MinecraftClient mc, RegAllTablesState state, String reason) {
+        if (mc == null || mc.runDirectory == null || state == null) {
+            return 0;
+        }
+        Path out = mc.runDirectory.toPath().resolve("tablesexport.txt");
+        ArrayList<String> lines = new ArrayList<String>();
+        lines.add("reason=" + safeText(reason));
+        lines.add("dimension=" + safeText(state.dimension));
+        lines.add("sign=" + state.signX + "," + state.signY + "," + state.signZ);
+        lines.add("records=" + state.records.size());
+        for (int i = 0; i < state.records.size(); i++) {
+            RegAllTablesRecord r = state.records.get(i);
+            lines.add("");
+            lines.add("# record " + (i + 1));
+            lines.add("path=" + safeText(r.path));
+            lines.add("item=" + safeText(r.item));
+            lines.add("itemId=" + safeText(r.itemId));
+            lines.add("type=" + safeText(r.type));
+        }
+        try {
+            Files.write(out, lines);
+            return state.records.size();
+        } catch (Exception e) {
+            System.out.println("[printer-debug] regalltables export failed: " + e.getClass().getSimpleName() + " " + e.getMessage());
+            return 0;
+        }
+    }
+
+    private static String safeText(String s) {
+        return s == null ? "" : s;
     }
 
     private static int toggleCurrentBlock(FabricClientCommandSource source) {
@@ -833,6 +1260,66 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             tpSettleUntilMs = 0L;
             lastPlaceWorldTraceMs = 0L;
             usedRowSeeds.clear();
+        }
+    }
+
+    private static final class RegAllTablesState {
+        boolean active = false;
+        String dimension = "";
+        int signX = 0;
+        int signY = 0;
+        int signZ = 0;
+        String phase = "IDLE";
+        long startedMs = 0L;
+        long nextActionMs = 0L;
+        long lastProgressMs = 0L;
+        int replayIndex = 0;
+        List<String> currentPath = new ArrayList<String>();
+        final Deque<List<String>> pendingMenus = new ArrayDeque<List<String>>();
+        final Set<String> queuePathKeys = new HashSet<String>();
+        final Set<String> visitedMenuKeys = new HashSet<String>();
+        final Map<String, Set<String>> testedSlotKeysByMenu = new LinkedHashMap<String, Set<String>>();
+        final List<RegAllTablesRecord> records = new ArrayList<RegAllTablesRecord>();
+        String pendingMenuKey = "";
+        SlotView pendingSlot = null;
+        int pendingWindowId = -1;
+        long pendingClickMs = 0L;
+
+        void reset() {
+            active = false;
+            dimension = "";
+            signX = 0;
+            signY = 0;
+            signZ = 0;
+            phase = "IDLE";
+            startedMs = 0L;
+            nextActionMs = 0L;
+            lastProgressMs = 0L;
+            replayIndex = 0;
+            currentPath = new ArrayList<String>();
+            pendingMenus.clear();
+            queuePathKeys.clear();
+            visitedMenuKeys.clear();
+            testedSlotKeysByMenu.clear();
+            records.clear();
+            pendingMenuKey = "";
+            pendingSlot = null;
+            pendingWindowId = -1;
+            pendingClickMs = 0L;
+        }
+    }
+
+    private static final class RegAllTablesRecord {
+        final String path;
+        final String item;
+        final String itemId;
+        final String type;
+
+        private RegAllTablesRecord(String path, String item, String itemId, String type) {
+            this.path = path == null ? "" : path;
+            this.item = item == null ? "" : item;
+            this.itemId = itemId == null ? "" : itemId;
+            this.type = type == null ? "" : type;
         }
     }
 
@@ -3227,3 +3714,4 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         return false;
     }
 }
+

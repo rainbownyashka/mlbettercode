@@ -231,6 +231,14 @@
   - new trace:
     - `menu_route_plan key=... path=... matchedPathKey=...`
     - `menu_route_match ... pathKey=...`
+- Fabric1165 table crawler commands:
+  - added `/regalltables` start + `/regalltables stop`:
+    - source marker is `/testcase setpos` position (action sign),
+    - crawler opens sign menu, traverses categories without re-testing already visited entries per menu path,
+    - classification rule follows requested logic: if GUI closes after click => `action`, if GUI remains open => `category`,
+    - click gate enforces cursor-empty before any click,
+    - writes `tablesexport.txt` in `.minecraft` run dir (full or partial on stop/timeout).
+  - added `/modhelp` command that lists key mod commands and purpose.
   - latest live-log stabilization slice (2026-02-19):
     - fixed menu-payload step cursor progression: adapters now advance cursor on explicit step completion callback from core, not only on immediate block confirm,
     - reduced wrong-target click risk: sign/params y-offset probes are now tried top-down (`dy=0..-2`) in core/adapters,
