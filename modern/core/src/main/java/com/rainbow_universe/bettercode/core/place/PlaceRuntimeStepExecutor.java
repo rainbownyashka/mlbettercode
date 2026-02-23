@@ -2402,17 +2402,9 @@ public final class PlaceRuntimeStepExecutor {
             "minecraft:chest",
             "minecraft:barrel"
         };
-        int[][] offsets = new int[][] {
-            {0, 1, 0},
-            {0, 2, 0},
-            {0, 0, 0},
-            {0, -1, 0}
-        };
-        for (int[] off : offsets) {
-            for (String id : ids) {
-                if (bridge.isBlockAt(anchor.x() + off[0], anchor.y() + off[1], anchor.z() + off[2], id)) {
-                    return true;
-                }
+        for (String id : ids) {
+            if (bridge.isBlockAt(anchor.x(), anchor.y() + 1, anchor.z(), id)) {
+                return true;
             }
         }
         return false;
@@ -2426,18 +2418,7 @@ public final class PlaceRuntimeStepExecutor {
         if (anchor == null) {
             return false;
         }
-        int[][] offsets = new int[][] {
-            {0, 1, 0},
-            {0, 2, 0},
-            {0, 0, 0},
-            {0, -1, 0}
-        };
-        for (int[] off : offsets) {
-            if (bridge.isBlockAt(anchor.x() + off[0], anchor.y() + off[1], anchor.z() + off[2], "minecraft:trapped_chest")) {
-                return true;
-            }
-        }
-        return false;
+        return bridge.isBlockAt(anchor.x(), anchor.y() + 1, anchor.z(), "minecraft:trapped_chest");
     }
 
     private static SlotView findNextPageArrowSlot(ContainerView view) {

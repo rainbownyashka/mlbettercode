@@ -161,6 +161,7 @@
   - if trapped chest is missing, runtime stops params-reopen spam and explicitly returns to menu stage (`OPEN_MENU`) to re-run action selection from sign GUI.
   - added explicit trace marker:
     - `runtime_state=WAIT_PARAMS_CHEST action=return_to_menu_no_trapped_chest ...`
+  - chest position check is now strict legacy-style at `entry.y+1` only (same `x/z` as runtime anchor), no `y+2/y/y-1` fallback offsets.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).
