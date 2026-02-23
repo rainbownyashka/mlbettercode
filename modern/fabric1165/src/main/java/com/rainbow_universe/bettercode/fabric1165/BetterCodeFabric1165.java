@@ -269,7 +269,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             renderSelectionHighlights(client);
             runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis());
         });
-        WorldRenderEvents.AFTER_ENTITIES.register(BetterCodeFabric1165::renderSelectionOutlinesBuffered);
+        WorldRenderEvents.BEFORE_DEBUG_RENDER.register(BetterCodeFabric1165::renderSelectionOutlines);
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
             if (hand != Hand.MAIN_HAND || player == null || world == null || hitResult == null) {
                 return ActionResult.PASS;
@@ -2886,7 +2886,6 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         if (context.camera() == null) {
             return;
         }
-        Vec3d cam = context.camera().getPos();
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         RenderSystem.disableTexture();
@@ -2910,8 +2909,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             Box box = new Box(top).expand(0.003);
             WorldRenderer.drawBox(
                 bb,
-                box.minX - cam.x, box.minY - cam.y, box.minZ - cam.z,
-                box.maxX - cam.x, box.maxY - cam.y, box.maxZ - cam.z,
+                box.minX, box.minY, box.minZ,
+                box.maxX, box.maxY, box.maxZ,
                 outline[0], outline[1], outline[2], 1.0F
             );
             drawn++;
@@ -2924,75 +2923,10 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             Box markerBox = new Box(markerPos).expand(0.01);
             WorldRenderer.drawBox(
                 bb,
-                markerBox.minX - cam.x, markerBox.minY - cam.y, markerBox.minZ - cam.z,
-                markerBox.maxX - cam.x, markerBox.maxY - cam.y, markerBox.maxZ - cam.z,
+                markerBox.minX, markerBox.minY, markerBox.minZ,
+                markerBox.maxX, markerBox.maxY, markerBox.maxZ,
                 1.0F, 0.45F, 0.15F, 1.0F
             );
-        }
-        Tessellator.getInstance().draw();
-        RenderSystem.depthFunc(GL11.GL_LEQUAL);
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.enableTexture();
-        RenderSystem.disableBlend();
-    }
-
-    private static void renderSelectionOutlinesBuffered(WorldRenderContext context) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (context == null || mc == null || mc.world == null || mc.player == null || context.camera() == null) {
-            return;
-        }
-        String dim = String.valueOf(mc.world.getRegistryKey().getValue());
-        TestcaseTool.MarkerView marker = TestcaseTool.markerView();
-        if (SELECTED.isEmpty() && (marker == null || !dim.equals(marker.dimension()))) {
-            return;
-        }
-        Vec3d cam = context.camera().getPos();
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableTexture();
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
-        RenderSystem.depthFunc(GL11.GL_ALWAYS);
-        RenderSystem.lineWidth(2.0F);
-        BufferBuilder bb = Tessellator.getInstance().getBuffer();
-        bb.begin(GL11.GL_LINES, VertexFormats.POSITION_COLOR);
-        float[] outline = selectionOutlineColor();
-        int drawn = 0;
-        for (SelectedRow row : SELECTED.values()) {
-            if (row == null || !dim.equals(row.dimension())) {
-                continue;
-            }
-            BlockPos anchor = new BlockPos(row.x(), row.y(), row.z());
-            if (!isBlueGlassAt(mc, anchor)) {
-                continue;
-            }
-            Box box = new Box(anchor.up()).expand(0.003);
-            WorldRenderer.drawBox(
-                bb,
-                box.minX - cam.x, box.minY - cam.y, box.minZ - cam.z,
-                box.maxX - cam.x, box.maxY - cam.y, box.maxZ - cam.z,
-                outline[0], outline[1], outline[2], 1.0F
-            );
-            drawn++;
-            if (drawn >= 120) {
-                break;
-            }
-        }
-        if (marker != null && dim.equals(marker.dimension())) {
-            Box markerBox = new Box(new BlockPos(marker.x(), marker.y(), marker.z())).expand(0.01);
-            WorldRenderer.drawBox(
-                bb,
-                markerBox.minX - cam.x, markerBox.minY - cam.y, markerBox.minZ - cam.z,
-                markerBox.maxX - cam.x, markerBox.maxY - cam.y, markerBox.maxZ - cam.z,
-                1.0F, 0.45F, 0.15F, 1.0F
-            );
-            long now = System.currentTimeMillis();
-            if (now - LAST_TESTCASE_RENDER_LOG_MS >= 1800L) {
-                LAST_TESTCASE_RENDER_LOG_MS = now;
-                System.out.println("[printer-debug] testcase_outline_rendered event=AFTER_ENTITIES dim=" + dim
-                    + " pos=" + marker.x() + "," + marker.y() + "," + marker.z());
-            }
         }
         Tessellator.getInstance().draw();
         RenderSystem.depthFunc(GL11.GL_LEQUAL);

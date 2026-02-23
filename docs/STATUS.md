@@ -135,7 +135,8 @@
   - from live `latest.log`: `params_apply_guard ... chestReady=false` was followed by `runtime_state=OPEN_PARAMS_CHEST` and `APPLY_ARGS`, causing args injection into non-params GUI (including player inventory-like windows).
   - fixed transition guard: when `paramsStable` but `chestReady=false`, runtime now blocks args and forces controlled close/reopen path (`reason=guard_chest_missing`), no `APPLY_ARGS`.
 - Render artifact stabilization:
-  - disabled duplicate `BEFORE_DEBUG_RENDER` outline pass; kept single `AFTER_ENTITIES` x-ray line path to avoid camera-space floating ghost block while rotating near target.
+  - reverted to single legacy-like `BEFORE_DEBUG_RENDER` path (world-space line draw + x-ray depth state).
+  - removed `AFTER_ENTITIES` buffered path that introduced floating/camera-space ghost artifact near target.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).
