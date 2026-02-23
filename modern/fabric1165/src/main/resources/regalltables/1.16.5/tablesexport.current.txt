@@ -1,0 +1,4018 @@
+reason=done
+dimension=minecraft:overworld
+sign=219,11,194
+records=34
+
+# record 1
+path=
+item=запуск мира
+itemId=minecraft:emerald
+type=action
+
+# record 2
+path=
+item=остановка мира
+itemId=minecraft:bricks
+type=action
+
+# record 3
+path=
+item=прием данных
+itemId=minecraft:gold_block
+type=action
+
+# record 4
+path=
+item=блок загорелся
+itemId=minecraft:fire_charge
+type=action
+
+# record 5
+path=
+item=блок сгорел
+itemId=minecraft:flint_and_steel
+type=action
+
+# record 6
+path=
+item=блок пропал
+itemId=minecraft:ice
+type=action
+
+# record 7
+path=
+item=поршень выдвигается
+itemId=minecraft:sticky_piston
+type=action
+
+# record 8
+path=
+item=поршень вдвигается
+itemId=minecraft:piston
+type=action
+
+# record 9
+path=
+item=блок взорвался
+itemId=minecraft:tnt
+type=action
+
+# record 10
+path=
+item=спавн существа
+itemId=minecraft:spawner
+type=action
+
+# record 11
+path=
+item=сущность взорвалась
+itemId=minecraft:end_crystal
+type=action
+
+# record 12
+path=
+item=сущность решила взорваться
+itemId=minecraft:redstone_block
+type=action
+
+# record 13
+path=
+item=опадение листьев
+itemId=minecraft:oak_leaves
+type=action
+
+# record 14
+path=
+item=дерево выросло
+itemId=minecraft:oak_sapling
+type=action
+
+# record 15
+path=
+item=блок вырос
+itemId=minecraft:wheat_seeds
+type=action
+
+# record 16
+path=
+item=блок переместился
+itemId=minecraft:water_bucket
+type=action
+
+# record 17
+path=
+item=зельеварка приготовила зелье я
+itemId=minecraft:brewing_stand
+type=action
+
+# record 18
+path=
+item=зельеварка увеличила уровень топлива
+itemId=minecraft:blaze_powder
+type=action
+
+# record 19
+path=
+item=блок сгенерировался
+itemId=minecraft:cobblestone
+type=action
+
+# record 20
+path=
+item=генерация блока из за сущности
+itemId=minecraft:carved_pumpkin
+type=action
+
+# record 21
+path=
+item=блок распространился
+itemId=minecraft:brown_mushroom
+type=action
+
+# record 22
+path=
+item=падающий блок приземляется
+itemId=minecraft:sand
+type=action
+
+# record 23
+path=
+item=создание портала
+itemId=minecraft:obsidian
+type=action
+
+# record 24
+path=
+item=нотный блок проиграл звук
+itemId=minecraft:note_block
+type=action
+
+# record 25
+path=
+item=блок выкинул предмет
+itemId=minecraft:dispenser
+type=action
+
+# record 26
+path=
+item=предмет пропал
+itemId=minecraft:dirt
+type=action
+
+# record 27
+path=
+item=предметы объединились
+itemId=minecraft:grass_block
+type=action
+
+# record 28
+path=
+item=котел изменил уровень воды
+itemId=minecraft:cauldron
+type=action
+
+# record 29
+path=
+item=табличка была изменена
+itemId=minecraft:oak_sign
+type=action
+
+# record 30
+path=
+item=блок выделил опыт
+itemId=minecraft:experience_bottle
+type=action
+
+# record 31
+path=
+item=предмет переместился в контейнер
+itemId=minecraft:hopper_minecart
+type=action
+
+# record 32
+path=
+item=воронка подбирает предмет
+itemId=minecraft:hopper
+type=action
+
+# record 33
+path=
+item=печь закончила плавку
+itemId=minecraft:furnace
+type=action
+
+# record 34
+path=
+item=печь использует топливо
+itemId=minecraft:coal
+type=action
+
+# ==== regalltables export session ====
+ts=1771863948196
+reason=done
+dimension=minecraft:overworld
+sign=219,11,198
+records=64
+
+# record 1
+path=
+item=взаимодействие с миром
+itemId=minecraft:cobblestone
+type=category
+
+# record 2
+path=
+item=взаимодействие с инвентарем
+itemId=minecraft:chest
+type=category
+
+# record 3
+path=
+item=нанесение и получение урона
+itemId=minecraft:iron_sword
+type=category
+
+# record 4
+path=
+item=передвижение
+itemId=minecraft:leather_boots
+type=category
+
+# record 5
+path=
+item=разное
+itemId=minecraft:minecart
+type=category
+
+# record 6
+path=взаимодействие с миром
+item=вход игрока
+itemId=minecraft:potato
+type=action
+
+# record 7
+path=взаимодействие с миром
+item=выход игрока
+itemId=minecraft:poisonous_potato
+type=action
+
+# record 8
+path=взаимодействие с миром
+item=игрок перезашел в игру
+itemId=minecraft:baked_potato
+type=action
+
+# record 9
+path=взаимодействие с миром
+item=взаимодействие с блоком
+itemId=minecraft:golden_hoe
+type=action
+
+# record 10
+path=взаимодействие с миром
+item=игрок кликает правой кнопкой
+itemId=minecraft:diamond_pickaxe
+type=action
+
+# record 11
+path=взаимодействие с миром
+item=игрок кликает левой кнопкой
+itemId=minecraft:iron_pickaxe
+type=action
+
+# record 12
+path=взаимодействие с миром
+item=правый клик по существу
+itemId=minecraft:porkchop
+type=action
+
+# record 13
+path=взаимодействие с миром
+item=игрок привязал сущность
+itemId=minecraft:lead
+type=action
+
+# record 14
+path=взаимодействие с миром
+item=игрок приручил сущность
+itemId=minecraft:bone
+type=action
+
+# record 15
+path=взаимодействие с миром
+item=игрок поставил блок
+itemId=minecraft:stone
+type=action
+
+# record 16
+path=взаимодействие с миром
+item=игрок ломает блок
+itemId=minecraft:cobblestone
+type=action
+
+# record 17
+path=взаимодействие с миром
+item=игрок рыбачит
+itemId=minecraft:fishing_rod
+type=action
+
+# record 18
+path=взаимодействие с миром
+item=игрок дамажит блок
+itemId=minecraft:gravel
+type=action
+
+# record 19
+path=взаимодействие с миром
+item=игрок подобрал опыт
+itemId=minecraft:experience_bottle
+type=action
+
+# record 20
+path=взаимодействие с миром
+item=игрок лайкает игру
+itemId=minecraft:gold_nugget
+type=action
+
+# record 21
+path=взаимодействие с миром
+item=транзакция креатив коинов
+itemId=minecraft:gold_ingot
+type=action
+
+# record 22
+path=взаимодействие с миром
+item=событие покупки рекламы как транзакции
+itemId=minecraft:diamond
+type=action
+
+# record 23
+path=взаимодействие с миром
+item=игрок приобрел баллы игре
+itemId=minecraft:golden_apple
+type=action
+
+# record 24
+path=взаимодействие с миром
+item=транзакция mineland studio
+itemId=minecraft:emerald
+type=action
+
+# record 25
+path=взаимодействие с инвентарем
+item=игрок открыл инвентарь
+itemId=minecraft:lime_glazed_terracotta
+type=action
+
+# record 26
+path=взаимодействие с инвентарем
+item=игрок закрыл инвентарь
+itemId=minecraft:red_glazed_terracotta
+type=action
+
+# record 27
+path=взаимодействие с инвентарем
+item=игрок изменил книгу
+itemId=minecraft:writable_book
+type=action
+
+# record 28
+path=взаимодействие с инвентарем
+item=предмет потратил прочность
+itemId=minecraft:iron_sword
+type=action
+
+# record 29
+path=взаимодействие с инвентарем
+item=игрок сломал предмет
+itemId=minecraft:stone_pickaxe
+type=action
+
+# record 30
+path=взаимодействие с инвентарем
+item=игрок кликнул по инвентарю
+itemId=minecraft:tripwire_hook
+type=action
+
+# record 31
+path=взаимодействие с инвентарем
+item=игрок перетащил предметы по слотам
+itemId=minecraft:prismarine_crystals
+type=action
+
+# record 32
+path=взаимодействие с инвентарем
+item=игрок поднимает предмет
+itemId=minecraft:glowstone_dust
+type=action
+
+# record 33
+path=взаимодействие с инвентарем
+item=игрок выбрасывает предмет
+itemId=minecraft:sugar
+type=action
+
+# record 34
+path=взаимодействие с инвентарем
+item=смена рук
+itemId=minecraft:repeating_command_block
+type=action
+
+# record 35
+path=взаимодействие с инвентарем
+item=игрок скрафтил предмет
+itemId=minecraft:crafting_table
+type=action
+
+# record 36
+path=взаимодействие с инвентарем
+item=игрок достал предмет из печи
+itemId=minecraft:furnace
+type=action
+
+# record 37
+path=взаимодействие с инвентарем
+item=игрок сменил слот
+itemId=minecraft:slime_ball
+type=action
+
+# record 38
+path=нанесение и получение урона
+item=игрок убил игрока
+itemId=minecraft:skeleton_skull
+type=category
+
+# record 39
+path=нанесение и получение урона
+item=смерть игрока
+itemId=minecraft:redstone
+type=action
+
+# record 40
+path=нанесение и получение урона
+item=игрок убил игрока
+itemId=minecraft:skeleton_skull
+type=action
+
+# record 41
+path=нанесение и получение урона
+item=игрок нанес урон игроку
+itemId=minecraft:iron_sword
+type=action
+
+# record 42
+path=нанесение и получение урона
+item=урон от снаряда
+itemId=minecraft:arrow
+type=action
+
+# record 43
+path=нанесение и получение урона
+item=игрок получает урон
+itemId=minecraft:dead_bush
+type=action
+
+# record 44
+path=нанесение и получение урона
+item=урон от падения
+itemId=minecraft:grass_block
+type=action
+
+# record 45
+path=нанесение и получение урона
+item=игрок убил моба
+itemId=minecraft:bat_spawn_egg
+type=action
+
+# record 46
+path=нанесение и получение урона
+item=моб убил игрока
+itemId=minecraft:bone
+type=action
+
+# record 47
+path=нанесение и получение урона
+item=игрок нанес урон мобу
+itemId=minecraft:stone_sword
+type=action
+
+# record 48
+path=нанесение и получение урона
+item=моб наносит урон игроку
+itemId=minecraft:wooden_sword
+type=action
+
+# record 49
+path=нанесение и получение урона
+item=игрок нанес урон мобу при помощи снаряда
+itemId=minecraft:spectral_arrow
+type=action
+
+# record 50
+path=нанесение и получение урона
+item=игрок убил моба при помощи снаряда
+itemId=minecraft:bow
+type=action
+
+# record 51
+path=нанесение и получение урона
+item=смерть моба
+itemId=minecraft:redstone
+type=action
+
+# record 52
+path=нанесение и получение урона
+item=моб получает урон
+itemId=minecraft:dead_bush
+type=action
+
+# record 53
+path=нанесение и получение урона
+item=сущность восстановила здоровье
+itemId=minecraft:lingering_potion
+type=action
+
+# record 54
+path=передвижение
+item=игрок крадется
+itemId=minecraft:chainmail_leggings
+type=action
+
+# record 55
+path=передвижение
+item=игрок перестает красться
+itemId=minecraft:iron_leggings
+type=action
+
+# record 56
+path=передвижение
+item=игрок бежит
+itemId=minecraft:golden_boots
+type=action
+
+# record 57
+path=передвижение
+item=прыжок
+itemId=minecraft:rabbit_foot
+type=action
+
+# record 58
+path=передвижение
+item=игрок прекратил бежать
+itemId=minecraft:iron_boots
+type=action
+
+# record 59
+path=передвижение
+item=передвижение
+itemId=minecraft:leather_boots
+type=action
+
+# record 60
+path=передвижение
+item=игрок повернулся
+itemId=minecraft:armor_stand
+type=action
+
+# record 61
+path=разное
+item=событие чата
+itemId=minecraft:feather
+type=action
+
+# record 62
+path=разное
+item=игрок запустил снаряд
+itemId=minecraft:snowball
+type=action
+
+# record 63
+path=разное
+item=игрок потребляет предмет
+itemId=minecraft:cookie
+type=action
+
+# record 64
+path=разное
+item=изменение уровня голода
+itemId=minecraft:cooked_chicken
+type=action
+
+# ==== regalltables export session ====
+ts=1771863962635
+reason=done
+dimension=minecraft:overworld
+sign=219,11,198
+records=34
+
+# record 1
+path=
+item=запуск мира
+itemId=minecraft:emerald
+type=action
+
+# record 2
+path=
+item=остановка мира
+itemId=minecraft:bricks
+type=action
+
+# record 3
+path=
+item=прием данных
+itemId=minecraft:gold_block
+type=action
+
+# record 4
+path=
+item=блок загорелся
+itemId=minecraft:fire_charge
+type=action
+
+# record 5
+path=
+item=блок сгорел
+itemId=minecraft:flint_and_steel
+type=action
+
+# record 6
+path=
+item=блок пропал
+itemId=minecraft:ice
+type=action
+
+# record 7
+path=
+item=поршень выдвигается
+itemId=minecraft:sticky_piston
+type=action
+
+# record 8
+path=
+item=поршень вдвигается
+itemId=minecraft:piston
+type=action
+
+# record 9
+path=
+item=блок взорвался
+itemId=minecraft:tnt
+type=action
+
+# record 10
+path=
+item=спавн существа
+itemId=minecraft:spawner
+type=action
+
+# record 11
+path=
+item=сущность взорвалась
+itemId=minecraft:end_crystal
+type=action
+
+# record 12
+path=
+item=сущность решила взорваться
+itemId=minecraft:redstone_block
+type=action
+
+# record 13
+path=
+item=опадение листьев
+itemId=minecraft:oak_leaves
+type=action
+
+# record 14
+path=
+item=дерево выросло
+itemId=minecraft:oak_sapling
+type=action
+
+# record 15
+path=
+item=блок вырос
+itemId=minecraft:wheat_seeds
+type=action
+
+# record 16
+path=
+item=блок переместился
+itemId=minecraft:water_bucket
+type=action
+
+# record 17
+path=
+item=зельеварка приготовила зелье я
+itemId=minecraft:brewing_stand
+type=action
+
+# record 18
+path=
+item=зельеварка увеличила уровень топлива
+itemId=minecraft:blaze_powder
+type=action
+
+# record 19
+path=
+item=блок сгенерировался
+itemId=minecraft:cobblestone
+type=action
+
+# record 20
+path=
+item=генерация блока из за сущности
+itemId=minecraft:carved_pumpkin
+type=action
+
+# record 21
+path=
+item=блок распространился
+itemId=minecraft:brown_mushroom
+type=action
+
+# record 22
+path=
+item=падающий блок приземляется
+itemId=minecraft:sand
+type=action
+
+# record 23
+path=
+item=создание портала
+itemId=minecraft:obsidian
+type=action
+
+# record 24
+path=
+item=нотный блок проиграл звук
+itemId=minecraft:note_block
+type=action
+
+# record 25
+path=
+item=блок выкинул предмет
+itemId=minecraft:dispenser
+type=action
+
+# record 26
+path=
+item=предмет пропал
+itemId=minecraft:dirt
+type=action
+
+# record 27
+path=
+item=предметы объединились
+itemId=minecraft:grass_block
+type=action
+
+# record 28
+path=
+item=котел изменил уровень воды
+itemId=minecraft:cauldron
+type=action
+
+# record 29
+path=
+item=табличка была изменена
+itemId=minecraft:oak_sign
+type=action
+
+# record 30
+path=
+item=блок выделил опыт
+itemId=minecraft:experience_bottle
+type=action
+
+# record 31
+path=
+item=предмет переместился в контейнер
+itemId=minecraft:hopper_minecart
+type=action
+
+# record 32
+path=
+item=воронка подбирает предмет
+itemId=minecraft:hopper
+type=action
+
+# record 33
+path=
+item=печь закончила плавку
+itemId=minecraft:furnace
+type=action
+
+# record 34
+path=
+item=печь использует топливо
+itemId=minecraft:coal
+type=action
+
+# ==== regalltables export session ====
+ts=1771864002347
+reason=done
+dimension=minecraft:overworld
+sign=217,11,198
+records=33
+
+# record 1
+path=
+item=разное
+itemId=minecraft:minecart
+type=category
+
+# record 2
+path=
+item=инвентарь и предметы
+itemId=minecraft:chest
+type=category
+
+# record 3
+path=
+item=блоки и вся игра
+itemId=minecraft:cobblestone
+type=category
+
+# record 4
+path=
+item=проверки состояний
+itemId=minecraft:lever
+type=category
+
+# record 5
+path=разное
+item=имя равно
+itemId=minecraft:name_tag
+type=action
+
+# record 6
+path=разное
+item=сообщение равно
+itemId=minecraft:writable_book
+type=action
+
+# record 7
+path=разное
+item=тип взаимодействия с блоком
+itemId=minecraft:golden_hoe
+type=action
+
+# record 8
+path=разное
+item=тип слота снаряжения равен
+itemId=minecraft:diamond_pickaxe
+type=action
+
+# record 9
+path=разное
+item=имеет транзакцию креатив коинов
+itemId=minecraft:gold_ingot
+type=action
+
+# record 10
+path=разное
+item=проверить режим игры
+itemId=minecraft:painting
+type=action
+
+# record 11
+path=разное
+item=проверить права игрока
+itemId=minecraft:item_frame
+type=action
+
+# record 12
+path=инвентарь и предметы
+item=держит предмет
+itemId=minecraft:chest
+type=action
+
+# record 13
+path=инвентарь и предметы
+item=имеет предмет
+itemId=minecraft:ender_chest
+type=action
+
+# record 14
+path=инвентарь и предметы
+item=надет предмет
+itemId=minecraft:iron_chestplate
+type=action
+
+# record 15
+path=инвентарь и предметы
+item=предмет равен
+itemId=minecraft:crafting_table
+type=action
+
+# record 16
+path=инвентарь и предметы
+item=предмет в курсоре равен
+itemId=minecraft:tripwire_hook
+type=action
+
+# record 17
+path=инвентарь и предметы
+item=предмет имеет задержку
+itemId=minecraft:ender_pearl
+type=action
+
+# record 18
+path=инвентарь и предметы
+item=тип клика равен
+itemId=minecraft:iron_pickaxe
+type=action
+
+# record 19
+path=инвентарь и предметы
+item=кликнутый слот равен
+itemId=minecraft:snowball
+type=action
+
+# record 20
+path=инвентарь и предметы
+item=выбранный слот равен
+itemId=minecraft:dandelion
+type=action
+
+# record 21
+path=инвентарь и предметы
+item=название открытого инвентаря
+itemId=minecraft:painting
+type=action
+
+# record 22
+path=инвентарь и предметы
+item=заполнен ли инвентарь игрока
+itemId=minecraft:anvil
+type=action
+
+# record 23
+path=блоки и вся игра
+item=смотрит на блок
+itemId=minecraft:iron_ore
+type=action
+
+# record 24
+path=блоки и вся игра
+item=стоит на блоке
+itemId=minecraft:gold_ore
+type=action
+
+# record 25
+path=блоки и вся игра
+item=находится рядом
+itemId=minecraft:compass
+type=action
+
+# record 26
+path=блоки и вся игра
+item=блок равен
+itemId=minecraft:grass_block
+type=action
+
+# record 27
+path=проверки состояний
+item=крадется
+itemId=minecraft:chainmail_leggings
+type=action
+
+# record 28
+path=проверки состояний
+item=использует щит
+itemId=minecraft:shield
+type=action
+
+# record 29
+path=проверки состояний
+item=летит на элитрах
+itemId=minecraft:elytra
+type=action
+
+# record 30
+path=проверки состояний
+item=бежит
+itemId=minecraft:golden_boots
+type=action
+
+# record 31
+path=проверки состояний
+item=летает
+itemId=minecraft:chainmail_boots
+type=action
+
+# record 32
+path=проверки состояний
+item=плавает
+itemId=minecraft:water_bucket
+type=action
+
+# record 33
+path=проверки состояний
+item=голосовал
+itemId=minecraft:gold_nugget
+type=action
+
+# ==== regalltables export session ====
+ts=1771864044797
+reason=done
+dimension=minecraft:overworld
+sign=217,11,198
+records=102
+
+# record 1
+path=
+item=управление инвентарем
+itemId=minecraft:chest
+type=category
+
+# record 2
+path=
+item=коммуникация
+itemId=minecraft:beacon
+type=category
+
+# record 3
+path=
+item=инвентарные меню
+itemId=minecraft:painting
+type=category
+
+# record 4
+path=
+item=перемещение
+itemId=minecraft:leather_boots
+type=category
+
+# record 5
+path=
+item=параметры
+itemId=minecraft:apple
+type=category
+
+# record 6
+path=
+item=частицы
+itemId=minecraft:nether_star
+type=category
+
+# record 7
+path=
+item=настройки
+itemId=minecraft:anvil
+type=category
+
+# record 8
+path=
+item=анимации игрока
+itemId=minecraft:armor_stand
+type=category
+
+# record 9
+path=
+item=донат
+itemId=minecraft:emerald
+type=category
+
+# record 10
+path=управление инвентарем
+item=выдать предметы
+itemId=minecraft:chest
+type=category
+
+# record 11
+path=управление инвентарем
+item=установить предметы
+itemId=minecraft:ender_chest
+type=action
+
+# record 12
+path=управление инвентарем
+item=выдать предметы
+itemId=minecraft:chest
+type=action
+
+# record 13
+path=управление инвентарем
+item=установить предметы в эндер сундуке
+itemId=minecraft:snowball
+type=action
+
+# record 14
+path=управление инвентарем
+item=установить броню
+itemId=minecraft:iron_chestplate
+type=action
+
+# record 15
+path=управление инвентарем
+item=установить предмет в руку
+itemId=minecraft:shield
+type=action
+
+# record 16
+path=управление инвентарем
+item=установить предмет в курсор
+itemId=minecraft:tripwire_hook
+type=action
+
+# record 17
+path=управление инвентарем
+item=удалить предметы
+itemId=minecraft:cobweb
+type=action
+
+# record 18
+path=управление инвентарем
+item=очистить инвентарь
+itemId=minecraft:paper
+type=action
+
+# record 19
+path=управление инвентарем
+item=очистить эндер сундук
+itemId=minecraft:redstone_block
+type=action
+
+# record 20
+path=управление инвентарем
+item=установить слот
+itemId=minecraft:dandelion
+type=action
+
+# record 21
+path=управление инвентарем
+item=выдать рандомный предмет
+itemId=minecraft:blue_shulker_box
+type=action
+
+# record 22
+path=управление инвентарем
+item=сохранить инвентарь
+itemId=minecraft:end_stone
+type=action
+
+# record 23
+path=управление инвентарем
+item=загрузить инвентарь
+itemId=minecraft:end_stone_bricks
+type=action
+
+# record 24
+path=управление инвентарем
+item=установить задержку предмета
+itemId=minecraft:clock
+type=action
+
+# record 25
+path=управление инвентарем
+item=получить предмет
+itemId=minecraft:golden_carrot
+type=action
+
+# record 26
+path=управление инвентарем
+item=установить предмет
+itemId=minecraft:prismarine_shard
+type=action
+
+# record 27
+path=управление инвентарем
+item=получить задержку предмета
+itemId=minecraft:blaze_rod
+type=action
+
+# record 28
+path=коммуникация
+item=отправить сообщение
+itemId=minecraft:book
+type=category
+
+# record 29
+path=коммуникация
+item=отправить сообщение
+itemId=minecraft:knowledge_book
+type=action
+
+# record 30
+path=коммуникация
+item=отправить сообщение
+itemId=minecraft:book
+type=action
+
+# record 31
+path=коммуникация
+item=отправить диалог
+itemId=minecraft:bookshelf
+type=action
+
+# record 32
+path=коммуникация
+item=очистить чат
+itemId=minecraft:glass
+type=action
+
+# record 33
+path=коммуникация
+item=проиграть звук
+itemId=minecraft:music_disc_cat
+type=action
+
+# record 34
+path=коммуникация
+item=остановить звук
+itemId=minecraft:music_disc_13
+type=action
+
+# record 35
+path=коммуникация
+item=сообщение на экран титл
+itemId=minecraft:oak_sign
+type=action
+
+# record 36
+path=коммуникация
+item=сообщение в экшн бар
+itemId=minecraft:torch
+type=action
+
+# record 37
+path=коммуникация
+item=показать книжку с ссылкой
+itemId=minecraft:name_tag
+type=action
+
+# record 38
+path=коммуникация
+item=показать книжку
+itemId=minecraft:written_book
+type=action
+
+# record 39
+path=инвентарные меню
+item=открыть инвентарное меню
+itemId=minecraft:chest
+type=action
+
+# record 40
+path=инвентарные меню
+item=расширить инвентарное меню
+itemId=minecraft:chest_minecart
+type=action
+
+# record 41
+path=инвентарные меню
+item=установить предмет в меню
+itemId=minecraft:hopper
+type=action
+
+# record 42
+path=инвентарные меню
+item=получить предмет из меню
+itemId=minecraft:hopper_minecart
+type=action
+
+# record 43
+path=инвентарные меню
+item=установить название меню
+itemId=minecraft:name_tag
+type=action
+
+# record 44
+path=инвентарные меню
+item=добавить строку меню
+itemId=minecraft:piston
+type=action
+
+# record 45
+path=инвентарные меню
+item=удалить строку меню
+itemId=minecraft:tnt
+type=action
+
+# record 46
+path=инвентарные меню
+item=закрыть инвентарь
+itemId=minecraft:structure_void
+type=action
+
+# record 47
+path=инвентарные меню
+item=открыть инвентарь блока из игры
+itemId=minecraft:shulker_box
+type=action
+
+# record 48
+path=инвентарные меню
+item=открыть инвентарь сущности из игры
+itemId=minecraft:command_block_minecart
+type=action
+
+# record 49
+path=перемещение
+item=телепортация
+itemId=minecraft:ender_pearl
+type=action
+
+# record 50
+path=перемещение
+item=повернуть к местоположению
+itemId=minecraft:compass
+type=action
+
+# record 51
+path=перемещение
+item=случайная телепортация
+itemId=minecraft:ender_eye
+type=action
+
+# record 52
+path=перемещение
+item=очередь телепортаций
+itemId=minecraft:chorus_fruit
+type=action
+
+# record 53
+path=перемещение
+item=запустить вверх вниз
+itemId=minecraft:slime_block
+type=action
+
+# record 54
+path=перемещение
+item=запустить вперед назад
+itemId=minecraft:piston
+type=action
+
+# record 55
+path=перемещение
+item=запустить в сторону
+itemId=minecraft:sticky_piston
+type=action
+
+# record 56
+path=перемещение
+item=запустить к местоположению
+itemId=minecraft:paper
+type=action
+
+# record 57
+path=перемещение
+item=кикнуть игрока из игры
+itemId=minecraft:barrier
+type=action
+
+# record 58
+path=перемещение
+item=переместить на другой плот
+itemId=minecraft:dark_oak_door
+type=action
+
+# record 59
+path=параметры
+item=урон
+itemId=minecraft:iron_sword
+type=action
+
+# record 60
+path=параметры
+item=установка здоровья
+itemId=minecraft:cookie
+type=action
+
+# record 61
+path=параметры
+item=выдать эффект зелья
+itemId=minecraft:brewing_stand
+type=action
+
+# record 62
+path=параметры
+item=очистить все эффекты зелий
+itemId=minecraft:milk_bucket
+type=action
+
+# record 63
+path=параметры
+item=удалить эффект зелья
+itemId=minecraft:cauldron
+type=action
+
+# record 64
+path=параметры
+item=установить уровень опыта
+itemId=minecraft:experience_bottle
+type=action
+
+# record 65
+path=параметры
+item=поставить шкалу опыта
+itemId=minecraft:emerald
+type=action
+
+# record 66
+path=параметры
+item=установить уровень голода
+itemId=minecraft:cooked_porkchop
+type=action
+
+# record 67
+path=параметры
+item=установить уровень сытости
+itemId=minecraft:cooked_beef
+type=action
+
+# record 68
+path=параметры
+item=установить истощение
+itemId=minecraft:cooked_mutton
+type=action
+
+# record 69
+path=параметры
+item=установить максимальное здоровье
+itemId=minecraft:golden_apple
+type=action
+
+# record 70
+path=параметры
+item=горение
+itemId=minecraft:flint_and_steel
+type=action
+
+# record 71
+path=параметры
+item=установить скорость полета
+itemId=minecraft:elytra
+type=action
+
+# record 72
+path=параметры
+item=поставить скорость ходьбы
+itemId=minecraft:sugar
+type=action
+
+# record 73
+path=параметры
+item=установить остаток воздуха
+itemId=minecraft:bucket
+type=action
+
+# record 74
+path=параметры
+item=установить максимум воздуха
+itemId=minecraft:water_bucket
+type=action
+
+# record 75
+path=параметры
+item=установить имя
+itemId=minecraft:name_tag
+type=action
+
+# record 76
+path=параметры
+item=установить урон
+itemId=minecraft:redstone
+type=action
+
+# record 77
+path=параметры
+item=установить размер
+itemId=minecraft:slime_ball
+type=action
+
+# record 78
+path=параметры
+item=установить звуки
+itemId=minecraft:note_block
+type=action
+
+# record 79
+path=параметры
+item=установить свечение
+itemId=minecraft:gunpowder
+type=action
+
+# record 80
+path=параметры
+item=видимость игрока
+itemId=minecraft:nether_star
+type=action
+
+# record 81
+path=параметры
+item=установить гравитацию
+itemId=minecraft:iron_boots
+type=action
+
+# record 82
+path=параметры
+item=установить неуязвимость
+itemId=minecraft:leather_chestplate
+type=action
+
+# record 83
+path=параметры
+item=удалить сущность
+itemId=minecraft:barrier
+type=action
+
+# record 84
+path=частицы
+item=отобразить частицу
+itemId=minecraft:gold_nugget
+type=action
+
+# record 85
+path=частицы
+item=отобразить линию из частиц
+itemId=minecraft:blaze_rod
+type=action
+
+# record 86
+path=частицы
+item=отобразить луч из частиц
+itemId=minecraft:prismarine_shard
+type=action
+
+# record 87
+path=частицы
+item=отобразить окружность из частиц
+itemId=minecraft:slime_ball
+type=action
+
+# record 88
+path=частицы
+item=отобразить куб из частиц
+itemId=minecraft:glass
+type=action
+
+# record 89
+path=частицы
+item=отобразить сферу из частиц
+itemId=minecraft:snowball
+type=action
+
+# record 90
+path=настройки
+item=полет
+itemId=minecraft:feather
+type=action
+
+# record 91
+path=настройки
+item=установить режим игры
+itemId=minecraft:crafting_table
+type=action
+
+# record 92
+path=настройки
+item=сохранение инвентаря при смерти
+itemId=minecraft:melon_seeds
+type=action
+
+# record 93
+path=настройки
+item=показать панель скорборда
+itemId=minecraft:painting
+type=action
+
+# record 94
+path=настройки
+item=скрыть панель скорборда
+itemId=minecraft:item_frame
+type=action
+
+# record 95
+path=настройки
+item=показать боссбар
+itemId=minecraft:end_crystal
+type=action
+
+# record 96
+path=настройки
+item=скрыть боссбар
+itemId=minecraft:barrier
+type=action
+
+# record 97
+path=анимации игрока
+item=отображения лежания
+itemId=minecraft:orange_bed
+type=action
+
+# record 98
+path=анимации игрока
+item=игрок встает с кровати
+itemId=minecraft:barrier
+type=action
+
+# record 99
+path=анимации игрока
+item=анимация руки
+itemId=minecraft:diamond_pickaxe
+type=action
+
+# record 100
+path=анимации игрока
+item=сделать игрока приседающим
+itemId=minecraft:chainmail_leggings
+type=action
+
+# record 101
+path=анимации игрока
+item=анимация урона
+itemId=minecraft:redstone_block
+type=action
+
+# record 102
+path=донат
+item=попросить транзакцию креатив коинов
+itemId=minecraft:gold_ingot
+type=action
+
+# ==== regalltables export session ====
+ts=1771864076698
+reason=done
+dimension=minecraft:overworld
+sign=217,11,198
+records=58
+
+# record 1
+path=
+item=создание существ
+itemId=minecraft:bat_spawn_egg
+type=category
+
+# record 2
+path=
+item=утилиты кода
+itemId=minecraft:comparator
+type=category
+
+# record 3
+path=
+item=манипуляции с блоками
+itemId=minecraft:grass_block
+type=category
+
+# record 4
+path=
+item=специальные эффекты
+itemId=minecraft:firework_rocket
+type=category
+
+# record 5
+path=
+item=манипуляции с скорбордами
+itemId=minecraft:painting
+type=category
+
+# record 6
+path=
+item=утилиты игры
+itemId=minecraft:bedrock
+type=category
+
+# record 7
+path=
+item=передача данных на другой мир
+itemId=minecraft:command_block
+type=category
+
+# record 8
+path=создание существ
+item=заспавнить моба сущность
+itemId=minecraft:bat_spawn_egg
+type=action
+
+# record 9
+path=создание существ
+item=заспавнить нипа npc
+itemId=minecraft:player_head
+type=action
+
+# record 10
+path=создание существ
+item=создать предмет
+itemId=minecraft:iron_sword
+type=action
+
+# record 11
+path=создание существ
+item=запустить фейерверк
+itemId=minecraft:firework_rocket
+type=action
+
+# record 12
+path=создание существ
+item=создать активированный динамит
+itemId=minecraft:tnt
+type=action
+
+# record 13
+path=создание существ
+item=создать транспортное средство
+itemId=minecraft:minecart
+type=action
+
+# record 14
+path=создание существ
+item=создать сферу опыта
+itemId=minecraft:experience_bottle
+type=action
+
+# record 15
+path=создание существ
+item=заспавнить молнию
+itemId=minecraft:compass
+type=action
+
+# record 16
+path=утилиты кода
+item=ждать
+itemId=minecraft:clock
+type=action
+
+# record 17
+path=утилиты кода
+item=запустить цикл
+itemId=minecraft:potato
+type=action
+
+# record 18
+path=утилиты кода
+item=остановить цикл
+itemId=minecraft:poisonous_potato
+type=action
+
+# record 19
+path=утилиты кода
+item=отменить событие
+itemId=minecraft:barrier
+type=action
+
+# record 20
+path=утилиты кода
+item=вызвать функцию
+itemId=minecraft:hopper_minecart
+type=action
+
+# record 21
+path=манипуляции с блоками
+item=поставить блок и
+itemId=minecraft:oak_log
+type=action
+
+# record 22
+path=манипуляции с блоками
+item=заполнить область блоками
+itemId=minecraft:dark_oak_log
+type=action
+
+# record 23
+path=манипуляции с блоками
+item=сломать блок
+itemId=minecraft:glass
+type=action
+
+# record 24
+path=манипуляции с блоками
+item=копировать блоки
+itemId=minecraft:cobblestone
+type=action
+
+# record 25
+path=манипуляции с блоками
+item=заполнить контейнер
+itemId=minecraft:chest
+type=action
+
+# record 26
+path=манипуляции с блоками
+item=удалить предметы с контейнера
+itemId=minecraft:cobweb
+type=action
+
+# record 27
+path=манипуляции с блоками
+item=установить предмет в контейнер
+itemId=minecraft:brown_shulker_box
+type=action
+
+# record 28
+path=манипуляции с блоками
+item=очистить контейнер
+itemId=minecraft:ender_chest
+type=action
+
+# record 29
+path=манипуляции с блоками
+item=изменить табличку
+itemId=minecraft:oak_sign
+type=action
+
+# record 30
+path=манипуляции с блоками
+item=изменить название блока
+itemId=minecraft:painting
+type=action
+
+# record 31
+path=манипуляции с блоками
+item=получить название блока
+itemId=minecraft:name_tag
+type=action
+
+# record 32
+path=манипуляции с блоками
+item=получить предмет из контейнера
+itemId=minecraft:hopper
+type=action
+
+# record 33
+path=манипуляции с блоками
+item=установить предметы в эндер сундук
+itemId=minecraft:hopper_minecart
+type=action
+
+# record 34
+path=манипуляции с блоками
+item=получить предмет из эндер сундука
+itemId=minecraft:anvil
+type=action
+
+# record 35
+path=манипуляции с блоками
+item=получить предметы из контейнера
+itemId=minecraft:oak_boat
+type=action
+
+# record 36
+path=манипуляции с блоками
+item=получить значение из таблички
+itemId=minecraft:flower_pot
+type=action
+
+# record 37
+path=манипуляции с блоками
+item=сгенерировать дерево
+itemId=minecraft:oak_sapling
+type=action
+
+# record 38
+path=специальные эффекты
+item=создать взрыв
+itemId=minecraft:tnt
+type=action
+
+# record 39
+path=специальные эффекты
+item=воспроизвести взрыв фейерверка
+itemId=minecraft:firework_rocket
+type=action
+
+# record 40
+path=специальные эффекты
+item=создать голограмму
+itemId=minecraft:armor_stand
+type=action
+
+# record 41
+path=специальные эффекты
+item=удалить голограмму
+itemId=minecraft:structure_void
+type=action
+
+# record 42
+path=манипуляции с скорбордами
+item=создать скорборд
+itemId=minecraft:emerald
+type=action
+
+# record 43
+path=манипуляции с скорбордами
+item=удалить панель скорборда
+itemId=minecraft:structure_void
+type=action
+
+# record 44
+path=манипуляции с скорбордами
+item=выставить очки скорборда
+itemId=minecraft:book
+type=action
+
+# record 45
+path=манипуляции с скорбордами
+item=удалить очки в скорборде
+itemId=minecraft:ink_sac
+type=action
+
+# record 46
+path=утилиты игры
+item=установить погоду
+itemId=minecraft:sunflower
+type=action
+
+# record 47
+path=утилиты игры
+item=установить время
+itemId=minecraft:clock
+type=action
+
+# record 48
+path=утилиты игры
+item=установить игровое правило
+itemId=minecraft:book
+type=action
+
+# record 49
+path=утилиты игры
+item=создать боссбар
+itemId=minecraft:diamond
+type=action
+
+# record 50
+path=утилиты игры
+item=удалить боссбар
+itemId=minecraft:structure_void
+type=action
+
+# record 51
+path=утилиты игры
+item=установить титл
+itemId=minecraft:book
+type=action
+
+# record 52
+path=утилиты игры
+item=установить цвет боссбара
+itemId=minecraft:white_wool
+type=action
+
+# record 53
+path=утилиты игры
+item=установить стиль боссбара
+itemId=minecraft:cod
+type=action
+
+# record 54
+path=утилиты игры
+item=установить прогресс боссбара
+itemId=minecraft:beacon
+type=action
+
+# record 55
+path=передача данных на другой мир
+item=считать данные из канала
+itemId=minecraft:furnace_minecart
+type=category
+
+# record 56
+path=передача данных на другой мир
+item=отправить данные через канал
+itemId=minecraft:writable_book
+type=action
+
+# record 57
+path=передача данных на другой мир
+item=считать данные из канала
+itemId=minecraft:furnace_minecart
+type=action
+
+# record 58
+path=передача данных на другой мир
+item=отправить массив через канал
+itemId=minecraft:item_frame
+type=action
+
+# ==== regalltables export session ====
+ts=1771865602248
+reason=done
+dimension=minecraft:overworld
+sign=217,11,198
+records=10
+
+# record 1
+path=
+item=значение равно
+itemId=minecraft:gold_ingot
+type=action
+
+# record 2
+path=
+item=значение не равно
+itemId=minecraft:barrier
+type=action
+
+# record 3
+path=
+item=сравнить числа облегченная версия
+itemId=minecraft:sandstone_stairs
+type=action
+
+# record 4
+path=
+item=сравнить числа
+itemId=minecraft:quartz_stairs
+type=action
+
+# record 5
+path=
+item=текст равняется
+itemId=minecraft:book
+type=action
+
+# record 6
+path=
+item=текст содержит
+itemId=minecraft:name_tag
+type=action
+
+# record 7
+path=
+item=переменная существует
+itemId=minecraft:slime_ball
+type=action
+
+# record 8
+path=
+item=если местоположение в регионе
+itemId=minecraft:paper
+type=action
+
+# record 9
+path=
+item=текст начинается на
+itemId=minecraft:string
+type=action
+
+# record 10
+path=
+item=текст заканчивается на
+itemId=minecraft:feather
+type=action
+
+# ==== regalltables export session ====
+ts=1771865632896
+reason=done
+dimension=minecraft:overworld
+sign=217,11,198
+records=98
+
+# record 1
+path=
+item=общее
+itemId=minecraft:iron_block
+type=category
+
+# record 2
+path=
+item=числа
+itemId=minecraft:slime_ball
+type=category
+
+# record 3
+path=
+item=текст
+itemId=minecraft:book
+type=category
+
+# record 4
+path=
+item=местоположения
+itemId=minecraft:filled_map
+type=category
+
+# record 5
+path=
+item=предметы
+itemId=minecraft:item_frame
+type=category
+
+# record 6
+path=
+item=текстовые компоненты
+itemId=minecraft:knowledge_book
+type=category
+
+# record 7
+path=
+item=векторы
+itemId=minecraft:prismarine_shard
+type=category
+
+# record 8
+path=общее
+item=установить
+itemId=minecraft:gold_ingot
+type=action
+
+# record 9
+path=общее
+item=установить предмет
+itemId=minecraft:diamond
+type=action
+
+# record 10
+path=общее
+item=установить случайное значение
+itemId=minecraft:pumpkin_seeds
+type=action
+
+# record 11
+path=общее
+item=установить время в виде даты
+itemId=minecraft:clock
+type=action
+
+# record 12
+path=общее
+item=установить время в виде миллисекунд
+itemId=minecraft:clock
+type=action
+
+# record 13
+path=числа
+item=установить
+itemId=minecraft:iron_ingot
+type=action
+
+# record 14
+path=числа
+item=установить
+itemId=minecraft:brick
+type=action
+
+# record 15
+path=числа
+item=установить
+itemId=minecraft:iron_block
+type=action
+
+# record 16
+path=числа
+item=установить
+itemId=minecraft:terracotta
+type=action
+
+# record 17
+path=числа
+item=установить
+itemId=minecraft:stone_bricks
+type=action
+
+# record 18
+path=числа
+item=прибавить
+itemId=minecraft:sugar
+type=action
+
+# record 19
+path=числа
+item=отнять
+itemId=minecraft:redstone
+type=action
+
+# record 20
+path=числа
+item=установить случайное число
+itemId=minecraft:chest
+type=action
+
+# record 21
+path=числа
+item=округлить число
+itemId=minecraft:snowball
+type=action
+
+# record 22
+path=числа
+item=модуль abs
+itemId=minecraft:sponge
+type=action
+
+# record 23
+path=числа
+item=минимальное число min
+itemId=minecraft:bricks
+type=action
+
+# record 24
+path=числа
+item=максимальное число max
+itemId=minecraft:bedrock
+type=action
+
+# record 25
+path=числа
+item=возведение в степень pow
+itemId=minecraft:melon_slice
+type=action
+
+# record 26
+path=числа
+item=косинус cos
+itemId=minecraft:slime_ball
+type=action
+
+# record 27
+path=числа
+item=синус sin
+itemId=minecraft:glowstone_dust
+type=action
+
+# record 28
+path=числа
+item=тангенс tan
+itemId=minecraft:stone
+type=action
+
+# record 29
+path=числа
+item=арксинус asin
+itemId=minecraft:firework_star
+type=action
+
+# record 30
+path=числа
+item=арккосинус acos
+itemId=minecraft:sugar
+type=action
+
+# record 31
+path=числа
+item=арктангенс atan
+itemId=minecraft:wheat
+type=action
+
+# record 32
+path=числа
+item=градусы deg
+itemId=minecraft:lapis_block
+type=action
+
+# record 33
+path=числа
+item=натуральный логарифм ln
+itemId=minecraft:ice
+type=action
+
+# record 34
+path=числа
+item=корень sqrt
+itemId=minecraft:carved_pumpkin
+type=action
+
+# record 35
+path=числа
+item=экспонента exp
+itemId=minecraft:soul_sand
+type=action
+
+# record 36
+path=числа
+item=радианы rad
+itemId=minecraft:bookshelf
+type=action
+
+# record 37
+path=числа
+item=шум перлина
+itemId=minecraft:beetroot_seeds
+type=action
+
+# record 38
+path=числа
+item=шум симплекс
+itemId=minecraft:melon_seeds
+type=action
+
+# record 39
+path=числа
+item=шум вороного
+itemId=minecraft:pumpkin_seeds
+type=action
+
+# record 40
+path=текст
+item=объединить тексты
+itemId=minecraft:book
+type=action
+
+# record 41
+path=текст
+item=парсить число
+itemId=minecraft:anvil
+type=action
+
+# record 42
+path=текст
+item=обрезает текст от и до указанной буквы по счету
+itemId=minecraft:shears
+type=action
+
+# record 43
+path=текст
+item=разделить текст на элементы
+itemId=minecraft:oak_fence
+type=action
+
+# record 44
+path=текст
+item=узнать длину строки
+itemId=minecraft:bookshelf
+type=action
+
+# record 45
+path=текст
+item=заменить символы в тексте
+itemId=minecraft:feather
+type=action
+
+# record 46
+path=текст
+item=установить регистр тексту
+itemId=minecraft:red_sandstone_slab
+type=action
+
+# record 47
+path=текст
+item=создать формат времени
+itemId=minecraft:dead_bush
+type=action
+
+# record 48
+path=текст
+item=получить символ по числу
+itemId=minecraft:iron_nugget
+type=action
+
+# record 49
+path=текст
+item=получить число по символу
+itemId=minecraft:gold_nugget
+type=action
+
+# record 50
+path=текст
+item=очистить цвета текста
+itemId=minecraft:white_wool
+type=action
+
+# record 51
+path=текст
+item=получить символ по индексу
+itemId=minecraft:iron_nugget
+type=action
+
+# record 52
+path=текст
+item=получить индекс подтекста
+itemId=minecraft:activator_rail
+type=action
+
+# record 53
+path=местоположения
+item=получить значение из местоположения
+itemId=minecraft:end_rod
+type=category
+
+# record 54
+path=местоположения
+item=получить координаты
+itemId=minecraft:hopper_minecart
+type=category
+
+# record 55
+path=местоположения
+item=получить расстояние между 2 местоположениями
+itemId=minecraft:rail
+type=action
+
+# record 56
+path=местоположения
+item=получить значение из местоположения
+itemId=minecraft:end_rod
+type=action
+
+# record 57
+path=местоположения
+item=получить координаты
+itemId=minecraft:hopper_minecart
+type=action
+
+# record 58
+path=местоположения
+item=установить значения в местоположении
+itemId=minecraft:filled_map
+type=action
+
+# record 59
+path=местоположения
+item=получить блок из местоположения
+itemId=minecraft:grass_block
+type=action
+
+# record 60
+path=местоположения
+item=установить направление местоположения
+itemId=minecraft:compass
+type=action
+
+# record 61
+path=местоположения
+item=получить направление местоположения
+itemId=minecraft:egg
+type=action
+
+# record 62
+path=местоположения
+item=получить случайное местоположение
+itemId=minecraft:quartz
+type=action
+
+# record 63
+path=местоположения
+item=получить центр региона
+itemId=minecraft:white_stained_glass
+type=action
+
+# record 64
+path=предметы
+item=получить значение из предмета
+itemId=minecraft:beacon
+type=action
+
+# record 65
+path=предметы
+item=получить описание предмета
+itemId=minecraft:oak_sign
+type=action
+
+# record 66
+path=предметы
+item=установить количество предмета
+itemId=minecraft:redstone
+type=action
+
+# record 67
+path=предметы
+item=установить прочность предмета
+itemId=minecraft:diamond_sword
+type=action
+
+# record 68
+path=предметы
+item=установить описание предмету
+itemId=minecraft:book
+type=action
+
+# record 69
+path=предметы
+item=установить имя предмету
+itemId=minecraft:name_tag
+type=action
+
+# record 70
+path=предметы
+item=добавить описание предмету
+itemId=minecraft:writable_book
+type=action
+
+# record 71
+path=предметы
+item=удалить строку описания
+itemId=minecraft:golden_sword
+type=action
+
+# record 72
+path=предметы
+item=получить текст из книги
+itemId=minecraft:written_book
+type=action
+
+# record 73
+path=предметы
+item=установить текст в книгу
+itemId=minecraft:blaze_powder
+type=action
+
+# record 74
+path=текстовые компоненты
+item=установить всплывающий текст
+itemId=minecraft:blaze_powder
+type=action
+
+# record 75
+path=текстовые компоненты
+item=установить событие при клике
+itemId=minecraft:experience_bottle
+type=action
+
+# record 76
+path=текстовые компоненты
+item=объединить текст компоненты
+itemId=minecraft:bookshelf
+type=action
+
+# record 77
+path=векторы
+item=создать вектор
+itemId=minecraft:prismarine_shard
+type=action
+
+# record 78
+path=векторы
+item=создать вектор между местоположениями
+itemId=minecraft:lead
+type=action
+
+# record 79
+path=векторы
+item=создать вектор из кардинального направления
+itemId=minecraft:compass
+type=action
+
+# record 80
+path=векторы
+item=получить координату вектора
+itemId=minecraft:prismarine_crystals
+type=action
+
+# record 81
+path=векторы
+item=получить все координаты вектора
+itemId=minecraft:bone
+type=action
+
+# record 82
+path=векторы
+item=установить координату вектора
+itemId=minecraft:prismarine
+type=action
+
+# record 83
+path=векторы
+item=получить длину вектора
+itemId=minecraft:stick
+type=action
+
+# record 84
+path=векторы
+item=установить длину вектора
+itemId=minecraft:blaze_rod
+type=action
+
+# record 85
+path=векторы
+item=сумма векторов
+itemId=minecraft:brick
+type=action
+
+# record 86
+path=векторы
+item=разница векторов
+itemId=minecraft:nether_brick
+type=action
+
+# record 87
+path=векторы
+item=умножить вектор на число
+itemId=minecraft:nether_bricks
+type=action
+
+# record 88
+path=векторы
+item=деление векторов
+itemId=minecraft:red_nether_bricks
+type=action
+
+# record 89
+path=векторы
+item=скалярное произведение двух векторов
+itemId=minecraft:feather
+type=action
+
+# record 90
+path=векторы
+item=векторное произведение двух векторов
+itemId=minecraft:nether_star
+type=action
+
+# record 91
+path=векторы
+item=адамарово произведение двух векторов
+itemId=minecraft:iron_ingot
+type=action
+
+# record 92
+path=векторы
+item=выровнять вектор
+itemId=minecraft:quartz
+type=action
+
+# record 93
+path=векторы
+item=получить центральное значение между векторами
+itemId=minecraft:ender_eye
+type=action
+
+# record 94
+path=векторы
+item=получить угол между двумя векторами
+itemId=minecraft:oak_stairs
+type=action
+
+# record 95
+path=векторы
+item=отразить вектор относительно второго вектора
+itemId=minecraft:shield
+type=action
+
+# record 96
+path=векторы
+item=повернуть вектор вокруг другого вектора
+itemId=minecraft:clock
+type=action
+
+# record 97
+path=векторы
+item=повернуть вектор вокруг оси
+itemId=minecraft:ender_pearl
+type=action
+
+# record 98
+path=векторы
+item=получить кардинальное направление вектора
+itemId=minecraft:name_tag
+type=action
+
+# ==== regalltables export session ====
+ts=1771865855349
+reason=done
+dimension=minecraft:overworld
+sign=217,11,198
+records=98
+
+# record 1
+path=
+item=выбрать игрока по умолчанию
+itemId=minecraft:potato
+type=action
+
+# record 2
+path=
+item=выбрать сущность по умолчанию
+itemId=minecraft:carrot
+type=action
+
+# record 3
+path=
+item=выбрать случайного игрока
+itemId=minecraft:ender_eye
+type=action
+
+# record 4
+path=
+item=выбрать случайного моба
+itemId=minecraft:rotten_flesh
+type=action
+
+# record 5
+path=
+item=выбрать случайную сущность
+itemId=minecraft:snowball
+type=action
+
+# record 6
+path=
+item=выбрать всех игроков
+itemId=minecraft:beacon
+type=action
+
+# record 7
+path=
+item=выбрать всех мобов
+itemId=minecraft:fermented_spider_eye
+type=action
+
+# record 8
+path=
+item=выбрать всех сущностей
+itemId=minecraft:chest_minecart
+type=action
+
+# record 9
+path=
+item=выбрать последнего заспавненого моба
+itemId=minecraft:egg
+type=action
+
+# record 10
+path=
+item=выбор фильтра случайным образом
+itemId=minecraft:command_block_minecart
+type=action
+
+# record 11
+path=
+item=выбрать игроков по условию
+itemId=minecraft:melon_seeds
+type=category
+
+# record 12
+path=
+item=выбрать мобов по условию
+itemId=minecraft:pumpkin_seeds
+type=category
+
+# record 13
+path=
+item=выбрать сущности по условию
+itemId=minecraft:wheat_seeds
+type=category
+
+# record 14
+path=выбрать игроков по условию
+item=если значение
+itemId=minecraft:obsidian
+type=category
+
+# record 15
+path=выбрать игроков по условию
+item=если игрок
+itemId=minecraft:oak_planks
+type=category
+
+# record 16
+path=выбрать мобов по условию
+item=если значение
+itemId=minecraft:obsidian
+type=category
+
+# record 17
+path=выбрать мобов по условию
+item=если существо
+itemId=minecraft:bricks
+type=category
+
+# record 18
+path=выбрать сущности по условию
+item=если значение
+itemId=minecraft:obsidian
+type=category
+
+# record 19
+path=выбрать сущности по условию
+item=если существо
+itemId=minecraft:bricks
+type=category
+
+# record 20
+path=выбрать игроков по условию > если значение
+item=значение равно
+itemId=minecraft:gold_ingot
+type=action
+
+# record 21
+path=выбрать игроков по условию > если значение
+item=значение не равно
+itemId=minecraft:barrier
+type=action
+
+# record 22
+path=выбрать игроков по условию > если значение
+item=сравнить числа облегченная версия
+itemId=minecraft:sandstone_stairs
+type=category
+
+# record 23
+path=выбрать игроков по условию > если значение
+item=сравнить числа
+itemId=minecraft:quartz_stairs
+type=action
+
+# record 24
+path=выбрать игроков по условию > если значение
+item=текст равняется
+itemId=minecraft:book
+type=action
+
+# record 25
+path=выбрать игроков по условию > если значение
+item=текст содержит
+itemId=minecraft:name_tag
+type=action
+
+# record 26
+path=выбрать игроков по условию > если значение
+item=переменная существует
+itemId=minecraft:slime_ball
+type=action
+
+# record 27
+path=выбрать игроков по условию > если значение
+item=если местоположение в регионе
+itemId=minecraft:paper
+type=action
+
+# record 28
+path=выбрать игроков по условию > если значение
+item=текст начинается на
+itemId=minecraft:string
+type=category
+
+# record 29
+path=выбрать игроков по условию > если значение
+item=текст заканчивается на
+itemId=minecraft:feather
+type=action
+
+# record 30
+path=выбрать игроков по условию > если игрок
+item=разное
+itemId=minecraft:minecart
+type=category
+
+# record 31
+path=выбрать игроков по условию > если игрок
+item=инвентарь и предметы
+itemId=minecraft:chest
+type=category
+
+# record 32
+path=выбрать игроков по условию > если игрок
+item=блоки и вся игра
+itemId=minecraft:cobblestone
+type=category
+
+# record 33
+path=выбрать игроков по условию > если игрок
+item=проверки состояний
+itemId=minecraft:lever
+type=category
+
+# record 34
+path=выбрать мобов по условию > если значение
+item=значение равно
+itemId=minecraft:gold_ingot
+type=action
+
+# record 35
+path=выбрать мобов по условию > если значение
+item=значение не равно
+itemId=minecraft:barrier
+type=action
+
+# record 36
+path=выбрать мобов по условию > если значение
+item=сравнить числа облегченная версия
+itemId=minecraft:sandstone_stairs
+type=action
+
+# record 37
+path=выбрать мобов по условию > если значение
+item=сравнить числа
+itemId=minecraft:quartz_stairs
+type=action
+
+# record 38
+path=выбрать мобов по условию > если значение
+item=текст равняется
+itemId=minecraft:book
+type=action
+
+# record 39
+path=выбрать мобов по условию > если значение
+item=текст содержит
+itemId=minecraft:name_tag
+type=action
+
+# record 40
+path=выбрать мобов по условию > если значение
+item=переменная существует
+itemId=minecraft:slime_ball
+type=action
+
+# record 41
+path=выбрать мобов по условию > если значение
+item=если местоположение в регионе
+itemId=minecraft:paper
+type=action
+
+# record 42
+path=выбрать мобов по условию > если значение
+item=текст начинается на
+itemId=minecraft:string
+type=action
+
+# record 43
+path=выбрать мобов по условию > если значение
+item=текст заканчивается на
+itemId=minecraft:feather
+type=action
+
+# record 44
+path=выбрать мобов по условию > если существо
+item=тип
+itemId=minecraft:bat_spawn_egg
+type=action
+
+# record 45
+path=выбрать мобов по условию > если существо
+item=имя равно
+itemId=minecraft:name_tag
+type=category
+
+# record 46
+path=выбрать мобов по условию > если существо
+item=стоит на блоке
+itemId=minecraft:gold_ore
+type=action
+
+# record 47
+path=выбрать мобов по условию > если существо
+item=находится рядом
+itemId=minecraft:compass
+type=action
+
+# record 48
+path=выбрать мобов по условию > если существо
+item=является мобом
+itemId=minecraft:rotten_flesh
+type=action
+
+# record 49
+path=выбрать мобов по условию > если существо
+item=является нипом npc
+itemId=minecraft:player_head
+type=action
+
+# record 50
+path=выбрать мобов по условию > если существо
+item=имеет ли эффект
+itemId=minecraft:potion
+type=action
+
+# record 51
+path=выбрать сущности по условию > если значение
+item=значение равно
+itemId=minecraft:gold_ingot
+type=action
+
+# record 52
+path=выбрать сущности по условию > если значение
+item=значение не равно
+itemId=minecraft:barrier
+type=action
+
+# record 53
+path=выбрать сущности по условию > если значение
+item=сравнить числа облегченная версия
+itemId=minecraft:sandstone_stairs
+type=category
+
+# record 54
+path=выбрать сущности по условию > если значение
+item=сравнить числа
+itemId=minecraft:quartz_stairs
+type=action
+
+# record 55
+path=выбрать сущности по условию > если значение
+item=текст равняется
+itemId=minecraft:book
+type=category
+
+# record 56
+path=выбрать сущности по условию > если значение
+item=текст содержит
+itemId=minecraft:name_tag
+type=action
+
+# record 57
+path=выбрать сущности по условию > если значение
+item=переменная существует
+itemId=minecraft:slime_ball
+type=action
+
+# record 58
+path=выбрать сущности по условию > если значение
+item=если местоположение в регионе
+itemId=minecraft:paper
+type=action
+
+# record 59
+path=выбрать сущности по условию > если значение
+item=текст начинается на
+itemId=minecraft:string
+type=action
+
+# record 60
+path=выбрать сущности по условию > если значение
+item=текст заканчивается на
+itemId=minecraft:feather
+type=action
+
+# record 61
+path=выбрать сущности по условию > если существо
+item=тип
+itemId=minecraft:bat_spawn_egg
+type=action
+
+# record 62
+path=выбрать сущности по условию > если существо
+item=имя равно
+itemId=minecraft:name_tag
+type=action
+
+# record 63
+path=выбрать сущности по условию > если существо
+item=стоит на блоке
+itemId=minecraft:gold_ore
+type=action
+
+# record 64
+path=выбрать сущности по условию > если существо
+item=находится рядом
+itemId=minecraft:compass
+type=action
+
+# record 65
+path=выбрать сущности по условию > если существо
+item=является мобом
+itemId=minecraft:rotten_flesh
+type=action
+
+# record 66
+path=выбрать сущности по условию > если существо
+item=является нипом npc
+itemId=minecraft:player_head
+type=action
+
+# record 67
+path=выбрать сущности по условию > если существо
+item=имеет ли эффект
+itemId=minecraft:potion
+type=action
+
+# record 68
+path=выбрать игроков по условию > если игрок > разное
+item=имя равно
+itemId=minecraft:name_tag
+type=action
+
+# record 69
+path=выбрать игроков по условию > если игрок > разное
+item=сообщение равно
+itemId=minecraft:writable_book
+type=action
+
+# record 70
+path=выбрать игроков по условию > если игрок > разное
+item=тип взаимодействия с блоком
+itemId=minecraft:golden_hoe
+type=action
+
+# record 71
+path=выбрать игроков по условию > если игрок > разное
+item=тип слота снаряжения равен
+itemId=minecraft:diamond_pickaxe
+type=category
+
+# record 72
+path=выбрать игроков по условию > если игрок > разное
+item=имеет транзакцию креатив коинов
+itemId=minecraft:gold_ingot
+type=category
+
+# record 73
+path=выбрать игроков по условию > если игрок > разное
+item=проверить режим игры
+itemId=minecraft:painting
+type=action
+
+# record 74
+path=выбрать игроков по условию > если игрок > разное
+item=проверить права игрока
+itemId=minecraft:item_frame
+type=action
+
+# record 75
+path=выбрать игроков по условию > если игрок > инвентарь и предметы
+item=держит предмет
+itemId=minecraft:chest
+type=action
+
+# record 76
+path=выбрать игроков по условию > если игрок > инвентарь и предметы
+item=имеет предмет
+itemId=minecraft:ender_chest
+type=category
+
+# record 77
+path=выбрать игроков по условию > если игрок > инвентарь и предметы
+item=надет предмет
+itemId=minecraft:iron_chestplate
+type=action
+
+# record 78
+path=выбрать игроков по условию > если игрок > инвентарь и предметы
+item=предмет равен
+itemId=minecraft:crafting_table
+type=action
+
+# record 79
+path=выбрать игроков по условию > если игрок > инвентарь и предметы
+item=предмет в курсоре равен
+itemId=minecraft:tripwire_hook
+type=action
+
+# record 80
+path=выбрать игроков по условию > если игрок > инвентарь и предметы
+item=предмет имеет задержку
+itemId=minecraft:ender_pearl
+type=action
+
+# record 81
+path=выбрать игроков по условию > если игрок > инвентарь и предметы
+item=тип клика равен
+itemId=minecraft:iron_pickaxe
+type=action
+
+# record 82
+path=выбрать игроков по условию > если игрок > инвентарь и предметы
+item=кликнутый слот равен
+itemId=minecraft:snowball
+type=action
+
+# record 83
+path=выбрать игроков по условию > если игрок > инвентарь и предметы
+item=выбранный слот равен
+itemId=minecraft:dandelion
+type=action
+
+# record 84
+path=выбрать игроков по условию > если игрок > инвентарь и предметы
+item=название открытого инвентаря
+itemId=minecraft:painting
+type=action
+
+# record 85
+path=выбрать игроков по условию > если игрок > инвентарь и предметы
+item=заполнен ли инвентарь игрока
+itemId=minecraft:anvil
+type=action
+
+# record 86
+path=выбрать игроков по условию > если игрок > блоки и вся игра
+item=смотрит на блок
+itemId=minecraft:iron_ore
+type=action
+
+# record 87
+path=выбрать игроков по условию > если игрок > блоки и вся игра
+item=стоит на блоке
+itemId=minecraft:gold_ore
+type=action
+
+# record 88
+path=выбрать игроков по условию > если игрок > блоки и вся игра
+item=находится рядом
+itemId=minecraft:compass
+type=action
+
+# record 89
+path=выбрать игроков по условию > если игрок > блоки и вся игра
+item=блок равен
+itemId=minecraft:grass_block
+type=action
+
+# record 90
+path=выбрать игроков по условию > если игрок > проверки состояний
+item=крадется
+itemId=minecraft:chainmail_leggings
+type=action
+
+# record 91
+path=выбрать игроков по условию > если игрок > проверки состояний
+item=использует щит
+itemId=minecraft:shield
+type=action
+
+# record 92
+path=выбрать игроков по условию > если игрок > проверки состояний
+item=летит на элитрах
+itemId=minecraft:elytra
+type=action
+
+# record 93
+path=выбрать игроков по условию > если игрок > проверки состояний
+item=бежит
+itemId=minecraft:golden_boots
+type=action
+
+# record 94
+path=выбрать игроков по условию > если игрок > проверки состояний
+item=летает
+itemId=minecraft:chainmail_boots
+type=action
+
+# record 95
+path=выбрать игроков по условию > если игрок > проверки состояний
+item=плавает
+itemId=minecraft:water_bucket
+type=action
+
+# record 96
+path=выбрать игроков по условию > если игрок > проверки состояний
+item=голосовал
+itemId=minecraft:gold_nugget
+type=category
+
+# record 97
+path=выбрать игроков по условию > если игрок > разное > тип слота снаряжения равен
+item=выбрать игрока по умолчанию
+itemId=minecraft:potato
+type=action
+
+# record 98
+path=выбрать игроков по условию > если игрок > разное > тип слота снаряжения равен
+item=выбрать сущность по умолчанию
+itemId=minecraft:carrot
+type=action
+
+# ==== regalltables export session ====
+ts=1771865881500
+reason=done
+dimension=minecraft:overworld
+sign=217,11,198
+records=10
+
+# record 1
+path=
+item=тип
+itemId=minecraft:bat_spawn_egg
+type=category
+
+# record 2
+path=
+item=имя равно
+itemId=minecraft:name_tag
+type=category
+
+# record 3
+path=
+item=стоит на блоке
+itemId=minecraft:gold_ore
+type=action
+
+# record 4
+path=
+item=тип
+itemId=minecraft:bat_spawn_egg
+type=action
+
+# record 5
+path=
+item=имя равно
+itemId=minecraft:name_tag
+type=action
+
+# record 6
+path=
+item=находится рядом
+itemId=minecraft:compass
+type=action
+
+# record 7
+path=
+item=является мобом
+itemId=minecraft:rotten_flesh
+type=action
+
+# record 8
+path=
+item=является нипом npc
+itemId=minecraft:player_head
+type=action
+
+# record 9
+path=
+item=является снарядом
+itemId=minecraft:arrow
+type=action
+
+# record 10
+path=
+item=имеет ли эффект
+itemId=minecraft:potion
+type=action
+
+# ==== regalltables export session ====
+ts=1771865888999
+reason=done
+dimension=minecraft:overworld
+sign=217,11,198
+records=11
+
+# record 1
+path=
+item=очистить создать массив
+itemId=minecraft:nether_star
+type=action
+
+# record 2
+path=
+item=получить элемент массива
+itemId=minecraft:oak_sign
+type=action
+
+# record 3
+path=
+item=вставить в массив
+itemId=minecraft:hopper
+type=action
+
+# record 4
+path=
+item=заменить элемент массива
+itemId=minecraft:magma_cream
+type=action
+
+# record 5
+path=
+item=удалить элемент массива
+itemId=minecraft:tnt
+type=action
+
+# record 6
+path=
+item=добавить в конец массива
+itemId=minecraft:piston
+type=action
+
+# record 7
+path=
+item=присоединить массив
+itemId=minecraft:rail
+type=action
+
+# record 8
+path=
+item=скопировать массив
+itemId=minecraft:paper
+type=action
+
+# record 9
+path=
+item=получить размер массива
+itemId=minecraft:redstone_torch
+type=action
+
+# record 10
+path=
+item=сортировать массив
+itemId=minecraft:command_block
+type=action
+
+# record 11
+path=
+item=вывести массив в строку
+itemId=minecraft:book
+type=action
+
+# ==== regalltables export session ====
+ts=1771866146298
+reason=done
+dimension=minecraft:overworld
+sign=217,11,198
+records=100
+
+# record 1
+path=
+item=управление инвентарем
+itemId=minecraft:chest
+type=category
+
+# record 2
+path=
+item=коммуникация
+itemId=minecraft:beacon
+type=category
+
+# record 3
+path=
+item=инвентарные меню
+itemId=minecraft:painting
+type=category
+
+# record 4
+path=
+item=перемещение
+itemId=minecraft:leather_boots
+type=category
+
+# record 5
+path=
+item=параметры
+itemId=minecraft:apple
+type=category
+
+# record 6
+path=
+item=частицы
+itemId=minecraft:nether_star
+type=category
+
+# record 7
+path=
+item=настройки
+itemId=minecraft:anvil
+type=category
+
+# record 8
+path=
+item=анимации игрока
+itemId=minecraft:armor_stand
+type=category
+
+# record 9
+path=
+item=донат
+itemId=minecraft:emerald
+type=category
+
+# record 10
+path=управление инвентарем
+item=выдать предметы
+itemId=minecraft:chest
+type=action
+
+# record 11
+path=управление инвентарем
+item=установить предметы
+itemId=minecraft:ender_chest
+type=action
+
+# record 12
+path=управление инвентарем
+item=установить предметы в эндер сундуке
+itemId=minecraft:snowball
+type=action
+
+# record 13
+path=управление инвентарем
+item=установить броню
+itemId=minecraft:iron_chestplate
+type=action
+
+# record 14
+path=управление инвентарем
+item=установить предмет в руку
+itemId=minecraft:shield
+type=action
+
+# record 15
+path=управление инвентарем
+item=установить предмет в курсор
+itemId=minecraft:tripwire_hook
+type=action
+
+# record 16
+path=управление инвентарем
+item=удалить предметы
+itemId=minecraft:cobweb
+type=action
+
+# record 17
+path=управление инвентарем
+item=очистить инвентарь
+itemId=minecraft:paper
+type=action
+
+# record 18
+path=управление инвентарем
+item=очистить эндер сундук
+itemId=minecraft:redstone_block
+type=action
+
+# record 19
+path=управление инвентарем
+item=установить слот
+itemId=minecraft:dandelion
+type=action
+
+# record 20
+path=управление инвентарем
+item=выдать рандомный предмет
+itemId=minecraft:blue_shulker_box
+type=action
+
+# record 21
+path=управление инвентарем
+item=сохранить инвентарь
+itemId=minecraft:end_stone
+type=action
+
+# record 22
+path=управление инвентарем
+item=загрузить инвентарь
+itemId=minecraft:end_stone_bricks
+type=action
+
+# record 23
+path=управление инвентарем
+item=установить задержку предмета
+itemId=minecraft:clock
+type=action
+
+# record 24
+path=управление инвентарем
+item=получить предмет
+itemId=minecraft:golden_carrot
+type=action
+
+# record 25
+path=управление инвентарем
+item=установить предмет
+itemId=minecraft:prismarine_shard
+type=action
+
+# record 26
+path=управление инвентарем
+item=получить задержку предмета
+itemId=minecraft:blaze_rod
+type=action
+
+# record 27
+path=коммуникация
+item=отправить сообщение
+itemId=minecraft:book
+type=action
+
+# record 28
+path=коммуникация
+item=отправить сообщение
+itemId=minecraft:knowledge_book
+type=action
+
+# record 29
+path=коммуникация
+item=отправить диалог
+itemId=minecraft:bookshelf
+type=action
+
+# record 30
+path=коммуникация
+item=очистить чат
+itemId=minecraft:glass
+type=action
+
+# record 31
+path=коммуникация
+item=проиграть звук
+itemId=minecraft:music_disc_cat
+type=action
+
+# record 32
+path=коммуникация
+item=остановить звук
+itemId=minecraft:music_disc_13
+type=action
+
+# record 33
+path=коммуникация
+item=сообщение на экран титл
+itemId=minecraft:oak_sign
+type=action
+
+# record 34
+path=коммуникация
+item=сообщение в экшн бар
+itemId=minecraft:torch
+type=action
+
+# record 35
+path=коммуникация
+item=показать книжку с ссылкой
+itemId=minecraft:name_tag
+type=action
+
+# record 36
+path=коммуникация
+item=показать книжку
+itemId=minecraft:written_book
+type=action
+
+# record 37
+path=инвентарные меню
+item=открыть инвентарное меню
+itemId=minecraft:chest
+type=action
+
+# record 38
+path=инвентарные меню
+item=расширить инвентарное меню
+itemId=minecraft:chest_minecart
+type=action
+
+# record 39
+path=инвентарные меню
+item=установить предмет в меню
+itemId=minecraft:hopper
+type=action
+
+# record 40
+path=инвентарные меню
+item=получить предмет из меню
+itemId=minecraft:hopper_minecart
+type=action
+
+# record 41
+path=инвентарные меню
+item=установить название меню
+itemId=minecraft:name_tag
+type=action
+
+# record 42
+path=инвентарные меню
+item=добавить строку меню
+itemId=minecraft:piston
+type=action
+
+# record 43
+path=инвентарные меню
+item=удалить строку меню
+itemId=minecraft:tnt
+type=action
+
+# record 44
+path=инвентарные меню
+item=закрыть инвентарь
+itemId=minecraft:structure_void
+type=action
+
+# record 45
+path=инвентарные меню
+item=открыть инвентарь блока из игры
+itemId=minecraft:shulker_box
+type=action
+
+# record 46
+path=инвентарные меню
+item=открыть инвентарь сущности из игры
+itemId=minecraft:command_block_minecart
+type=action
+
+# record 47
+path=перемещение
+item=телепортация
+itemId=minecraft:ender_pearl
+type=action
+
+# record 48
+path=перемещение
+item=повернуть к местоположению
+itemId=minecraft:compass
+type=action
+
+# record 49
+path=перемещение
+item=случайная телепортация
+itemId=minecraft:ender_eye
+type=action
+
+# record 50
+path=перемещение
+item=очередь телепортаций
+itemId=minecraft:chorus_fruit
+type=action
+
+# record 51
+path=перемещение
+item=запустить вверх вниз
+itemId=minecraft:slime_block
+type=action
+
+# record 52
+path=перемещение
+item=запустить вперед назад
+itemId=minecraft:piston
+type=action
+
+# record 53
+path=перемещение
+item=запустить в сторону
+itemId=minecraft:sticky_piston
+type=action
+
+# record 54
+path=перемещение
+item=запустить к местоположению
+itemId=minecraft:paper
+type=action
+
+# record 55
+path=перемещение
+item=кикнуть игрока из игры
+itemId=minecraft:barrier
+type=action
+
+# record 56
+path=перемещение
+item=переместить на другой плот
+itemId=minecraft:dark_oak_door
+type=action
+
+# record 57
+path=параметры
+item=урон
+itemId=minecraft:iron_sword
+type=action
+
+# record 58
+path=параметры
+item=установка здоровья
+itemId=minecraft:cookie
+type=action
+
+# record 59
+path=параметры
+item=выдать эффект зелья
+itemId=minecraft:brewing_stand
+type=action
+
+# record 60
+path=параметры
+item=очистить все эффекты зелий
+itemId=minecraft:milk_bucket
+type=action
+
+# record 61
+path=параметры
+item=удалить эффект зелья
+itemId=minecraft:cauldron
+type=action
+
+# record 62
+path=параметры
+item=установить уровень опыта
+itemId=minecraft:experience_bottle
+type=action
+
+# record 63
+path=параметры
+item=поставить шкалу опыта
+itemId=minecraft:emerald
+type=action
+
+# record 64
+path=параметры
+item=установить уровень голода
+itemId=minecraft:cooked_porkchop
+type=action
+
+# record 65
+path=параметры
+item=установить уровень сытости
+itemId=minecraft:cooked_beef
+type=action
+
+# record 66
+path=параметры
+item=установить истощение
+itemId=minecraft:cooked_mutton
+type=action
+
+# record 67
+path=параметры
+item=установить максимальное здоровье
+itemId=minecraft:golden_apple
+type=action
+
+# record 68
+path=параметры
+item=горение
+itemId=minecraft:flint_and_steel
+type=action
+
+# record 69
+path=параметры
+item=установить скорость полета
+itemId=minecraft:elytra
+type=action
+
+# record 70
+path=параметры
+item=поставить скорость ходьбы
+itemId=minecraft:sugar
+type=action
+
+# record 71
+path=параметры
+item=установить остаток воздуха
+itemId=minecraft:bucket
+type=action
+
+# record 72
+path=параметры
+item=установить максимум воздуха
+itemId=minecraft:water_bucket
+type=action
+
+# record 73
+path=параметры
+item=установить имя
+itemId=minecraft:name_tag
+type=action
+
+# record 74
+path=параметры
+item=установить урон
+itemId=minecraft:redstone
+type=action
+
+# record 75
+path=параметры
+item=установить размер
+itemId=minecraft:slime_ball
+type=action
+
+# record 76
+path=параметры
+item=установить звуки
+itemId=minecraft:note_block
+type=action
+
+# record 77
+path=параметры
+item=установить свечение
+itemId=minecraft:gunpowder
+type=action
+
+# record 78
+path=параметры
+item=видимость игрока
+itemId=minecraft:nether_star
+type=action
+
+# record 79
+path=параметры
+item=установить гравитацию
+itemId=minecraft:iron_boots
+type=action
+
+# record 80
+path=параметры
+item=установить неуязвимость
+itemId=minecraft:leather_chestplate
+type=action
+
+# record 81
+path=параметры
+item=удалить сущность
+itemId=minecraft:barrier
+type=action
+
+# record 82
+path=частицы
+item=отобразить частицу
+itemId=minecraft:gold_nugget
+type=action
+
+# record 83
+path=частицы
+item=отобразить линию из частиц
+itemId=minecraft:blaze_rod
+type=action
+
+# record 84
+path=частицы
+item=отобразить луч из частиц
+itemId=minecraft:prismarine_shard
+type=action
+
+# record 85
+path=частицы
+item=отобразить окружность из частиц
+itemId=minecraft:slime_ball
+type=action
+
+# record 86
+path=частицы
+item=отобразить куб из частиц
+itemId=minecraft:glass
+type=action
+
+# record 87
+path=частицы
+item=отобразить сферу из частиц
+itemId=minecraft:snowball
+type=action
+
+# record 88
+path=настройки
+item=полет
+itemId=minecraft:feather
+type=action
+
+# record 89
+path=настройки
+item=установить режим игры
+itemId=minecraft:crafting_table
+type=action
+
+# record 90
+path=настройки
+item=сохранение инвентаря при смерти
+itemId=minecraft:melon_seeds
+type=action
+
+# record 91
+path=настройки
+item=показать панель скорборда
+itemId=minecraft:painting
+type=action
+
+# record 92
+path=настройки
+item=скрыть панель скорборда
+itemId=minecraft:item_frame
+type=action
+
+# record 93
+path=настройки
+item=показать боссбар
+itemId=minecraft:end_crystal
+type=action
+
+# record 94
+path=настройки
+item=скрыть боссбар
+itemId=minecraft:barrier
+type=action
+
+# record 95
+path=анимации игрока
+item=отображения лежания
+itemId=minecraft:orange_bed
+type=action
+
+# record 96
+path=анимации игрока
+item=игрок встает с кровати
+itemId=minecraft:barrier
+type=action
+
+# record 97
+path=анимации игрока
+item=анимация руки
+itemId=minecraft:diamond_pickaxe
+type=action
+
+# record 98
+path=анимации игрока
+item=сделать игрока приседающим
+itemId=minecraft:chainmail_leggings
+type=action
+
+# record 99
+path=анимации игрока
+item=анимация урона
+itemId=minecraft:redstone_block
+type=action
+
+# record 100
+path=донат
+item=попросить транзакцию креатив коинов
+itemId=minecraft:gold_ingot
+type=action
+
+# ==== regalltables export session ====
+ts=1771866563397
+reason=done
+dimension=minecraft:overworld
+sign=217,11,198
+records=3
+
+# record 1
+path=
+item=блок равен
+itemId=minecraft:bricks
+type=action
+
+# record 2
+path=
+item=контейнер имеет предмет
+itemId=minecraft:chest
+type=action
+
+# record 3
+path=
+item=табличка содержит текст
+itemId=minecraft:oak_sign
+type=action

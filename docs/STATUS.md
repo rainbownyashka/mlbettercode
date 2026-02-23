@@ -5,6 +5,12 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Fabric1165 regalltables snapshot embedding + versioned archive layout (2026-02-23):
+  - current `tablesexport.txt` snapshot is embedded into mod resources at:
+    - `modern/fabric1165/src/main/resources/regalltables/1.16.5/tablesexport.current.txt`.
+  - versioned snapshot archive layout established for quick parity/history checks:
+    - repo-local: `agentslock/tablesexports/1.16.5/tablesexport.latest.txt` + timestamped copies,
+    - runtime-local: `.minecraft/mldsl_tables/1.16.5/tablesexport.latest.txt` + timestamped copies.
 - Fabric1165 `/regalltables` export persistence update (2026-02-23):
   - export writer now uses append mode for `tablesexport.txt` (`CREATE + APPEND`) instead of overwrite.
   - each export run writes a timestamped session header (`# ==== regalltables export session ====`, `ts=...`) before `reason/dimension/sign/records`.
