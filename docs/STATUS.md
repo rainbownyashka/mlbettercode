@@ -5,6 +5,10 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Fabric1165 regalltables name-first export mode (2026-02-23):
+  - `regalltables` export now ignores `itemId` by default (`REGALL_EXPORT_INCLUDE_ITEM_ID=false`).
+  - output records are written as `path/item/type` without `itemId=` lines.
+  - record dedupe key also excludes item id (`path + item + type`), reducing false drift from version-specific ids.
 - Legacy raw export backup in repo (2026-02-23):
   - current `.minecraft/regallactions_export.txt` snapshot copied to:
     - `agentslock/tablesexports/1.12.2/regallactions_export.latest.txt`.

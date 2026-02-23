@@ -118,6 +118,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static long LAST_LEGACY_CLICK_MS = 0L;
     private static int LAST_LEGACY_CLICK_BURST = 0;
     private static long LAST_TESTCASE_RENDER_LOG_MS = 0L;
+    // Name-first parity mode for cross-version table compares.
+    private static final boolean REGALL_EXPORT_INCLUDE_ITEM_ID = false;
     private static int LAST_WORLD_INSTANCE_ID = -1;
     private static long LAST_SCOREBOARD_PARSE_ERR_LOG_MS = 0L;
     private static boolean SPRINTF_ACTIVE = false;
@@ -956,9 +958,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static void appendRegallRecord(String path, String item, String itemId, String type) {
         String p = safeText(path);
         String i = safeText(item);
-        String id = safeText(itemId);
+        String id = REGALL_EXPORT_INCLUDE_ITEM_ID ? safeText(itemId) : "";
         String t = safeText(type);
-        String key = p + "|" + i + "|" + id + "|" + t;
+        String key = p + "|" + i + "|" + t;
         if (!REGALL_TABLES.recordKeys.add(key)) {
             return;
         }
@@ -1118,7 +1120,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             lines.add("# record " + (i + 1));
             lines.add("path=" + safeText(r.path));
             lines.add("item=" + safeText(r.item));
-            lines.add("itemId=" + safeText(r.itemId));
+            if (REGALL_EXPORT_INCLUDE_ITEM_ID) {
+                lines.add("itemId=" + safeText(r.itemId));
+            }
             lines.add("type=" + safeText(r.type));
         }
         try {
