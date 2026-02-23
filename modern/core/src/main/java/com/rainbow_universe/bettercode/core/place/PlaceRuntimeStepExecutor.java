@@ -362,7 +362,7 @@ public final class PlaceRuntimeStepExecutor {
                     }
                     return PlaceExecResult.inProgress(0, "CURSOR_WAIT");
                 }
-                boolean opened = tryOpenParamsTarget(bridge);
+                boolean opened = tryOpenParamsTarget(bridge, logger);
                 entry.setParamsOpenAttempts(entry.paramsOpenAttempts() + 1);
                 entry.setNextParamsActionMs(now + Math.max(120, delay));
                 entry.setParamsReadyWindowId(-1);
@@ -422,7 +422,7 @@ public final class PlaceRuntimeStepExecutor {
                         return PlaceExecResult.inProgress(0, "FORCE_REPLACE");
                     }
                     int openAttempt = entry.menuOpenAttempts() + 1;
-                    boolean opened = tryOpenMenuTarget(bridge);
+                    boolean opened = tryOpenMenuTarget(bridge, logger);
                     entry.setNeedOpenMenu(false);
                     entry.setMenuRetrySinceMs(now);
                     entry.setLastOpenAttemptMs(now);
@@ -506,7 +506,8 @@ public final class PlaceRuntimeStepExecutor {
                 if (scopeSlot < 0) {
                     return fail(logger, "SCOPE_MENU_NOT_FOUND", "scope menu not found: " + route.scopeKey);
                 }
-                ClickResult scopeClick = bridge.clickSlot(view.windowId(), scopeSlot, 0, "PICKUP");
+                ClickResult scopeClick = clickSlotWithTrace(
+                    bridge, view, view.windowId(), scopeSlot, 0, "PICKUP", logger, "menu_scope");
                 if (!scopeClick.accepted()) {
                     return fail(logger, "SCOPE_MENU_CLICK_FAILED", scopeClick.reason());
                 }
@@ -610,7 +611,8 @@ public final class PlaceRuntimeStepExecutor {
                     }
                     return PlaceExecResult.inProgress(0, "MENU_CURSOR_WAIT");
                 }
-                ClickResult rndClick = bridge.clickSlot(view.windowId(), randomSlot, 0, "PICKUP");
+                ClickResult rndClick = clickSlotWithTrace(
+                    bridge, view, view.windowId(), randomSlot, 0, "PICKUP", logger, "menu_random");
                 if (!rndClick.accepted()) {
                     return fail(logger, "MENU_CLICK_FAILED", rndClick.reason());
                 }
@@ -632,7 +634,8 @@ public final class PlaceRuntimeStepExecutor {
                 }
                 return PlaceExecResult.inProgress(0, "MENU_CURSOR_WAIT");
             }
-            ClickResult click = bridge.clickSlot(view.windowId(), slot, 0, "PICKUP");
+            ClickResult click = clickSlotWithTrace(
+                bridge, view, view.windowId(), slot, 0, "PICKUP", logger, "menu_target");
             if (!click.accepted()) {
                 return fail(logger, "MENU_CLICK_FAILED", click.reason());
             }
@@ -730,7 +733,8 @@ public final class PlaceRuntimeStepExecutor {
                     }
                     return PlaceExecResult.inProgress(0, "CURSOR_WAIT");
                 }
-                ClickResult click = bridge.clickSlot(view.windowId(), entry.pendingArgClickSlot(), 0, "PICKUP");
+                ClickResult click = clickSlotWithTrace(
+                    bridge, view, view.windowId(), entry.pendingArgClickSlot(), 0, "PICKUP", logger, "args_pending");
                 if (!click.accepted()) {
                     return fail(logger, "ARGS_CLICK_FAILED", click.reason());
                 }
@@ -831,17 +835,20 @@ public final class PlaceRuntimeStepExecutor {
                 if (hotbarContainerSlot < 0) {
                     return fail(logger, "ITEM_HOTBAR_SLOT_NOT_FOUND", "hotbar slot not found in container");
                 }
-                ClickResult c1 = bridge.clickSlot(view.windowId(), hotbarContainerSlot, 0, "PICKUP");
+                ClickResult c1 = clickSlotWithTrace(
+                    bridge, view, view.windowId(), hotbarContainerSlot, 0, "PICKUP", logger, "args_input_pick_hotbar");
                 if (!c1.accepted()) {
                     return fail(logger, "ITEM_CLICK_FAILED", c1.reason());
                 }
-                ClickResult c2 = bridge.clickSlot(view.windowId(), targetSlot, 0, "PICKUP");
+                ClickResult c2 = clickSlotWithTrace(
+                    bridge, view, view.windowId(), targetSlot, 0, "PICKUP", logger, "args_input_place_target");
                 if (!c2.accepted()) {
                     return fail(logger, "ITEM_CLICK_FAILED", c2.reason());
                 }
                 CursorState cursorAfterTarget = bridge.getCursorStack();
                 if (!cursorAfterTarget.isEmpty()) {
-                    ClickResult c3 = bridge.clickSlot(view.windowId(), hotbarContainerSlot, 0, "PICKUP");
+                    ClickResult c3 = clickSlotWithTrace(
+                        bridge, view, view.windowId(), hotbarContainerSlot, 0, "PICKUP", logger, "args_input_restore_hotbar");
                     if (!c3.accepted()) {
                         return fail(logger, "ITEM_CLICK_FAILED", c3.reason());
                     }
@@ -902,17 +909,20 @@ public final class PlaceRuntimeStepExecutor {
             if (hotbarContainerSlot < 0) {
                 return fail(logger, "INPUT_HOTBAR_SLOT_NOT_FOUND", "hotbar slot not found in container");
             }
-            ClickResult c1 = bridge.clickSlot(view.windowId(), hotbarContainerSlot, 0, "PICKUP");
+            ClickResult c1 = clickSlotWithTrace(
+                bridge, view, view.windowId(), hotbarContainerSlot, 0, "PICKUP", logger, "args_item_pick_hotbar");
             if (!c1.accepted()) {
                 return fail(logger, "INPUT_CLICK_FAILED", c1.reason());
             }
-            ClickResult c2 = bridge.clickSlot(view.windowId(), targetSlot, 0, "PICKUP");
+            ClickResult c2 = clickSlotWithTrace(
+                bridge, view, view.windowId(), targetSlot, 0, "PICKUP", logger, "args_item_place_target");
             if (!c2.accepted()) {
                 return fail(logger, "INPUT_CLICK_FAILED", c2.reason());
             }
             CursorState cursor = bridge.getCursorStack();
             if (!cursor.isEmpty()) {
-                ClickResult c3 = bridge.clickSlot(view.windowId(), hotbarContainerSlot, 0, "PICKUP");
+                ClickResult c3 = clickSlotWithTrace(
+                    bridge, view, view.windowId(), hotbarContainerSlot, 0, "PICKUP", logger, "args_item_restore_hotbar");
                 if (!c3.accepted()) {
                     return fail(logger, "INPUT_CLICK_FAILED", c3.reason());
                 }
@@ -1339,15 +1349,19 @@ public final class PlaceRuntimeStepExecutor {
         return PlaceExecResult.fail(0, 0, safeCode, safeDetail);
     }
 
-    private static boolean tryOpenMenuTarget(GameBridge bridge) {
+    private static boolean tryOpenMenuTarget(GameBridge bridge, CoreLogger logger) {
         if (bridge == null) {
             return false;
         }
         // Strict legacy path: sign (z-1 from entry) -> entry block; no generic fallback.
-        return bridge.openMenuAtEntryAnchor();
+        boolean opened = bridge.openMenuAtEntryAnchor();
+        if (logger != null) {
+            logger.info("printer-debug", "menu_open_target opened=" + opened + " anchor=" + describeAnchor(bridge));
+        }
+        return opened;
     }
 
-    private static boolean tryOpenParamsTarget(GameBridge bridge) {
+    private static boolean tryOpenParamsTarget(GameBridge bridge, CoreLogger logger) {
         if (bridge == null) {
             return false;
         }
@@ -1355,19 +1369,89 @@ public final class PlaceRuntimeStepExecutor {
         if (anchor != null) {
             // Legacy parity: params click prefers sign(z-1) + (0,1,1), where sign Y may vary in [-2..0] from entry.
             for (int dy = 0; dy >= -2; dy--) {
+                int x = anchor.x();
+                int y = anchor.y() + dy + 1;
+                int z = anchor.z();
                 ClickResult legacy = bridge.clickBlockLegacy(
-                    anchor.x(),
-                    anchor.y() + dy + 1,
-                    anchor.z(),
+                    x,
+                    y,
+                    z,
                     "params_open_sign_offset",
                     true
                 );
+                if (logger != null) {
+                    logger.info("printer-debug",
+                        "params_open_probe dy=" + dy
+                            + " target=" + x + "," + y + "," + z
+                            + " accepted=" + (legacy != null && legacy.accepted())
+                            + " reason=" + (legacy == null ? "null" : safe(legacy.reason())));
+                }
                 if (legacy != null && legacy.accepted()) {
                     return true;
                 }
             }
         }
+        if (logger != null) {
+            logger.info("printer-debug", "params_open_probe result=not_opened anchor=" + describeAnchor(bridge));
+        }
         return false;
+    }
+
+    private static ClickResult clickSlotWithTrace(
+        GameBridge bridge,
+        ContainerView view,
+        int windowId,
+        int slot,
+        int button,
+        String clickType,
+        CoreLogger logger,
+        String stage
+    ) {
+        SlotView slotView = findSlotByNumber(view, slot);
+        if (logger != null) {
+            logger.info("printer-debug",
+                "gui_click stage=" + safe(stage)
+                    + " window=" + windowId
+                    + " slot=" + slot
+                    + " playerInv=" + (slotView != null && slotView.playerInventory())
+                    + " empty=" + (slotView == null || slotView.empty())
+                    + " item=" + (slotView == null ? "-" : safe(slotView.itemId()))
+                    + " display=" + (slotView == null ? "-" : safe(slotView.displayName())));
+        }
+        ClickResult click = bridge.clickSlot(windowId, slot, button, clickType);
+        if (logger != null) {
+            logger.info("printer-debug",
+                "gui_click_result stage=" + safe(stage)
+                    + " window=" + windowId
+                    + " slot=" + slot
+                    + " accepted=" + (click != null && click.accepted())
+                    + " ack=" + (click == null ? "null" : String.valueOf(click.ackState()))
+                    + " reason=" + (click == null ? "null" : safe(click.reason())));
+        }
+        return click;
+    }
+
+    private static SlotView findSlotByNumber(ContainerView view, int slot) {
+        if (view == null || view.slots() == null) {
+            return null;
+        }
+        for (SlotView s : view.slots()) {
+            if (s != null && s.slotNumber() == slot) {
+                return s;
+            }
+        }
+        return null;
+    }
+
+    private static String describeAnchor(GameBridge bridge) {
+        if (bridge == null) {
+            return "null_bridge";
+        }
+        BlockPosView anchor = bridge.getRuntimeEntryAnchor();
+        if (anchor == null) {
+            return "null_anchor";
+        }
+        return anchor.x() + "," + anchor.y() + "," + anchor.z();
     }
 
     private static boolean hasSignAtMenuAnchor(GameBridge bridge) {
@@ -2232,7 +2316,8 @@ public final class PlaceRuntimeStepExecutor {
         if (nextArrow == null) {
             return new SlotRouteResult(false, true, null, "next_page_arrow_not_found");
         }
-        ClickResult click = bridge.clickSlot(view.windowId(), nextArrow.slotNumber(), 0, "PICKUP");
+        ClickResult click = clickSlotWithTrace(
+            bridge, view, view.windowId(), nextArrow.slotNumber(), 0, "PICKUP", null, "args_page_next");
         if (!click.accepted()) {
             entry.setArgsPageRetryCount(entry.argsPageRetryCount() + 1);
             entry.setArgsPageTurnNextMs(now + Math.max(120, delay));
