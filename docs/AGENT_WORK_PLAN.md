@@ -31,6 +31,21 @@ If any gate fails, task remains `in_progress`; no "ready for user test" label.
   - checkpoint C: release candidate.
 - Between checkpoints, validation is agent-owned via harness + logs.
 
+## Release Gate: Cross-PC Smoke
+Before release candidate is marked ready, run smoke validation on at least one non-dev machine.
+
+Required cross-PC checks:
+1. Clean profile startup (fresh `.minecraft/mods/config` baseline) and mod init health.
+2. `/mldsl run` + printer happy-path on real server with latest jar.
+3. `/regalltables` export run + parity compare report generation.
+4. Build/runtime Java compatibility (declared target JDK for that version).
+5. Artifact integrity: jar hash + expected embedded snapshots present.
+
+Evidence to store:
+1. Machine tag (os/jdk/mc version), run date, jar commit hash.
+2. `latest.log` excerpt with key success markers.
+3. Pass/fail summary with blocker signatures (if any).
+
 ## Immediate Workstream
 1. Close remaining parity gaps in printer/menu/args/postPlace with core-first patches.
 2. Keep adapter drift low by moving duplicated behavior into core helpers only after parity evidence.

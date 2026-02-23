@@ -5,6 +5,13 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Release process hardening (plan-level, 2026-02-23):
+  - release plan now includes mandatory cross-PC smoke gate before RC sign-off:
+    - clean profile startup,
+    - `/mldsl run` printer happy-path,
+    - `/regalltables` export + parity check,
+    - java/runtime compatibility evidence,
+    - artifact integrity evidence (jar hash + embedded snapshots).
 - Fabric1165 regalltables name-first export mode (2026-02-23):
   - `regalltables` export now ignores `itemId` by default (`REGALL_EXPORT_INCLUDE_ITEM_ID=false`).
   - output records are written as `path/item/type` without `itemId=` lines.
