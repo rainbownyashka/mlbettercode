@@ -162,6 +162,10 @@
   - added explicit trace marker:
     - `runtime_state=WAIT_PARAMS_CHEST action=return_to_menu_no_trapped_chest ...`
   - chest position check is now strict legacy-style at `entry.y+1` only (same `x/z` as runtime anchor), no `y+2/y/y-1` fallback offsets.
+- Fabric1165 outline render stabilization follow-up (2026-02-23):
+  - outline pass no longer mutates shared world render matrix via `translate(-camera)` on context stack.
+  - switched to camera-relative coordinates per-box (`min/max - cameraPos`) with unchanged matrix stack.
+  - added strict GL-state restore (`try/finally`, restore depth/blend/lineWidth) to avoid leaking state into vanilla block outline render.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).

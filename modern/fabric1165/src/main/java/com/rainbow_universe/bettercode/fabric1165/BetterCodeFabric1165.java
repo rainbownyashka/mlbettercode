@@ -2899,55 +2899,68 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             return;
         }
         Vec3d cam = context.camera().getPos();
-        VertexConsumerProvider.Immediate consumers = mc.getBufferBuilders().getEntityVertexConsumers();
+        VertexConsumerProvider.Immediate consumers;
+        if (context.consumers() instanceof VertexConsumerProvider.Immediate) {
+            consumers = (VertexConsumerProvider.Immediate) context.consumers();
+        } else {
+            consumers = mc.getBufferBuilders().getEntityVertexConsumers();
+        }
         VertexConsumer lines = consumers.getBuffer(RenderLayer.getLines());
-
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         RenderSystem.lineWidth(2.0F);
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
+        try {
+            float[] outline = selectionOutlineColor();
+            int drawn = 0;
+            for (SelectedRow row : SELECTED.values()) {
+                if (row == null || !dim.equals(row.dimension())) {
+                    continue;
+                }
+                BlockPos anchor = new BlockPos(row.x(), row.y(), row.z());
+                if (!isBlueGlassAt(mc, anchor)) {
+                    continue;
+                }
+                BlockPos top = anchor.up();
+                Box box = new Box(top).expand(0.003);
+                drawCameraRelativeBox(matrices, lines, box, cam, outline[0], outline[1], outline[2], 1.0F);
+                drawn++;
+                if (drawn >= 120) {
+                    break;
+                }
+            }
+            if (marker != null && dim.equals(marker.dimension())) {
+                BlockPos markerPos = new BlockPos(marker.x(), marker.y(), marker.z());
+                Box markerBox = new Box(markerPos).expand(0.01);
+                drawCameraRelativeBox(matrices, lines, markerBox, cam, 1.0F, 0.45F, 0.15F, 1.0F);
+            }
+            consumers.draw();
+        } finally {
+            RenderSystem.depthMask(true);
+            RenderSystem.enableDepthTest();
+            RenderSystem.lineWidth(1.0F);
+            RenderSystem.disableBlend();
+        }
+    }
 
-        matrices.push();
-        matrices.translate(-cam.x, -cam.y, -cam.z);
-        float[] outline = selectionOutlineColor();
-        int drawn = 0;
-        for (SelectedRow row : SELECTED.values()) {
-            if (row == null || !dim.equals(row.dimension())) {
-                continue;
-            }
-            BlockPos anchor = new BlockPos(row.x(), row.y(), row.z());
-            if (!isBlueGlassAt(mc, anchor)) {
-                continue;
-            }
-            BlockPos top = anchor.up();
-            Box box = new Box(top).expand(0.003);
-            WorldRenderer.drawBox(
-                matrices,
-                lines,
-                box,
-                outline[0], outline[1], outline[2], 1.0F
-            );
-            drawn++;
-            if (drawn >= 120) {
-                break;
-            }
-        }
-        if (marker != null && dim.equals(marker.dimension())) {
-            BlockPos markerPos = new BlockPos(marker.x(), marker.y(), marker.z());
-            Box markerBox = new Box(markerPos).expand(0.01);
-            WorldRenderer.drawBox(
-                matrices,
-                lines,
-                markerBox,
-                1.0F, 0.45F, 0.15F, 1.0F
-            );
-        }
-        matrices.pop();
-        consumers.draw();
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.disableBlend();
+    private static void drawCameraRelativeBox(
+        MatrixStack matrices,
+        VertexConsumer lines,
+        Box box,
+        Vec3d cam,
+        float r,
+        float g,
+        float b,
+        float a
+    ) {
+        WorldRenderer.drawBox(
+            matrices,
+            lines,
+            box.minX - cam.x, box.minY - cam.y, box.minZ - cam.z,
+            box.maxX - cam.x, box.maxY - cam.y, box.maxZ - cam.z,
+            r, g, b, a
+        );
     }
 
     private static float[] selectionOutlineColor() {
