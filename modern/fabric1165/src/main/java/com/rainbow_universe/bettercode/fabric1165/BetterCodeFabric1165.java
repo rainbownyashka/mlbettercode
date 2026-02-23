@@ -2887,6 +2887,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         if (context.camera() == null) {
             return;
         }
+        Vec3d cam = context.camera().getPos();
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         RenderSystem.disableTexture();
@@ -2910,8 +2911,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             Box box = new Box(top).expand(0.003);
             WorldRenderer.drawBox(
                 bb,
-                box.minX, box.minY, box.minZ,
-                box.maxX, box.maxY, box.maxZ,
+                box.minX - cam.x, box.minY - cam.y, box.minZ - cam.z,
+                box.maxX - cam.x, box.maxY - cam.y, box.maxZ - cam.z,
                 outline[0], outline[1], outline[2], 1.0F
             );
             drawn++;
@@ -2924,8 +2925,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             Box markerBox = new Box(markerPos).expand(0.01);
             WorldRenderer.drawBox(
                 bb,
-                markerBox.minX, markerBox.minY, markerBox.minZ,
-                markerBox.maxX, markerBox.maxY, markerBox.maxZ,
+                markerBox.minX - cam.x, markerBox.minY - cam.y, markerBox.minZ - cam.z,
+                markerBox.maxX - cam.x, markerBox.maxY - cam.y, markerBox.maxZ - cam.z,
                 1.0F, 0.45F, 0.15F, 1.0F
             );
         }
