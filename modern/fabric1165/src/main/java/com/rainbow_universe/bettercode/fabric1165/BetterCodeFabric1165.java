@@ -41,12 +41,9 @@ import net.minecraft.block.Blocks;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.item.Item;
@@ -76,7 +73,6 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.registry.Registry;
 import com.mojang.blaze3d.systems.RenderSystem;
-import org.lwjgl.opengl.GL11;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -2898,15 +2894,22 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         if (context.camera() == null) {
             return;
         }
+        MatrixStack matrices = context.matrixStack();
+        if (matrices == null) {
+            return;
+        }
+        Vec3d cam = context.camera().getPos();
+        VertexConsumerProvider.Immediate consumers = mc.getBufferBuilders().getEntityVertexConsumers();
+        VertexConsumer lines = consumers.getBuffer(RenderLayer.getLines());
+
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        RenderSystem.disableTexture();
+        RenderSystem.lineWidth(2.0F);
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
-        RenderSystem.depthFunc(GL11.GL_ALWAYS);
-        RenderSystem.lineWidth(2.0F);
-        BufferBuilder bb = Tessellator.getInstance().getBuffer();
-        bb.begin(GL11.GL_LINES, VertexFormats.POSITION_COLOR);
+
+        matrices.push();
+        matrices.translate(-cam.x, -cam.y, -cam.z);
         float[] outline = selectionOutlineColor();
         int drawn = 0;
         for (SelectedRow row : SELECTED.values()) {
@@ -2920,9 +2923,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             BlockPos top = anchor.up();
             Box box = new Box(top).expand(0.003);
             WorldRenderer.drawBox(
-                bb,
-                box.minX, box.minY, box.minZ,
-                box.maxX, box.maxY, box.maxZ,
+                matrices,
+                lines,
+                box,
                 outline[0], outline[1], outline[2], 1.0F
             );
             drawn++;
@@ -2934,17 +2937,16 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             BlockPos markerPos = new BlockPos(marker.x(), marker.y(), marker.z());
             Box markerBox = new Box(markerPos).expand(0.01);
             WorldRenderer.drawBox(
-                bb,
-                markerBox.minX, markerBox.minY, markerBox.minZ,
-                markerBox.maxX, markerBox.maxY, markerBox.maxZ,
+                matrices,
+                lines,
+                markerBox,
                 1.0F, 0.45F, 0.15F, 1.0F
             );
         }
-        Tessellator.getInstance().draw();
-        RenderSystem.depthFunc(GL11.GL_LEQUAL);
+        matrices.pop();
+        consumers.draw();
         RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
-        RenderSystem.enableTexture();
         RenderSystem.disableBlend();
     }
 

@@ -152,6 +152,10 @@
     - final miss marker `params_open_probe result=not_opened ...`
   - added menu-open target trace:
     - `menu_open_target opened=... anchor=...`.
+- Fabric1165 outline render path hardening (2026-02-23):
+  - selector/testcase outline renderer switched from raw `Tessellator` line pass to stable Fabric world-render path (`MatrixStack + RenderLayer.getLines()` + `WorldRenderer.drawBox(...)`).
+  - boxes are now rendered in explicit camera-relative space (`translate(-cameraPos)`), eliminating drift/far-point artifacts.
+  - xray behavior preserved via `disableDepthTest` during line pass.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).
