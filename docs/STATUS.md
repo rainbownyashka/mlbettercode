@@ -247,6 +247,9 @@
   - follow-up traversal/export fix:
     - in default mode, when click is classified as `action`, crawler now marks all items from the same menu snapshot as already tested (prevents redundant per-item re-click loops afterward).
     - crawler now reports full absolute export path in chat on stop/done/timeout/dimension-change/hotkey stop.
+  - anti-silent-stall + observability:
+    - added `/regalltables status` (phase, records, current path, retry count, export path).
+    - if no progress recovery loop repeats too many times, crawler now auto-stops with export (`reason=stalled_no_progress`) and sends chat notification.
 - Route planner safety correction:
   - reverted target selection semantics to match only the real action key (`baseKey`) in current window.
   - learned planned path is kept as diagnostics (`menu_route_plan`) and no longer allows parent-category key to be treated as final action match.

@@ -272,6 +272,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 .executes(ctx -> regAllTablesStart(ctx.getSource(), false))
                 .then(ClientCommandManager.literal("select")
                     .executes(ctx -> regAllTablesStart(ctx.getSource(), true)))
+                .then(ClientCommandManager.literal("status")
+                    .executes(ctx -> regAllTablesStatus(ctx.getSource())))
                 .then(ClientCommandManager.literal("stop")
                     .executes(ctx -> regAllTablesStop(ctx.getSource())))
         );
@@ -604,6 +606,22 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         return 1;
     }
 
+    private static int regAllTablesStatus(FabricClientCommandSource source) {
+        synchronized (REGALL_TABLES) {
+            if (!REGALL_TABLES.active) {
+                source.sendFeedback(new LiteralText("[regalltables] inactive"));
+                return 1;
+            }
+            source.sendFeedback(new LiteralText(
+                "[regalltables] active phase=" + REGALL_TABLES.phase
+                    + " records=" + REGALL_TABLES.records.size()
+                    + " path=" + pathKeyOf(REGALL_TABLES.currentPath)
+                    + " retries=" + REGALL_TABLES.noProgressRecoverCount
+                    + " file=" + regAllTablesExportPath(MinecraftClient.getInstance())));
+            return 1;
+        }
+    }
+
     private static int modHelp(FabricClientCommandSource source) {
         source.sendFeedback(new LiteralText("[modhelp] /mldsl run <postId|path.json> [config]"));
         source.sendFeedback(new LiteralText("[modhelp] /module publish - publish selected rows"));
@@ -676,6 +694,17 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 REGALL_TABLES.phase = "OPEN_ROOT";
                 REGALL_TABLES.replayIndex = 0;
                 closeScreenQuiet(mc);
+                REGALL_TABLES.noProgressRecoverCount++;
+                if (REGALL_TABLES.noProgressRecoverCount >= 6) {
+                    int saved = writeRegAllTablesExport(mc, REGALL_TABLES, "stalled_no_progress");
+                    Path out = regAllTablesExportPath(mc);
+                    System.out.println("[printer-debug] regalltables stop reason=stalled_no_progress exported=" + saved + " file=" + out);
+                    if (mc.player != null) {
+                        mc.player.sendMessage(new LiteralText("[regalltables] stopped: stalled_no_progress. exported=" + saved + " file=" + out), false);
+                    }
+                    REGALL_TABLES.reset();
+                    return;
+                }
                 REGALL_TABLES.nextActionMs = now + 160L;
                 return;
             }
@@ -788,6 +817,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             REGALL_TABLES.phase = "WAIT_TEST_RESULT";
             REGALL_TABLES.nextActionMs = now + 220L;
             REGALL_TABLES.lastProgressMs = now;
+            REGALL_TABLES.noProgressRecoverCount = 0;
             return;
         }
         if ("WAIT_TEST_RESULT".equals(REGALL_TABLES.phase)) {
@@ -848,6 +878,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 REGALL_TABLES.phase = "OPEN_ROOT";
                 REGALL_TABLES.nextActionMs = now + 160L;
                 REGALL_TABLES.lastProgressMs = now;
+                REGALL_TABLES.noProgressRecoverCount = 0;
                 return;
             }
             int saved = writeRegAllTablesExport(mc, REGALL_TABLES, "done");
@@ -1364,6 +1395,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         long startedMs = 0L;
         long nextActionMs = 0L;
         long lastProgressMs = 0L;
+        int noProgressRecoverCount = 0;
         int replayIndex = 0;
         List<String> currentPath = new ArrayList<String>();
         final Deque<List<String>> pendingMenus = new ArrayDeque<List<String>>();
@@ -1389,6 +1421,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             startedMs = 0L;
             nextActionMs = 0L;
             lastProgressMs = 0L;
+            noProgressRecoverCount = 0;
             replayIndex = 0;
             currentPath = new ArrayList<String>();
             pendingMenus.clear();
