@@ -40,6 +40,7 @@ import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.Tessellator;
@@ -73,6 +74,7 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.registry.Registry;
 import com.mojang.blaze3d.systems.RenderSystem;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.glfw.GLFW;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -125,6 +127,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static int SNAPSHOT_CACHE_SCREEN_ID = -1;
     private static ContainerView SNAPSHOT_CACHE_VIEW = ContainerView.empty();
     private static final RegAllTablesState REGALL_TABLES = new RegAllTablesState();
+    private static boolean STOP_HOTKEY_K_DOWN = false;
 
     @Override
     public void onInitializeClient() {
@@ -266,7 +269,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
         ClientCommandManager.DISPATCHER.register(
             ClientCommandManager.literal("regalltables")
-                .executes(ctx -> regAllTablesStart(ctx.getSource()))
+                .executes(ctx -> regAllTablesStart(ctx.getSource(), false))
+                .then(ClientCommandManager.literal("select")
+                    .executes(ctx -> regAllTablesStart(ctx.getSource(), true)))
                 .then(ClientCommandManager.literal("stop")
                     .executes(ctx -> regAllTablesStop(ctx.getSource())))
         );
@@ -287,6 +292,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             }
             refreshWorldSessionState(client);
             traceRuntimeTickProbe(client);
+            handleGlobalStopHotkey(client);
             handleLocalTpPath(client);
             handleSprintFlyBoost(client);
             handleRegAllTablesTick(client);
@@ -544,7 +550,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         return 0;
     }
 
-    private static int regAllTablesStart(FabricClientCommandSource source) {
+    private static int regAllTablesStart(FabricClientCommandSource source, boolean selectMode) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.player == null || mc.world == null) {
             source.sendError(new LiteralText("[regalltables] player/world unavailable"));
@@ -567,6 +573,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             REGALL_TABLES.signX = marker.x();
             REGALL_TABLES.signY = marker.y();
             REGALL_TABLES.signZ = marker.z();
+            REGALL_TABLES.selectMode = selectMode;
             REGALL_TABLES.currentPath = new ArrayList<String>();
             REGALL_TABLES.queuePathKeys.add(pathKeyOf(REGALL_TABLES.currentPath));
             REGALL_TABLES.phase = "OPEN_ROOT";
@@ -574,7 +581,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             REGALL_TABLES.nextActionMs = 0L;
             REGALL_TABLES.lastProgressMs = REGALL_TABLES.startedMs;
         }
-        source.sendFeedback(new LiteralText("[regalltables] started sign=" + marker.x() + "," + marker.y() + "," + marker.z()));
+        source.sendFeedback(new LiteralText("[regalltables] started mode=" + (selectMode ? "select" : "full")
+            + " sign=" + marker.x() + "," + marker.y() + "," + marker.z()));
         System.out.println("[printer-debug] regalltables start dim=" + dim + " sign=" + marker.x() + "," + marker.y() + "," + marker.z());
         return 1;
     }
@@ -600,13 +608,40 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         source.sendFeedback(new LiteralText("[modhelp] /module publish - publish selected rows"));
         source.sendFeedback(new LiteralText("[modhelp] /testcase setpos|rightclick|tp|trapcheck|outline1..4"));
         source.sendFeedback(new LiteralText("[modhelp] /regalltables - crawl menu tables from /testcase marker and export tablesexport.txt"));
+        source.sendFeedback(new LiteralText("[modhelp] /regalltables select - crawl tables without bulk action mark"));
         source.sendFeedback(new LiteralText("[modhelp] /regalltables stop - stop crawl and export partial result"));
+        source.sendFeedback(new LiteralText("[modhelp] Press K - emergency stop active print/crawler"));
         source.sendFeedback(new LiteralText("[modhelp] /modsettings - runtime settings"));
         return 1;
     }
 
+    private static void handleGlobalStopHotkey(MinecraftClient mc) {
+        if (mc == null || mc.player == null || mc.getWindow() == null) {
+            STOP_HOTKEY_K_DOWN = false;
+            return;
+        }
+        boolean down = GLFW.glfwGetKey(mc.getWindow().getHandle(), GLFW.GLFW_KEY_K) == GLFW.GLFW_PRESS;
+        if (down && !STOP_HOTKEY_K_DOWN) {
+            runtime().stopActiveExecution(new FabricBridge(null), "manual_stop_key_k");
+            clearLocalTpQueue();
+            synchronized (REGALL_TABLES) {
+                if (REGALL_TABLES.active) {
+                    int saved = writeRegAllTablesExport(mc, REGALL_TABLES, "hotkey_k");
+                    System.out.println("[printer-debug] regalltables stop reason=hotkey_k exported=" + saved);
+                    REGALL_TABLES.reset();
+                }
+            }
+            mc.player.sendMessage(new LiteralText("[bettercode] stopped by hotkey K"), false);
+        }
+        STOP_HOTKEY_K_DOWN = down;
+    }
+
     private static void handleRegAllTablesTick(MinecraftClient mc) {
         if (mc == null || mc.player == null || mc.world == null) {
+            return;
+        }
+        Screen screen = mc.currentScreen;
+        if (screen != null && !(screen instanceof HandledScreen)) {
             return;
         }
         synchronized (REGALL_TABLES) {
@@ -740,6 +775,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             }
             REGALL_TABLES.pendingMenuKey = menuKey;
             REGALL_TABLES.pendingSlot = target;
+            REGALL_TABLES.pendingMenuSnapshot = snapshotMenuSlots(view);
             REGALL_TABLES.pendingWindowId = view.windowId();
             REGALL_TABLES.pendingClickMs = now;
             REGALL_TABLES.phase = "WAIT_TEST_RESULT";
@@ -762,7 +798,15 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             String menuPath = String.join(" > ", REGALL_TABLES.currentPath);
             String name = slotLabel(REGALL_TABLES.pendingSlot);
             String itemId = REGALL_TABLES.pendingSlot == null ? "" : safeText(REGALL_TABLES.pendingSlot.itemId());
-            REGALL_TABLES.records.add(new RegAllTablesRecord(menuPath, name, itemId, type));
+            appendRegallRecord(menuPath, name, itemId, type);
+            if (closed && !REGALL_TABLES.selectMode) {
+                for (SlotView s : REGALL_TABLES.pendingMenuSnapshot) {
+                    if (s == null || s.playerInventory() || s.empty()) {
+                        continue;
+                    }
+                    appendRegallRecord(menuPath, slotLabel(s), safeText(s.itemId()), "action");
+                }
+            }
             markMenuSlotTested(REGALL_TABLES.pendingMenuKey, REGALL_TABLES.pendingSlot);
             if (!closed) {
                 ArrayList<String> child = new ArrayList<String>(REGALL_TABLES.currentPath);
@@ -781,6 +825,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             REGALL_TABLES.lastProgressMs = now;
             REGALL_TABLES.pendingMenuKey = "";
             REGALL_TABLES.pendingSlot = null;
+            REGALL_TABLES.pendingMenuSnapshot = new ArrayList<SlotView>();
             return;
         }
         if ("ADVANCE_MENU".equals(REGALL_TABLES.phase)) {
@@ -804,9 +849,35 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     }
 
     private static void closeScreenQuiet(MinecraftClient mc) {
-        if (mc != null && mc.player != null && mc.currentScreen != null) {
+        if (mc != null && mc.player != null && mc.currentScreen instanceof HandledScreen) {
             mc.player.closeHandledScreen();
         }
+    }
+
+    private static List<SlotView> snapshotMenuSlots(ContainerView view) {
+        ArrayList<SlotView> out = new ArrayList<SlotView>();
+        if (view == null || view.slots() == null) {
+            return out;
+        }
+        for (SlotView s : view.slots()) {
+            if (s == null || s.playerInventory()) {
+                continue;
+            }
+            out.add(s);
+        }
+        return out;
+    }
+
+    private static void appendRegallRecord(String path, String item, String itemId, String type) {
+        String p = safeText(path);
+        String i = safeText(item);
+        String id = safeText(itemId);
+        String t = safeText(type);
+        String key = p + "|" + i + "|" + id + "|" + t;
+        if (!REGALL_TABLES.recordKeys.add(key)) {
+            return;
+        }
+        REGALL_TABLES.records.add(new RegAllTablesRecord(p, i, id, t));
     }
 
     private static boolean hasNonPlayerMenuContent(ContainerView view) {
@@ -1265,6 +1336,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
     private static final class RegAllTablesState {
         boolean active = false;
+        boolean selectMode = false;
         String dimension = "";
         int signX = 0;
         int signY = 0;
@@ -1282,11 +1354,14 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         final List<RegAllTablesRecord> records = new ArrayList<RegAllTablesRecord>();
         String pendingMenuKey = "";
         SlotView pendingSlot = null;
+        List<SlotView> pendingMenuSnapshot = new ArrayList<SlotView>();
         int pendingWindowId = -1;
         long pendingClickMs = 0L;
+        final Set<String> recordKeys = new HashSet<String>();
 
         void reset() {
             active = false;
+            selectMode = false;
             dimension = "";
             signX = 0;
             signY = 0;
@@ -1304,8 +1379,10 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             records.clear();
             pendingMenuKey = "";
             pendingSlot = null;
+            pendingMenuSnapshot = new ArrayList<SlotView>();
             pendingWindowId = -1;
             pendingClickMs = 0L;
+            recordKeys.clear();
         }
     }
 

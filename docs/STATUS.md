@@ -239,6 +239,11 @@
     - click gate enforces cursor-empty before any click,
     - writes `tablesexport.txt` in `.minecraft` run dir (full or partial on stop/timeout).
   - added `/modhelp` command that lists key mod commands and purpose.
+  - follow-up stability fix:
+    - crawler no longer force-closes non-container screens (e.g. chat), avoiding user-control lock while `/regalltables` is active.
+    - added `/regalltables select` mode (no bulk action mark behavior).
+    - in default `/regalltables` mode, when clicked entry is classified as `action` (GUI closed), crawler also marks all non-player items from that menu snapshot as `action`.
+    - added global emergency hotkey `K`: stops active runtime execution + local tp queue + active regalltables crawl (with partial export reason `hotkey_k`).
 - Route planner safety correction:
   - reverted target selection semantics to match only the real action key (`baseKey`) in current window.
   - learned planned path is kept as diagnostics (`menu_route_plan`) and no longer allows parent-category key to be treated as final action match.
