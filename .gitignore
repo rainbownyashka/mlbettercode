@@ -32,3 +32,4 @@ tools/mldsl-vscode/*.vsix
 tools/paged_actions_report.txt
 tools/rag_export_search/index_regallactions.json
 /copy
+agentslock/tablesexports/*/tablesexport_*.txt
