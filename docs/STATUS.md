@@ -225,6 +225,12 @@
   - route miss diagnostics now include per-slot/per-key flags for exact/contains/token checks:
     - `menu_route_diag ... {k=<candidate> exDn= exAll= inDn= inAll= tok=}`
   - goal: deterministic visibility of why GUI item path does not match legacy 1.12.2 expectations.
+- Menu route planner (learned-hints path) enabled:
+  - runtime now builds planned category chain from observed submenu hints (`MENU_SUBMENU_HINTS`) up to bounded depth, then searches current window by any key from that path before random fallback.
+  - random fallback is preserved as explicit safety branch for unknown/new actions.
+  - new trace:
+    - `menu_route_plan key=... path=... matchedPathKey=...`
+    - `menu_route_match ... pathKey=...`
   - latest live-log stabilization slice (2026-02-19):
     - fixed menu-payload step cursor progression: adapters now advance cursor on explicit step completion callback from core, not only on immediate block confirm,
     - reduced wrong-target click risk: sign/params y-offset probes are now tried top-down (`dy=0..-2`) in core/adapters,

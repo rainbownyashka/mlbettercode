@@ -649,8 +649,14 @@ public final class PlaceRuntimeStepExecutor {
             }
 
             String routeKey = route.baseKey;
-            MenuMatchResult match = findSlotByAnyKeyDetailed(view, routeKey, true);
+            List<String> plannedPath = buildPlannedMenuPath(routeKey, 5);
+            MenuPlanMatchResult planMatch = findSlotByAnyPlannedKeyDetailed(view, plannedPath, true);
+            MenuMatchResult match = planMatch.match;
             int slot = match.slot;
+            logger.info("printer-debug",
+                "menu_route_plan key=" + safe(routeKey)
+                    + " path=" + summarizePlanPath(plannedPath, 10)
+                    + " matchedPathKey=" + safe(planMatch.pathKey));
             if (slot < 0) {
                 int learned = findSlotByLearnedMenuHints(view, routeKey);
                 if (learned >= 0) {
@@ -767,6 +773,7 @@ public final class PlaceRuntimeStepExecutor {
             logger.info("printer-debug",
                 "menu_route_match key=" + safe(routeKey)
                     + " method=" + safe(match.method)
+                    + " pathKey=" + safe(planMatch.pathKey)
                     + " candidate=" + safe(match.candidate)
                     + " slot=" + slot
                     + " item=" + safe(matchedSlot == null ? "" : matchedSlot.itemId())
@@ -1967,6 +1974,79 @@ public final class PlaceRuntimeStepExecutor {
         return MenuMatchResult.notFound();
     }
 
+    private static MenuPlanMatchResult findSlotByAnyPlannedKeyDetailed(ContainerView view, List<String> path, boolean skipPlayer) {
+        if (path == null || path.isEmpty()) {
+            return new MenuPlanMatchResult(MenuMatchResult.notFound(), "");
+        }
+        for (String key : path) {
+            if (key == null || key.isEmpty()) {
+                continue;
+            }
+            MenuMatchResult match = findSlotByAnyKeyDetailed(view, key, skipPlayer);
+            if (match.slot >= 0) {
+                return new MenuPlanMatchResult(match, norm(key));
+            }
+        }
+        return new MenuPlanMatchResult(MenuMatchResult.notFound(), "");
+    }
+
+    private static List<String> buildPlannedMenuPath(String routeKey, int maxDepth) {
+        ArrayList<String> path = new ArrayList<String>();
+        String target = norm(routeKey);
+        if (target.isEmpty()) {
+            return path;
+        }
+        path.add(target);
+        String current = target;
+        int depth = 0;
+        while (depth < Math.max(1, maxDepth)) {
+            String parent = findBestParentMenuKey(current);
+            if (parent.isEmpty() || parent.equals(current) || path.contains(parent)) {
+                break;
+            }
+            path.add(0, parent);
+            current = parent;
+            depth++;
+        }
+        return path;
+    }
+
+    private static String findBestParentMenuKey(String childKey) {
+        String child = norm(childKey);
+        if (child.isEmpty() || MENU_SUBMENU_HINTS.isEmpty()) {
+            return "";
+        }
+        String best = "";
+        for (Map.Entry<String, Set<String>> e : MENU_SUBMENU_HINTS.entrySet()) {
+            String parent = norm(e.getKey());
+            if (parent.isEmpty() || parent.equals(child)) {
+                continue;
+            }
+            Set<String> hints = e.getValue();
+            if (hints == null || hints.isEmpty()) {
+                continue;
+            }
+            boolean matched = false;
+            for (String h : hints) {
+                String hint = norm(h);
+                if (hint.isEmpty()) {
+                    continue;
+                }
+                if (hint.equals(child) || hint.contains(child) || child.contains(hint)) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) {
+                continue;
+            }
+            if (best.isEmpty() || parent.length() < best.length() || (parent.length() == best.length() && parent.compareTo(best) < 0)) {
+                best = parent;
+            }
+        }
+        return best;
+    }
+
     private static List<String> alternateMenuKeys(String key) {
         ArrayList<String> out = new ArrayList<String>();
         String base = norm(key);
@@ -2713,6 +2793,30 @@ public final class PlaceRuntimeStepExecutor {
         return sb.length() == 0 ? "-" : sb.toString();
     }
 
+    private static String summarizePlanPath(List<String> path, int limit) {
+        if (path == null || path.isEmpty()) {
+            return "-";
+        }
+        StringBuilder sb = new StringBuilder();
+        int count = 0;
+        for (String p : path) {
+            String n = norm(p);
+            if (n.isEmpty()) {
+                continue;
+            }
+            if (count > 0) {
+                sb.append(" > ");
+            }
+            sb.append(n);
+            count++;
+            if (count >= limit) {
+                sb.append(" > ...");
+                break;
+            }
+        }
+        return sb.length() == 0 ? "-" : sb.toString();
+    }
+
     private static String summarizeMenuRouteDiagnostics(
         ContainerView view,
         String key,
@@ -3002,6 +3106,16 @@ public final class PlaceRuntimeStepExecutor {
 
         static MenuMatchResult notFound() {
             return new MenuMatchResult(-1, "none", "");
+        }
+    }
+
+    private static final class MenuPlanMatchResult {
+        final MenuMatchResult match;
+        final String pathKey;
+
+        private MenuPlanMatchResult(MenuMatchResult match, String pathKey) {
+            this.match = match == null ? MenuMatchResult.notFound() : match;
+            this.pathKey = pathKey == null ? "" : pathKey;
         }
     }
 
