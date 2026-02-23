@@ -54,6 +54,23 @@ public final class PlaceRuntimeStepExecutor {
     private PlaceRuntimeStepExecutor() {
     }
 
+    public static int preloadMenuHint(String parentKey, String childKey) {
+        String parent = norm(parentKey);
+        String child = norm(childKey);
+        if (parent.isEmpty() || child.isEmpty() || parent.equals(child)) {
+            return 0;
+        }
+        if (MENU_SUBMENU_HINTS.size() > MAX_MENU_HINT_KEYS && !MENU_SUBMENU_HINTS.containsKey(parent)) {
+            MENU_SUBMENU_HINTS.clear();
+        }
+        Set<String> existing = MENU_SUBMENU_HINTS.get(parent);
+        if (existing == null) {
+            existing = new HashSet<String>();
+            MENU_SUBMENU_HINTS.put(parent, existing);
+        }
+        return existing.add(child) ? 1 : 0;
+    }
+
     public static PlaceExecResult execute(
         PlaceRuntimeEntry entry,
         GameBridge bridge,

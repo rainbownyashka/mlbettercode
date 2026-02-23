@@ -5,6 +5,14 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Fabric1165 embedded menu-hints preload (2026-02-24):
+  - at runtime initialization, adapter now preloads route hints from embedded snapshot:
+    - `regalltables/1.16.5/tablesexport.current.txt`.
+  - parsed `path > ... > item` links are injected into core `MENU_SUBMENU_HINTS` before printer routing starts.
+  - reduces cold-start random route misses for nested actions (including cases like `Событие чата`).
+  - trace markers:
+    - `menu_hint_preload status=ok source=... records=<n> links=<n>`
+    - `menu_hint_preload status=missing|error ...`
 - Release process hardening (plan-level, 2026-02-23):
   - release plan now includes mandatory cross-PC smoke gate before RC sign-off:
     - clean profile startup,

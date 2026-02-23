@@ -22,6 +22,7 @@ import com.rainbow_universe.bettercode.core.bridge.SelectedRow;
 import com.rainbow_universe.bettercode.core.bridge.SelectedRowNormalizer;
 import com.rainbow_universe.bettercode.core.bridge.SlotView;
 import com.rainbow_universe.bettercode.core.place.PlaceRuntimeEntry;
+import com.rainbow_universe.bettercode.core.place.PlaceRuntimeStepExecutor;
 import com.rainbow_universe.bettercode.core.place.BlueGlassSearch;
 import com.rainbow_universe.bettercode.core.settings.ModSettingsService;
 import com.rainbow_universe.bettercode.core.settings.SettingDef;
@@ -76,6 +77,9 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.glfw.GLFW;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -120,6 +124,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static long LAST_TESTCASE_RENDER_LOG_MS = 0L;
     // Name-first parity mode for cross-version table compares.
     private static final boolean REGALL_EXPORT_INCLUDE_ITEM_ID = false;
+    private static volatile boolean MENU_HINTS_PRELOADED = false;
     private static int LAST_WORLD_INSTANCE_ID = -1;
     private static long LAST_SCOREBOARD_PARSE_ERR_LOG_MS = 0L;
     private static boolean SPRINTF_ACTIVE = false;
@@ -1315,10 +1320,84 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
         synchronized (BetterCodeFabric1165.class) {
             if (RUNTIME == null) {
-                RUNTIME = new RuntimeCore(new FabricCoreLogger(), settings());
+                FabricCoreLogger logger = new FabricCoreLogger();
+                RUNTIME = new RuntimeCore(logger, settings());
+                preloadMenuHintsFromEmbeddedTables(logger);
             }
             return RUNTIME;
         }
+    }
+
+    private static void preloadMenuHintsFromEmbeddedTables(CoreLogger logger) {
+        if (MENU_HINTS_PRELOADED) {
+            return;
+        }
+        synchronized (BetterCodeFabric1165.class) {
+            if (MENU_HINTS_PRELOADED) {
+                return;
+            }
+            int links = 0;
+            int records = 0;
+            String source = "embedded:regalltables/1.16.5/tablesexport.current.txt";
+            try (InputStream in = BetterCodeFabric1165.class.getClassLoader()
+                .getResourceAsStream("regalltables/1.16.5/tablesexport.current.txt")) {
+                if (in == null) {
+                    logger.warn("printer-debug", "menu_hint_preload status=missing source=" + source);
+                    MENU_HINTS_PRELOADED = true;
+                    return;
+                }
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8))) {
+                    String path = "";
+                    String item = "";
+                    String type = "";
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        if (line.startsWith("path=")) {
+                            path = line.substring("path=".length()).trim();
+                        } else if (line.startsWith("item=")) {
+                            item = line.substring("item=".length()).trim();
+                        } else if (line.startsWith("type=")) {
+                            type = line.substring("type=".length()).trim();
+                            if (!item.isEmpty() && ("action".equals(type) || "category".equals(type))) {
+                                links += preloadPathLinks(path, item);
+                                records++;
+                            }
+                            path = "";
+                            item = "";
+                            type = "";
+                        }
+                    }
+                }
+                logger.info("printer-debug", "menu_hint_preload status=ok source=" + source + " records=" + records + " links=" + links);
+            } catch (Exception e) {
+                logger.warn("printer-debug", "menu_hint_preload status=error source=" + source
+                    + " err=" + e.getClass().getSimpleName());
+            } finally {
+                MENU_HINTS_PRELOADED = true;
+            }
+        }
+    }
+
+    private static int preloadPathLinks(String rawPath, String rawItem) {
+        ArrayList<String> chain = new ArrayList<String>();
+        String path = safeText(rawPath);
+        if (!path.isEmpty()) {
+            String[] parts = path.split(">");
+            for (String p : parts) {
+                String v = safeText(p).trim();
+                if (!v.isEmpty()) {
+                    chain.add(v);
+                }
+            }
+        }
+        int added = 0;
+        for (int i = 0; i + 1 < chain.size(); i++) {
+            added += PlaceRuntimeStepExecutor.preloadMenuHint(chain.get(i), chain.get(i + 1));
+        }
+        if (!chain.isEmpty()) {
+            added += PlaceRuntimeStepExecutor.preloadMenuHint(chain.get(chain.size() - 1), safeText(rawItem));
+        }
+        return added;
     }
 
     private static int modSettingsList(FabricClientCommandSource source) {
