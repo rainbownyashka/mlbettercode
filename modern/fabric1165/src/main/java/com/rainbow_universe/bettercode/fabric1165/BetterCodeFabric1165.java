@@ -121,6 +121,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static long LAST_TESTCASE_RENDER_LOG_MS = 0L;
     private static int LAST_WORLD_INSTANCE_ID = -1;
     private static long LAST_SCOREBOARD_PARSE_ERR_LOG_MS = 0L;
+    private static boolean SPRINTF_ACTIVE = false;
+    private static float SPRINTF_BASE_SPEED = Float.NaN;
+    private static int SPRINTF_PLAYER_ID = -1;
     private static long SNAPSHOT_CACHE_TICK = Long.MIN_VALUE;
     private static int SNAPSHOT_CACHE_SYNC_ID = -1;
     private static int SNAPSHOT_CACHE_SCREEN_ID = -1;
@@ -260,6 +263,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             refreshWorldSessionState(client);
             traceRuntimeTickProbe(client);
             handleLocalTpPath(client);
+            handleSprintFlyBoost(client);
             refreshWorldLoadSeedHint(client);
             refreshCodeEntrySeedHint(client);
             renderSelectionHighlights(client);
@@ -2545,7 +2549,153 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             SELECTED.clear();
         }
         TestcaseTool.clearMarker();
+        SPRINTF_ACTIVE = false;
+        SPRINTF_BASE_SPEED = Float.NaN;
+        SPRINTF_PLAYER_ID = -1;
         System.out.println("[printer-debug] world_session_reset selectedCleared=" + selectedCount + " testcaseMarkerCleared=1");
+    }
+
+    private static void handleSprintFlyBoost(MinecraftClient mc) {
+        if (mc == null || mc.player == null || mc.options == null) {
+            return;
+        }
+        boolean enabled = settings().getBoolean("sprintfly.enabled", false);
+        int playerId = System.identityHashCode(mc.player);
+        if (playerId != SPRINTF_PLAYER_ID) {
+            SPRINTF_PLAYER_ID = playerId;
+            SPRINTF_ACTIVE = false;
+            SPRINTF_BASE_SPEED = Float.NaN;
+        }
+        float current = readFlySpeed(mc);
+        if (!enabled) {
+            if (SPRINTF_ACTIVE) {
+                restoreFlySpeed(mc);
+            } else if (!Float.isNaN(current)) {
+                SPRINTF_BASE_SPEED = current;
+            }
+            return;
+        }
+        boolean canFly;
+        try {
+            canFly = mc.player.abilities.allowFlying;
+        } catch (Exception e) {
+            canFly = false;
+        }
+        if (!canFly) {
+            if (SPRINTF_ACTIVE) {
+                restoreFlySpeed(mc);
+            } else if (!Float.isNaN(current)) {
+                SPRINTF_BASE_SPEED = current;
+            }
+            return;
+        }
+        boolean ctrl = false;
+        try {
+            ctrl = mc.options.keySprint != null && mc.options.keySprint.isPressed();
+        } catch (Exception ignore) {
+        }
+        float target = parseCtrlFlySpeed(settings().getString("sprintfly.ctrlFlySpeed", "0.12"));
+        if (ctrl) {
+            if (Float.isNaN(SPRINTF_BASE_SPEED) && !Float.isNaN(current)) {
+                SPRINTF_BASE_SPEED = current;
+            }
+            if (Float.isNaN(current) || Math.abs(current - target) > 0.0005f) {
+                setFlySpeed(mc, target);
+            }
+            SPRINTF_ACTIVE = true;
+            return;
+        }
+        if (SPRINTF_ACTIVE) {
+            restoreFlySpeed(mc);
+            return;
+        }
+        if (!Float.isNaN(current)) {
+            SPRINTF_BASE_SPEED = current;
+        }
+    }
+
+    private static void restoreFlySpeed(MinecraftClient mc) {
+        if (mc == null || mc.player == null) {
+            return;
+        }
+        if (!Float.isNaN(SPRINTF_BASE_SPEED)) {
+            setFlySpeed(mc, SPRINTF_BASE_SPEED);
+        }
+        SPRINTF_ACTIVE = false;
+    }
+
+    private static float parseCtrlFlySpeed(String raw) {
+        if (raw == null) {
+            return 0.12f;
+        }
+        String v = raw.trim().replace(',', '.');
+        try {
+            float f = Float.parseFloat(v);
+            if (f < 0.01f) {
+                return 0.01f;
+            }
+            if (f > 1.0f) {
+                return 1.0f;
+            }
+            return f;
+        } catch (Exception e) {
+            return 0.12f;
+        }
+    }
+
+    private static float readFlySpeed(MinecraftClient mc) {
+        if (mc == null || mc.player == null) {
+            return Float.NaN;
+        }
+        try {
+            Object abilities = mc.player.abilities;
+            try {
+                Object v = abilities.getClass().getMethod("getFlySpeed").invoke(abilities);
+                if (v instanceof Number) {
+                    return ((Number) v).floatValue();
+                }
+            } catch (Exception ignore) {
+            }
+            try {
+                java.lang.reflect.Field f = abilities.getClass().getDeclaredField("flySpeed");
+                f.setAccessible(true);
+                Object v = f.get(abilities);
+                if (v instanceof Number) {
+                    return ((Number) v).floatValue();
+                }
+            } catch (Exception ignore) {
+            }
+        } catch (Exception ignore) {
+        }
+        return Float.NaN;
+    }
+
+    private static void setFlySpeed(MinecraftClient mc, float speed) {
+        if (mc == null || mc.player == null) {
+            return;
+        }
+        try {
+            Object abilities = mc.player.abilities;
+            boolean updated = false;
+            try {
+                abilities.getClass().getMethod("setFlySpeed", Float.TYPE).invoke(abilities, Float.valueOf(speed));
+                updated = true;
+            } catch (Exception ignore) {
+            }
+            if (!updated) {
+                try {
+                    java.lang.reflect.Field f = abilities.getClass().getDeclaredField("flySpeed");
+                    f.setAccessible(true);
+                    f.setFloat(abilities, speed);
+                    updated = true;
+                } catch (Exception ignore) {
+                }
+            }
+            if (updated) {
+                mc.player.sendAbilitiesUpdate();
+            }
+        } catch (Exception ignore) {
+        }
     }
 
     private static void refreshCodeEntrySeedHint(MinecraftClient mc) {
@@ -2746,6 +2896,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         RenderSystem.lineWidth(2.0F);
         BufferBuilder bb = Tessellator.getInstance().getBuffer();
         bb.begin(GL11.GL_LINES, VertexFormats.POSITION_COLOR);
+        float[] outline = selectionOutlineColor();
         int drawn = 0;
         for (SelectedRow row : SELECTED.values()) {
             if (row == null || !dim.equals(row.dimension())) {
@@ -2761,7 +2912,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 bb,
                 box.minX, box.minY, box.minZ,
                 box.maxX, box.maxY, box.maxZ,
-                0.15F, 0.95F, 1.0F, 1.0F
+                outline[0], outline[1], outline[2], 1.0F
             );
             drawn++;
             if (drawn >= 120) {
@@ -2791,18 +2942,22 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         if (context == null || mc == null || mc.world == null || mc.player == null || context.camera() == null) {
             return;
         }
-        MatrixStack matrices = context.matrixStack();
-        VertexConsumerProvider consumers = context.consumers();
-        if (matrices == null || consumers == null) {
-            return;
-        }
         String dim = String.valueOf(mc.world.getRegistryKey().getValue());
         TestcaseTool.MarkerView marker = TestcaseTool.markerView();
         if (SELECTED.isEmpty() && (marker == null || !dim.equals(marker.dimension()))) {
             return;
         }
         Vec3d cam = context.camera().getPos();
-        VertexConsumer line = consumers.getBuffer(RenderLayer.getLines());
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.disableTexture();
+        RenderSystem.disableDepthTest();
+        RenderSystem.depthMask(false);
+        RenderSystem.depthFunc(GL11.GL_ALWAYS);
+        RenderSystem.lineWidth(2.0F);
+        BufferBuilder bb = Tessellator.getInstance().getBuffer();
+        bb.begin(GL11.GL_LINES, VertexFormats.POSITION_COLOR);
+        float[] outline = selectionOutlineColor();
         int drawn = 0;
         for (SelectedRow row : SELECTED.values()) {
             if (row == null || !dim.equals(row.dimension())) {
@@ -2812,16 +2967,26 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             if (!isBlueGlassAt(mc, anchor)) {
                 continue;
             }
-            Box box = new Box(anchor.up()).expand(0.003).offset(-cam.x, -cam.y, -cam.z);
-            WorldRenderer.drawBox(matrices, line, box, 0.15F, 0.95F, 1.0F, 1.0F);
+            Box box = new Box(anchor.up()).expand(0.003);
+            WorldRenderer.drawBox(
+                bb,
+                box.minX - cam.x, box.minY - cam.y, box.minZ - cam.z,
+                box.maxX - cam.x, box.maxY - cam.y, box.maxZ - cam.z,
+                outline[0], outline[1], outline[2], 1.0F
+            );
             drawn++;
             if (drawn >= 120) {
                 break;
             }
         }
         if (marker != null && dim.equals(marker.dimension())) {
-            Box markerBox = new Box(new BlockPos(marker.x(), marker.y(), marker.z())).expand(0.01).offset(-cam.x, -cam.y, -cam.z);
-            WorldRenderer.drawBox(matrices, line, markerBox, 1.0F, 0.45F, 0.15F, 1.0F);
+            Box markerBox = new Box(new BlockPos(marker.x(), marker.y(), marker.z())).expand(0.01);
+            WorldRenderer.drawBox(
+                bb,
+                markerBox.minX - cam.x, markerBox.minY - cam.y, markerBox.minZ - cam.z,
+                markerBox.maxX - cam.x, markerBox.maxY - cam.y, markerBox.maxZ - cam.z,
+                1.0F, 0.45F, 0.15F, 1.0F
+            );
             long now = System.currentTimeMillis();
             if (now - LAST_TESTCASE_RENDER_LOG_MS >= 1800L) {
                 LAST_TESTCASE_RENDER_LOG_MS = now;
@@ -2829,6 +2994,42 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     + " pos=" + marker.x() + "," + marker.y() + "," + marker.z());
             }
         }
+        Tessellator.getInstance().draw();
+        RenderSystem.depthFunc(GL11.GL_LEQUAL);
+        RenderSystem.depthMask(true);
+        RenderSystem.enableDepthTest();
+        RenderSystem.enableTexture();
+        RenderSystem.disableBlend();
+    }
+
+    private static float[] selectionOutlineColor() {
+        String raw = settings().getString("selector.outlineColor", "0,242,255");
+        float[] fallback = new float[] {0.15F, 0.95F, 1.0F};
+        if (raw == null) {
+            return fallback;
+        }
+        String[] parts = raw.trim().split("[,\\s]+");
+        if (parts.length < 3) {
+            return fallback;
+        }
+        try {
+            int r = clamp255(Integer.parseInt(parts[0]));
+            int g = clamp255(Integer.parseInt(parts[1]));
+            int b = clamp255(Integer.parseInt(parts[2]));
+            return new float[] {r / 255.0F, g / 255.0F, b / 255.0F};
+        } catch (Exception e) {
+            return fallback;
+        }
+    }
+
+    private static int clamp255(int v) {
+        if (v < 0) {
+            return 0;
+        }
+        if (v > 255) {
+            return 255;
+        }
+        return v;
     }
 
     private static void traceRuntimeTickProbe(MinecraftClient mc) {

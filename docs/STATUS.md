@@ -120,6 +120,10 @@
 - Params GUI hang fix (`if player` route case):
   - removed strict nearby-chest gate from params readiness transition (`chestReady`) because it caused false negatives with valid opened params windows.
   - params stage now progresses by real container readiness (`windowId>=0`, non-player slots, short stability window) and no longer loops on `reopen_not_ready ... chestReady=false` when GUI is already open.
+- Selector rendering + flight QoL settings:
+  - added `/modsettings` key `selector.outlineColor` (`r,g,b` in `0..255`) and wired it into selected-row outline color.
+  - added `/modsettings` keys `sprintfly.enabled` + `sprintfly.ctrlFlySpeed`: while sprint key (`Ctrl`) is held and flight is allowed, fly speed is boosted; on release/disallow it restores previous baseline/server speed.
+  - moved `AFTER_ENTITIES` outline path to explicit immediate x-ray line render (`depthFunc=ALWAYS`) to keep lines visible through blocks on common client stacks.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).

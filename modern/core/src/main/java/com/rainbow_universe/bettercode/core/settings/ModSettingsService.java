@@ -81,6 +81,33 @@ public final class ModSettingsService implements SettingsProvider {
             Integer.valueOf(0),
             Integer.valueOf(2000)
         ));
+        defs.put("selector.outlineColor", new SettingDef(
+            "selector.outlineColor",
+            "Selector Outline Color",
+            "RGB color for selected rows, format: r,g,b (0..255), e.g. 0,242,255",
+            SettingType.STRING,
+            "0,242,255",
+            null,
+            null
+        ));
+        defs.put("sprintfly.enabled", new SettingDef(
+            "sprintfly.enabled",
+            "Sprint Fly Boost Enabled",
+            "Boost fly speed while sprint key (Ctrl) is held",
+            SettingType.BOOLEAN,
+            Boolean.FALSE,
+            null,
+            null
+        ));
+        defs.put("sprintfly.ctrlFlySpeed", new SettingDef(
+            "sprintfly.ctrlFlySpeed",
+            "Sprint Fly Boost Speed",
+            "Fly speed while Ctrl held (float, e.g. 0.12)",
+            SettingType.STRING,
+            "0.12",
+            null,
+            null
+        ));
 
         ModSettingsService svc = new ModSettingsService(runDir.resolve(FILE_NAME), defs);
         svc.load();
