@@ -356,6 +356,28 @@ public final class PlaceRuntimeStepExecutor {
                 return PlaceExecResult.inProgress(0, "WAIT_PARAMS_CHEST");
             }
             if (entry.needOpenParamsChest() && now >= entry.nextParamsActionMs()) {
+                boolean trappedChestReady = hasTrappedChestNearTarget(bridge);
+                if (!trappedChestReady) {
+                    entry.setAwaitingParamsChest(false);
+                    entry.setNeedOpenParamsChest(false);
+                    entry.setParamsOpenAttempts(0);
+                    entry.setParamsStartMs(0L);
+                    entry.setNextParamsActionMs(0L);
+                    entry.setParamsReadyWindowId(-1);
+                    entry.setParamsReadySinceMs(0L);
+                    entry.setAwaitingArgs(false);
+                    entry.setArgsWindowId(-1);
+                    entry.setAwaitingMenu(true);
+                    entry.setNeedOpenMenu(true);
+                    entry.setMenuStartMs(now);
+                    entry.setMenuRetrySinceMs(now);
+                    entry.setLastOpenAttemptMs(0L);
+                    entry.setNextMenuActionMs(now + Math.max(MENU_NEXT_ACTION_MIN_GAP_MS, delay));
+                    bridge.closeScreen();
+                    logger.info("printer-debug",
+                        "runtime_state=WAIT_PARAMS_CHEST action=return_to_menu_no_trapped_chest anchor=" + describeAnchor(bridge));
+                    return PlaceExecResult.inProgress(0, "OPEN_MENU");
+                }
                 if (!ensureCursorClear(entry, bridge, now)) {
                     if (isCursorTimeout(entry, now)) {
                         return fail(logger, "CURSOR_NOT_EMPTY", "cursor not empty during params reopen");
@@ -2391,6 +2413,28 @@ public final class PlaceRuntimeStepExecutor {
                 if (bridge.isBlockAt(anchor.x() + off[0], anchor.y() + off[1], anchor.z() + off[2], id)) {
                     return true;
                 }
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasTrappedChestNearTarget(GameBridge bridge) {
+        if (bridge == null) {
+            return false;
+        }
+        BlockPosView anchor = bridge.getRuntimeEntryAnchor();
+        if (anchor == null) {
+            return false;
+        }
+        int[][] offsets = new int[][] {
+            {0, 1, 0},
+            {0, 2, 0},
+            {0, 0, 0},
+            {0, -1, 0}
+        };
+        for (int[] off : offsets) {
+            if (bridge.isBlockAt(anchor.x() + off[0], anchor.y() + off[1], anchor.z() + off[2], "minecraft:trapped_chest")) {
+                return true;
             }
         }
         return false;

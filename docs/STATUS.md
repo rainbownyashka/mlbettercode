@@ -156,6 +156,11 @@
   - selector/testcase outline renderer switched from raw `Tessellator` line pass to stable Fabric world-render path (`MatrixStack + RenderLayer.getLines()` + `WorldRenderer.drawBox(...)`).
   - boxes are now rendered in explicit camera-relative space (`translate(-cameraPos)`), eliminating drift/far-point artifacts.
   - xray behavior preserved via `disableDepthTest` during line pass.
+- Params reopen trap-chest gate (2026-02-23):
+  - in core params-reopen stage, runtime now checks specifically for `minecraft:trapped_chest` near current runtime anchor before any reopen click.
+  - if trapped chest is missing, runtime stops params-reopen spam and explicitly returns to menu stage (`OPEN_MENU`) to re-run action selection from sign GUI.
+  - added explicit trace marker:
+    - `runtime_state=WAIT_PARAMS_CHEST action=return_to_menu_no_trapped_chest ...`
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).
