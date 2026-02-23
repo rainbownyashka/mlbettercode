@@ -211,6 +211,10 @@
     - `outline3`: tessellator camera-relative lines with depth-on.
     - `outline4`: camera-relative xray variant with thicker line width.
   - render trace emits `testcase_outline_rendered mode=<n> boxes=<count>` (throttled) for deterministic log-side validation during tests.
+  - live smoke result (user-verified):
+    - `outline2` and `outline4`: visually correct and stable.
+    - `outline3`: stable, but depth-on (not xray).
+    - `outline1`: not usable (no correct visible outline).
   - latest live-log stabilization slice (2026-02-19):
     - fixed menu-payload step cursor progression: adapters now advance cursor on explicit step completion callback from core, not only on immediate block confirm,
     - reduced wrong-target click risk: sign/params y-offset probes are now tried top-down (`dy=0..-2`) in core/adapters,
