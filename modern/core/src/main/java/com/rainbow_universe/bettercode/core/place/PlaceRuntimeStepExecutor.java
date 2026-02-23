@@ -218,8 +218,7 @@ public final class PlaceRuntimeStepExecutor {
             }
             boolean switchedOrAcked = switched || ack == AckState.ACKED;
             boolean paramsReady = view.windowId() >= 0 && countNonPlayerSlots(view) > 0;
-            boolean paramsChestReady = hasParamsChestNearTarget(bridge);
-            if (paramsReady && paramsChestReady) {
+            if (paramsReady) {
                 if (entry.paramsReadyWindowId() != view.windowId()) {
                     entry.setParamsReadyWindowId(view.windowId());
                     entry.setParamsReadySinceMs(now);
@@ -234,7 +233,7 @@ public final class PlaceRuntimeStepExecutor {
             boolean paramsStable = entry.paramsReadyWindowId() == view.windowId()
                 && entry.paramsReadySinceMs() > 0L
                 && now - entry.paramsReadySinceMs() >= PARAMS_WINDOW_STABLE_MS;
-            if (paramsReady && paramsChestReady && paramsStable) {
+            if (paramsReady && paramsStable) {
                 if (!ensureCursorClear(entry, bridge, now)) {
                     if (isCursorTimeout(entry, now)) {
                         return fail(logger, "CURSOR_NOT_EMPTY", "cursor not empty before args stage");
@@ -257,17 +256,16 @@ public final class PlaceRuntimeStepExecutor {
                 logger.info("printer-debug", "runtime_state=OPEN_PARAMS_CHEST switched=1");
                 return PlaceExecResult.inProgress(0, "APPLY_ARGS");
             }
-            if (paramsReady && paramsChestReady && !paramsStable) {
+            if (paramsReady && !paramsStable) {
                 return PlaceExecResult.inProgress(0, "WAIT_PARAMS_STABLE");
             }
-            if (switchedOrAcked && (!paramsReady || !paramsChestReady)) {
+            if (switchedOrAcked && !paramsReady) {
                 if (!entry.needOpenParamsChest() && now - entry.paramsStartMs() >= PARAMS_REOPEN_AFTER_MS) {
                     entry.setNeedOpenParamsChest(true);
                     entry.setNextParamsActionMs(now + Math.max(120, delay));
                     logger.info("printer-debug",
                         "runtime_state=WAIT_PARAMS_CHEST action=reopen_not_ready window=" + view.windowId()
-                            + " nonPlayer=" + countNonPlayerSlots(view)
-                            + " chestReady=" + paramsChestReady);
+                            + " nonPlayer=" + countNonPlayerSlots(view));
                 }
                 return PlaceExecResult.inProgress(0, "WAIT_PARAMS_CHEST");
             }
