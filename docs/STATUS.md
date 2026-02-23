@@ -5,6 +5,10 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Legacy raw export backup in repo (2026-02-23):
+  - current `.minecraft/regallactions_export.txt` snapshot copied to:
+    - `agentslock/tablesexports/1.12.2/regallactions_export.latest.txt`.
+  - keeps source-of-truth legacy export inside project for recovery/audit even if runtime file is overwritten.
 - Build-matrix legacy parity snapshot sync (2026-02-23):
   - `tools/build_matrix.py` now runs best-effort legacy conversion for modern targets (`fabric1165/120/121/forge1165/modern_all/all`):
     - source: `.minecraft/regallactions_export.txt`
