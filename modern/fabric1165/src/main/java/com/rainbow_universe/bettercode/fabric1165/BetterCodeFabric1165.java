@@ -2698,7 +2698,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             return;
         }
         String dim = String.valueOf(mc.world.getRegistryKey().getValue());
-        if (SELECTED.isEmpty()) {
+        TestcaseTool.MarkerView marker = TestcaseTool.markerView();
+        if (SELECTED.isEmpty() && (marker == null || !dim.equals(marker.dimension()))) {
             return;
         }
         if (context.camera() == null) {
@@ -2733,7 +2734,6 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 break;
             }
         }
-        TestcaseTool.MarkerView marker = TestcaseTool.markerView();
         if (marker != null && dim.equals(marker.dimension())) {
             BlockPos markerPos = new BlockPos(marker.x(), marker.y(), marker.z());
             Box markerBox = new Box(markerPos).expand(0.01);
