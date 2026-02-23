@@ -71,6 +71,43 @@ public final class TestcaseTool {
         return Result.fail("testcase tp failed pos=" + m.x + "," + m.y + "," + m.z);
     }
 
+    public static Result checkTrapChest(GameBridge bridge) {
+        if (bridge == null) {
+            return Result.fail("testcase trapcheck failed: bridge unavailable");
+        }
+        Marker m = marker;
+        if (m == null) {
+            return Result.fail("testcase trapcheck failed: no saved position, use /testcase setpos");
+        }
+        String curDim = safe(bridge.currentDimension());
+        if (!curDim.equals(m.dimension)) {
+            return Result.fail("testcase trapcheck failed: dimension mismatch current=" + curDim + " saved=" + m.dimension);
+        }
+        int[][] offsets = new int[][] {
+            {0, 1, 0},
+            {0, 2, 0},
+            {0, 0, 0},
+            {0, -1, 0}
+        };
+        for (int i = 0; i < offsets.length; i++) {
+            int[] off = offsets[i];
+            int x = m.x + off[0];
+            int y = m.y + off[1];
+            int z = m.z + off[2];
+            if (bridge.isBlockAt(x, y, z, "minecraft:trapped_chest")) {
+                return Result.ok("testcase trapcheck found trapped_chest at " + x + "," + y + "," + z + " probe=" + i);
+            }
+        }
+        boolean chest = false;
+        for (int[] off : offsets) {
+            if (bridge.isBlockAt(m.x + off[0], m.y + off[1], m.z + off[2], "minecraft:chest")) {
+                chest = true;
+                break;
+            }
+        }
+        return Result.fail("testcase trapcheck not_found base=" + m.x + "," + m.y + "," + m.z + " regularChest=" + chest);
+    }
+
     private static String safe(String s) {
         return s == null ? "" : s;
     }

@@ -62,17 +62,22 @@ public final class PlaceRuntimeStepExecutor {
         if (entry == null) {
             return fail(logger, "PARSE_SCHEMA_MISMATCH", "null runtime entry");
         }
-        String rawName = entry.name() == null ? "" : entry.name().trim();
-        String rawArgs = entry.argsRaw() == null ? "" : entry.argsRaw().trim();
-        boolean hasMenuPayload = !rawName.isEmpty() || (!rawArgs.isEmpty() && !"no".equalsIgnoreCase(rawArgs));
-        if (!hasMenuPayload) {
-            return bridge.executePlaceStep(entry, false);
-        }
-
         long now = bridge.nowMs();
         int delay = settings.getInt("printer.stepDelayMs", 80);
         if (delay < 0) {
             delay = 0;
+        }
+        if (entry.moveOnly()) {
+            clearGuiStageState(entry);
+            logger.info("printer-debug", "runtime_state=SKIP_STEP moveOnly=1");
+            return bridge.executePlaceStep(entry, false);
+        }
+        String rawName = entry.name() == null ? "" : entry.name().trim();
+        String rawArgs = entry.argsRaw() == null ? "" : entry.argsRaw().trim();
+        boolean hasMenuPayload = !rawName.isEmpty() || (!rawArgs.isEmpty() && !"no".equalsIgnoreCase(rawArgs));
+        if (!hasMenuPayload) {
+            logger.info("printer-debug", "runtime_state=SKIP_STEP moveOnly=0");
+            return bridge.executePlaceStep(entry, false);
         }
         logStepTrace(logger, entry, hasMenuPayload, now);
         boolean verboseTrace = settings.getBoolean("printer.verboseRuntimeTrace", false) && shouldEmitVerboseTrace(now);
@@ -289,13 +294,36 @@ public final class PlaceRuntimeStepExecutor {
                 return PlaceExecResult.inProgress(0, "WAIT_PARAMS_STABLE");
             }
             if (switchedOrAcked && !paramsReady) {
-                if (!entry.needOpenParamsChest() && now - entry.paramsStartMs() >= PARAMS_REOPEN_AFTER_MS) {
+                long elapsed = entry.paramsStartMs() <= 0L ? 0L : (now - entry.paramsStartMs());
+                if (!entry.needOpenParamsChest() && elapsed < PARAMS_REOPEN_AFTER_MS) {
+                    logger.info("printer-debug",
+                        "runtime_state=WAIT_PARAMS_CHEST action=transition_wait window=" + view.windowId()
+                            + " nonPlayer=" + countNonPlayerSlots(view)
+                            + " chestReady=" + paramsChestReady
+                            + " ack=" + ack
+                            + " elapsed=" + elapsed
+                            + " title=" + safe(view.title())
+                            + " hash=" + safe(paramsHash));
+                    return PlaceExecResult.inProgress(0, "WAIT_PARAMS_CHEST");
+                }
+                if (!entry.needOpenParamsChest()) {
+                    if (paramsChestReady) {
+                        logger.info("printer-debug",
+                            "runtime_state=WAIT_PARAMS_CHEST action=hold_chest_detected window=" + view.windowId()
+                                + " nonPlayer=" + countNonPlayerSlots(view)
+                                + " chestReady=1 ack=" + ack
+                                + " title=" + safe(view.title())
+                                + " hash=" + safe(paramsHash));
+                        return PlaceExecResult.inProgress(0, "WAIT_PARAMS_CHEST");
+                    }
                     entry.setNeedOpenParamsChest(true);
                     entry.setNextParamsActionMs(now + Math.max(120, delay));
                     logger.info("printer-debug",
                         "runtime_state=WAIT_PARAMS_CHEST action=reopen_not_ready window=" + view.windowId()
                             + " nonPlayer=" + countNonPlayerSlots(view)
                             + " chestReady=" + paramsChestReady
+                            + " ack=" + ack
+                            + " elapsed=" + elapsed
                             + " title=" + safe(view.title())
                             + " hash=" + safe(paramsHash));
                 }
@@ -2228,6 +2256,30 @@ public final class PlaceRuntimeStepExecutor {
             }
         }
         return count;
+    }
+
+    private static void clearGuiStageState(PlaceRuntimeEntry entry) {
+        entry.setAwaitingMenu(false);
+        entry.setNeedOpenMenu(false);
+        entry.setLastMenuWindowId(-1);
+        entry.setMenuClicksSinceOpen(0);
+        entry.setMenuNonEmptySinceMs(0L);
+        entry.setMenuNonEmptyWindowId(-1);
+        entry.setTriedWindowId(-1);
+        entry.setAwaitingParamsChest(false);
+        entry.setNeedOpenParamsChest(false);
+        entry.setParamsOpenAttempts(0);
+        entry.setParamsStartMs(0L);
+        entry.setNextParamsActionMs(0L);
+        entry.setParamsReadyWindowId(-1);
+        entry.setParamsReadySinceMs(0L);
+        entry.setAwaitingArgs(false);
+        entry.setArgsWindowId(-1);
+        entry.setPendingArgClickSlot(-1);
+        entry.setPendingArgClicks(0);
+        entry.setPendingArgNextMs(0L);
+        entry.setArgsMisses(0);
+        entry.clearUsedArgSlots();
     }
 
     private static boolean hasParamsChestNearTarget(GameBridge bridge) {

@@ -249,6 +249,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     .executes(ctx -> testcaseRightClick(ctx.getSource())))
                 .then(ClientCommandManager.literal("tp")
                     .executes(ctx -> testcaseTp(ctx.getSource())))
+                .then(ClientCommandManager.literal("trapcheck")
+                    .executes(ctx -> testcaseTrapcheck(ctx.getSource())))
         );
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -490,6 +492,16 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
     private static int testcaseTp(FabricClientCommandSource source) {
         TestcaseTool.Result result = TestcaseTool.tp(new FabricBridge(source));
+        if (result.ok()) {
+            source.sendFeedback(new LiteralText("[testcase] " + result.message()));
+            return 1;
+        }
+        source.sendError(new LiteralText("[testcase] " + result.message()));
+        return 0;
+    }
+
+    private static int testcaseTrapcheck(FabricClientCommandSource source) {
+        TestcaseTool.Result result = TestcaseTool.checkTrapChest(new FabricBridge(source));
         if (result.ok()) {
             source.sendFeedback(new LiteralText("[testcase] " + result.message()));
             return 1;

@@ -137,6 +137,11 @@
 - Render artifact stabilization:
   - reverted to single legacy-like `BEFORE_DEBUG_RENDER` path (world-space line draw + x-ray depth state).
   - removed `AFTER_ENTITIES` buffered path that introduced floating/camera-space ghost artifact near target.
+- Params transition + skip-state hardening (2026-02-23):
+  - `moveOnly/skip` entries now explicitly clear GUI stage flags in core before adapter step execution (`runtime_state=SKIP_STEP`), preventing stale menu/params/args state bleed into next steps.
+  - params-chest stage now has explicit transition wait (`action=transition_wait`) after menu category click/window ack, so runtime does not immediately reopen/spam clicks while server is still switching to params chest.
+  - added `action=hold_chest_detected` and enriched reopen logs (`ack`, `elapsed`) to pinpoint why params reopen path is entered.
+  - added `/testcase trapcheck` (fabric1165) to verify trapped-chest presence around saved marker (`/testcase setpos`) for fast runtime diagnostics.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).
