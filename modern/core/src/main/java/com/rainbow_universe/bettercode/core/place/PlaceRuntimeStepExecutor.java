@@ -707,6 +707,9 @@ public final class PlaceRuntimeStepExecutor {
                 }
                 ContainerView view = bridge.getContainerSnapshot();
                 if (view.windowId() < 0) {
+                    if (entry.argsMisses() < MAX_ARG_MISSES) {
+                        return recoverArgsToParamsReopen(entry, bridge, now, delay, logger, "pending_window_closed");
+                    }
                     return fail(logger, "ARGS_CONTAINER_CLOSED", "container closed during pending clicks");
                 }
                 if (entry.argsWindowId() >= 0 && view.windowId() != entry.argsWindowId()) {
@@ -789,6 +792,9 @@ public final class PlaceRuntimeStepExecutor {
 
             ContainerView view = bridge.getContainerSnapshot();
             if (view.windowId() < 0) {
+                if (entry.argsMisses() < MAX_ARG_MISSES) {
+                    return recoverArgsToParamsReopen(entry, bridge, now, delay, logger, "window_closed");
+                }
                 return fail(logger, "ARGS_CONTAINER_CLOSED", "container closed while args pending");
             }
             if (entry.argsWindowId() < 0) {
@@ -800,6 +806,10 @@ public final class PlaceRuntimeStepExecutor {
                     entry.setArgsWindowId(view.windowId());
                     entry.setArgsMisses(1);
                     return PlaceExecResult.inProgress(0, "ARGS_WINDOW_REBIND");
+                }
+                if (entry.argsMisses() < MAX_ARG_MISSES) {
+                    return recoverArgsToParamsReopen(entry, bridge, now, delay, logger,
+                        "window_changed from=" + entry.argsWindowId() + " to=" + view.windowId());
                 }
                 return fail(logger, "ARGS_WINDOW_CHANGED", "args window changed");
             }
@@ -2363,6 +2373,40 @@ public final class PlaceRuntimeStepExecutor {
             }
         }
         return count;
+    }
+
+    private static PlaceExecResult recoverArgsToParamsReopen(
+        PlaceRuntimeEntry entry,
+        GameBridge bridge,
+        long now,
+        int delay,
+        CoreLogger logger,
+        String reason
+    ) {
+        if (entry == null) {
+            return PlaceExecResult.inProgress(0, "WAIT_PARAMS_CHEST");
+        }
+        int misses = entry.argsMisses() + 1;
+        entry.setArgsMisses(misses);
+        entry.setAwaitingArgs(false);
+        entry.setPendingArgClickSlot(-1);
+        entry.setPendingArgClicks(0);
+        entry.setPendingArgNextMs(0L);
+        entry.setArgsWindowId(-1);
+        entry.setAwaitingParamsChest(true);
+        entry.setNeedOpenParamsChest(true);
+        if (entry.paramsStartMs() <= 0L) {
+            entry.setParamsStartMs(now);
+        }
+        entry.setNextParamsActionMs(now + Math.max(120, delay));
+        entry.setParamsReadyWindowId(-1);
+        entry.setParamsReadySinceMs(0L);
+        bridge.closeScreen();
+        if (logger != null) {
+            logger.info("printer-debug",
+                "runtime_state=ARGS_RECOVER_TO_PARAMS reason=" + safe(reason) + " misses=" + misses);
+        }
+        return PlaceExecResult.inProgress(0, "WAIT_PARAMS_CHEST");
     }
 
     private static void clearGuiStageState(PlaceRuntimeEntry entry) {

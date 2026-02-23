@@ -41,9 +41,12 @@ import net.minecraft.block.Blocks;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
+import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.item.Item;
@@ -73,6 +76,7 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.registry.Registry;
 import com.mojang.blaze3d.systems.RenderSystem;
+import org.lwjgl.opengl.GL11;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -2898,20 +2902,15 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         if (matrices == null) {
             return;
         }
-        Vec3d cam = context.camera().getPos();
-        VertexConsumerProvider.Immediate consumers;
-        if (context.consumers() instanceof VertexConsumerProvider.Immediate) {
-            consumers = (VertexConsumerProvider.Immediate) context.consumers();
-        } else {
-            consumers = mc.getBufferBuilders().getEntityVertexConsumers();
-        }
-        VertexConsumer lines = consumers.getBuffer(RenderLayer.getLines());
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         RenderSystem.lineWidth(2.0F);
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
+        RenderSystem.disableTexture();
         try {
+            BufferBuilder bb = Tessellator.getInstance().getBuffer();
+            bb.begin(GL11.GL_LINES, VertexFormats.POSITION_COLOR);
             float[] outline = selectionOutlineColor();
             int drawn = 0;
             for (SelectedRow row : SELECTED.values()) {
@@ -2924,7 +2923,12 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 }
                 BlockPos top = anchor.up();
                 Box box = new Box(top).expand(0.003);
-                drawCameraRelativeBox(matrices, lines, box, cam, outline[0], outline[1], outline[2], 1.0F);
+                WorldRenderer.drawBox(
+                    bb,
+                    box.minX, box.minY, box.minZ,
+                    box.maxX, box.maxY, box.maxZ,
+                    outline[0], outline[1], outline[2], 1.0F
+                );
                 drawn++;
                 if (drawn >= 120) {
                     break;
@@ -2933,34 +2937,21 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             if (marker != null && dim.equals(marker.dimension())) {
                 BlockPos markerPos = new BlockPos(marker.x(), marker.y(), marker.z());
                 Box markerBox = new Box(markerPos).expand(0.01);
-                drawCameraRelativeBox(matrices, lines, markerBox, cam, 1.0F, 0.45F, 0.15F, 1.0F);
+                WorldRenderer.drawBox(
+                    bb,
+                    markerBox.minX, markerBox.minY, markerBox.minZ,
+                    markerBox.maxX, markerBox.maxY, markerBox.maxZ,
+                    1.0F, 0.45F, 0.15F, 1.0F
+                );
             }
-            consumers.draw();
+            Tessellator.getInstance().draw();
         } finally {
+            RenderSystem.enableTexture();
             RenderSystem.depthMask(true);
             RenderSystem.enableDepthTest();
             RenderSystem.lineWidth(1.0F);
             RenderSystem.disableBlend();
         }
-    }
-
-    private static void drawCameraRelativeBox(
-        MatrixStack matrices,
-        VertexConsumer lines,
-        Box box,
-        Vec3d cam,
-        float r,
-        float g,
-        float b,
-        float a
-    ) {
-        WorldRenderer.drawBox(
-            matrices,
-            lines,
-            box.minX - cam.x, box.minY - cam.y, box.minZ - cam.z,
-            box.maxX - cam.x, box.maxY - cam.y, box.maxZ - cam.z,
-            r, g, b, a
-        );
     }
 
     private static float[] selectionOutlineColor() {

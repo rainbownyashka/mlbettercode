@@ -166,6 +166,12 @@
   - outline pass no longer mutates shared world render matrix via `translate(-camera)` on context stack.
   - switched to camera-relative coordinates per-box (`min/max - cameraPos`) with unchanged matrix stack.
   - added strict GL-state restore (`try/finally`, restore depth/blend/lineWidth) to avoid leaking state into vanilla block outline render.
+- Fabric1165 outline isolation rollback (2026-02-23):
+  - reverted selector/testcase line draw to isolated `Tessellator` path in debug pass (no shared `context.consumers().draw()` flush), to avoid corruption of vanilla outline/other world debug lines.
+  - kept xray visibility (`disableDepthTest`) and explicit state restore.
+- Args window-close resilience update (2026-02-23):
+  - `awaitingArgs` now recovers from transient close/window-change events via bounded `ARGS_RECOVER_TO_PARAMS` path instead of immediate hard fail.
+  - on close/change while args are pending, runtime resets pending arg click state and re-enters params-chest reopen flow with trace reason.
 - Active parity tracker file added:
   - `docs/CURRENT_TASK_1TO1_PARITY.md` (single source for current 1:1 closure gates, blocker signatures, and done criteria).
   - `docs/LEGACY_1TO1_EXECUTION_SPEC.md` (legacy invariants/checklist for strict `run` + `publish` parity verification).
