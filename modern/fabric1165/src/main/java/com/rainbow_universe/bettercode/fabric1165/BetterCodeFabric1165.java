@@ -590,6 +590,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static int regAllTablesStop(FabricClientCommandSource source) {
         MinecraftClient mc = MinecraftClient.getInstance();
         int saved;
+        Path outPath = regAllTablesExportPath(mc);
         synchronized (REGALL_TABLES) {
             if (!REGALL_TABLES.active) {
                 source.sendFeedback(new LiteralText("[regalltables] not running"));
@@ -599,7 +600,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             saved = writeRegAllTablesExport(mc, REGALL_TABLES, "manual_stop");
             REGALL_TABLES.reset();
         }
-        source.sendFeedback(new LiteralText("[regalltables] stopped. exported records=" + saved));
+        source.sendFeedback(new LiteralText("[regalltables] stopped. exported records=" + saved + " file=" + outPath));
         return 1;
     }
 
@@ -627,7 +628,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             synchronized (REGALL_TABLES) {
                 if (REGALL_TABLES.active) {
                     int saved = writeRegAllTablesExport(mc, REGALL_TABLES, "hotkey_k");
-                    System.out.println("[printer-debug] regalltables stop reason=hotkey_k exported=" + saved);
+                    Path out = regAllTablesExportPath(mc);
+                    System.out.println("[printer-debug] regalltables stop reason=hotkey_k exported=" + saved + " file=" + out);
+                    mc.player.sendMessage(new LiteralText("[regalltables] stopped by K. exported=" + saved + " file=" + out), false);
                     REGALL_TABLES.reset();
                 }
             }
@@ -655,13 +658,17 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             String dim = String.valueOf(mc.world.getRegistryKey().getValue());
             if (!dim.equals(REGALL_TABLES.dimension)) {
                 int saved = writeRegAllTablesExport(mc, REGALL_TABLES, "dimension_changed");
-                System.out.println("[printer-debug] regalltables stop reason=dimension_changed exported=" + saved);
+                Path out = regAllTablesExportPath(mc);
+                System.out.println("[printer-debug] regalltables stop reason=dimension_changed exported=" + saved + " file=" + out);
+                mc.player.sendMessage(new LiteralText("[regalltables] stopped: dimension changed. exported=" + saved + " file=" + out), false);
                 REGALL_TABLES.reset();
                 return;
             }
             if (now - REGALL_TABLES.startedMs > 15L * 60L * 1000L) {
                 int saved = writeRegAllTablesExport(mc, REGALL_TABLES, "timeout_15m");
-                System.out.println("[printer-debug] regalltables stop reason=timeout exported=" + saved);
+                Path out = regAllTablesExportPath(mc);
+                System.out.println("[printer-debug] regalltables stop reason=timeout exported=" + saved + " file=" + out);
+                mc.player.sendMessage(new LiteralText("[regalltables] stopped: timeout. exported=" + saved + " file=" + out), false);
                 REGALL_TABLES.reset();
                 return;
             }
@@ -805,6 +812,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                         continue;
                     }
                     appendRegallRecord(menuPath, slotLabel(s), safeText(s.itemId()), "action");
+                    markMenuSlotTested(REGALL_TABLES.pendingMenuKey, s);
                 }
             }
             markMenuSlotTested(REGALL_TABLES.pendingMenuKey, REGALL_TABLES.pendingSlot);
@@ -843,7 +851,11 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 return;
             }
             int saved = writeRegAllTablesExport(mc, REGALL_TABLES, "done");
-            System.out.println("[printer-debug] regalltables done records=" + saved);
+            Path out = regAllTablesExportPath(mc);
+            System.out.println("[printer-debug] regalltables done records=" + saved + " file=" + out);
+            if (mc.player != null) {
+                mc.player.sendMessage(new LiteralText("[regalltables] done. exported=" + saved + " file=" + out), false);
+            }
             REGALL_TABLES.reset();
         }
     }
@@ -1000,7 +1012,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         if (mc == null || mc.runDirectory == null || state == null) {
             return 0;
         }
-        Path out = mc.runDirectory.toPath().resolve("tablesexport.txt");
+        Path out = regAllTablesExportPath(mc);
         ArrayList<String> lines = new ArrayList<String>();
         lines.add("reason=" + safeText(reason));
         lines.add("dimension=" + safeText(state.dimension));
@@ -1022,6 +1034,13 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             System.out.println("[printer-debug] regalltables export failed: " + e.getClass().getSimpleName() + " " + e.getMessage());
             return 0;
         }
+    }
+
+    private static Path regAllTablesExportPath(MinecraftClient mc) {
+        if (mc == null || mc.runDirectory == null) {
+            return Path.of("tablesexport.txt").toAbsolutePath();
+        }
+        return mc.runDirectory.toPath().resolve("tablesexport.txt").toAbsolutePath().normalize();
     }
 
     private static String safeText(String s) {

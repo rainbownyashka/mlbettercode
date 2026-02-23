@@ -244,6 +244,9 @@
     - added `/regalltables select` mode (no bulk action mark behavior).
     - in default `/regalltables` mode, when clicked entry is classified as `action` (GUI closed), crawler also marks all non-player items from that menu snapshot as `action`.
     - added global emergency hotkey `K`: stops active runtime execution + local tp queue + active regalltables crawl (with partial export reason `hotkey_k`).
+  - follow-up traversal/export fix:
+    - in default mode, when click is classified as `action`, crawler now marks all items from the same menu snapshot as already tested (prevents redundant per-item re-click loops afterward).
+    - crawler now reports full absolute export path in chat on stop/done/timeout/dimension-change/hotkey stop.
 - Route planner safety correction:
   - reverted target selection semantics to match only the real action key (`baseKey`) in current window.
   - learned planned path is kept as diagnostics (`menu_route_plan`) and no longer allows parent-category key to be treated as final action match.
