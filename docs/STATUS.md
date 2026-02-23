@@ -239,6 +239,10 @@
     - click gate enforces cursor-empty before any click,
     - writes `tablesexport.txt` in `.minecraft` run dir (full or partial on stop/timeout).
   - added `/modhelp` command that lists key mod commands and purpose.
+- Route planner safety correction:
+  - reverted target selection semantics to match only the real action key (`baseKey`) in current window.
+  - learned planned path is kept as diagnostics (`menu_route_plan`) and no longer allows parent-category key to be treated as final action match.
+  - random fallback behavior remains unchanged.
   - latest live-log stabilization slice (2026-02-19):
     - fixed menu-payload step cursor progression: adapters now advance cursor on explicit step completion callback from core, not only on immediate block confirm,
     - reduced wrong-target click risk: sign/params y-offset probes are now tried top-down (`dy=0..-2`) in core/adapters,

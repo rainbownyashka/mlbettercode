@@ -650,13 +650,13 @@ public final class PlaceRuntimeStepExecutor {
 
             String routeKey = route.baseKey;
             List<String> plannedPath = buildPlannedMenuPath(routeKey, 5);
-            MenuPlanMatchResult planMatch = findSlotByAnyPlannedKeyDetailed(view, plannedPath, true);
-            MenuMatchResult match = planMatch.match;
+            MenuMatchResult match = findSlotByAnyKeyDetailed(view, routeKey, true);
+            String matchedPathKey = match.slot >= 0 ? norm(routeKey) : "";
             int slot = match.slot;
             logger.info("printer-debug",
                 "menu_route_plan key=" + safe(routeKey)
                     + " path=" + summarizePlanPath(plannedPath, 10)
-                    + " matchedPathKey=" + safe(planMatch.pathKey));
+                    + " matchedPathKey=" + safe(matchedPathKey));
             if (slot < 0) {
                 int learned = findSlotByLearnedMenuHints(view, routeKey);
                 if (learned >= 0) {
@@ -773,7 +773,7 @@ public final class PlaceRuntimeStepExecutor {
             logger.info("printer-debug",
                 "menu_route_match key=" + safe(routeKey)
                     + " method=" + safe(match.method)
-                    + " pathKey=" + safe(planMatch.pathKey)
+                    + " pathKey=" + safe(matchedPathKey)
                     + " candidate=" + safe(match.candidate)
                     + " slot=" + slot
                     + " item=" + safe(matchedSlot == null ? "" : matchedSlot.itemId())
@@ -1974,22 +1974,6 @@ public final class PlaceRuntimeStepExecutor {
         return MenuMatchResult.notFound();
     }
 
-    private static MenuPlanMatchResult findSlotByAnyPlannedKeyDetailed(ContainerView view, List<String> path, boolean skipPlayer) {
-        if (path == null || path.isEmpty()) {
-            return new MenuPlanMatchResult(MenuMatchResult.notFound(), "");
-        }
-        for (String key : path) {
-            if (key == null || key.isEmpty()) {
-                continue;
-            }
-            MenuMatchResult match = findSlotByAnyKeyDetailed(view, key, skipPlayer);
-            if (match.slot >= 0) {
-                return new MenuPlanMatchResult(match, norm(key));
-            }
-        }
-        return new MenuPlanMatchResult(MenuMatchResult.notFound(), "");
-    }
-
     private static List<String> buildPlannedMenuPath(String routeKey, int maxDepth) {
         ArrayList<String> path = new ArrayList<String>();
         String target = norm(routeKey);
@@ -3106,16 +3090,6 @@ public final class PlaceRuntimeStepExecutor {
 
         static MenuMatchResult notFound() {
             return new MenuMatchResult(-1, "none", "");
-        }
-    }
-
-    private static final class MenuPlanMatchResult {
-        final MenuMatchResult match;
-        final String pathKey;
-
-        private MenuPlanMatchResult(MenuMatchResult match, String pathKey) {
-            this.match = match == null ? MenuMatchResult.notFound() : match;
-            this.pathKey = pathKey == null ? "" : pathKey;
         }
     }
 
