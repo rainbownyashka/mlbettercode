@@ -281,6 +281,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     .executes(ctx -> testcaseGetTableFromCache(ctx.getSource())))
                 .then(ClientCommandManager.literal("viewentities")
                     .executes(ctx -> testcaseViewEntities(ctx.getSource())))
+                .then(ClientCommandManager.literal("chestcache")
+                    .executes(ctx -> testcaseChestCache(ctx.getSource())))
                 .then(ClientCommandManager.literal("outline1")
                     .executes(ctx -> testcaseOutlineMode(ctx.getSource(), 1)))
                 .then(ClientCommandManager.literal("outline2")
@@ -759,6 +761,64 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         return 1;
     }
 
+    private static int testcaseChestCache(FabricClientCommandSource source) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.player == null || mc.world == null) {
+            source.sendError(new LiteralText("[testcase] chestcache failed: player/world unavailable"));
+            return 0;
+        }
+        FabricBridge bridge = new FabricBridge(source);
+        ContainerView view = bridge.getContainerSnapshot();
+        if (view == null || view.windowId() < 0) {
+            source.sendError(new LiteralText("[testcase] chestcache: no opened container window"));
+            return 0;
+        }
+        List<SlotView> slots = view.slots();
+        int total = 0;
+        int nonPlayer = 0;
+        int nonPlayerNonEmpty = 0;
+        List<String> sample = new ArrayList<String>();
+        for (int i = 0; i < slots.size(); i++) {
+            SlotView s = slots.get(i);
+            if (s == null) {
+                continue;
+            }
+            total++;
+            if (s.playerInventory()) {
+                continue;
+            }
+            nonPlayer++;
+            if (s.empty()) {
+                continue;
+            }
+            nonPlayerNonEmpty++;
+            if (sample.size() < 8) {
+                String item = safeText(s.itemId());
+                String label = safeText(s.displayName());
+                if (label.length() > 36) {
+                    label = label.substring(0, 36) + "...";
+                }
+                sample.add("slotId=" + s.slotNumber()
+                    + " idx=" + s.index()
+                    + " item=" + item
+                    + " name=" + label);
+            }
+        }
+        source.sendFeedback(new LiteralText("[testcase] chestcache window=" + view.windowId()
+            + " title=" + safeText(view.title())
+            + " slotsTotal=" + total
+            + " nonPlayer=" + nonPlayer
+            + " nonPlayerNonEmpty=" + nonPlayerNonEmpty));
+        if (sample.isEmpty()) {
+            source.sendFeedback(new LiteralText("[testcase] chestcache sample: empty"));
+        } else {
+            for (int i = 0; i < sample.size(); i++) {
+                source.sendFeedback(new LiteralText("[testcase] chestcache[" + i + "] " + sample.get(i)));
+            }
+        }
+        return 1;
+    }
+
     private static PublishCacheView effectivePublishCache(MinecraftClient mc) {
         PublishCacheView merged = PublishCacheStore.load(mc.runDirectory.toPath());
         synchronized (NEARBY_SIGN_CACHE) {
@@ -852,7 +912,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static int modHelp(FabricClientCommandSource source) {
         source.sendFeedback(new LiteralText("[modhelp] /mldsl run <postId|path.json> [config]"));
         source.sendFeedback(new LiteralText("[modhelp] /module publish - publish selected rows"));
-        source.sendFeedback(new LiteralText("[modhelp] /testcase setpos|rightclick|tp|trapcheck|gettable|gettablefromcache|viewentities|outline1..4"));
+        source.sendFeedback(new LiteralText("[modhelp] /testcase setpos|rightclick|tp|trapcheck|gettable|gettablefromcache|viewentities|chestcache|outline1..4"));
         source.sendFeedback(new LiteralText("[modhelp] /regalltables - crawl menu tables from /testcase marker and export tablesexport.txt"));
         source.sendFeedback(new LiteralText("[modhelp] /regalltables select - crawl tables without bulk action mark"));
         source.sendFeedback(new LiteralText("[modhelp] /regalltables stop - stop crawl and export partial result"));

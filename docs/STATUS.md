@@ -5,6 +5,10 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Fabric1165 testcase chest snapshot probe (2026-02-25):
+  - added `/testcase chestcache` command.
+  - prints current opened container snapshot summary (`window`, `title`, non-player slots, non-empty count) and several sample items.
+  - used to verify what chest/GUI contents are actually visible client-side before args fill.
 - Fabric1165 sign-read perf/log-noise fix (2026-02-25):
   - removed per-line `SIGN_READ` stdout traces from shared `ReflectCompat.readSignLineReflect(...)`.
   - removed adapter-level `SIGN_READ` traces from `FabricBridge.readSignLinesAt(...)` in fabric1165.
