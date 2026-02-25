@@ -5,6 +5,10 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Fabric1165 sign-read perf/log-noise fix (2026-02-25):
+  - removed per-line `SIGN_READ` stdout traces from shared `ReflectCompat.readSignLineReflect(...)`.
+  - removed adapter-level `SIGN_READ` traces from `FabricBridge.readSignLinesAt(...)` in fabric1165.
+  - nearby/background sign cache keeps working, but no longer floods `latest.log` with sign-read spam.
 - Java 8 publish crash fix (2026-02-25):
   - removed Java 11+ `Files.writeString/readString` usage from modern core persisted scoreboard id cache I/O.
   - replaced with Java 8-compatible stream/byte APIs (`newOutputStream`, `readAllBytes`).

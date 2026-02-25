@@ -3173,7 +3173,6 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 }
                 BlockEntity be = mc.world.getBlockEntity(new BlockPos(x, y, z));
                 if (be == null) {
-                    System.out.println("[publish-debug] SIGN_READ be_null pos=" + x + "," + y + "," + z + " block=" + blockId);
                     return null;
                 }
                 String[] out = new String[4];
@@ -3183,16 +3182,9 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 if (!hasAnySignText(out)) {
                     String[] fromNbt = readSignLinesFromNbt(be);
                     if (hasAnySignText(fromNbt)) {
-                        System.out.println("[publish-debug] SIGN_READ adapter=1165 pos=" + x + "," + y + "," + z
-                            + " block=" + blockId
-                            + " fallback=nbt"
-                            + " lines=" + formatLines(fromNbt));
                         return fromNbt;
                     }
                 }
-                System.out.println("[publish-debug] SIGN_READ adapter=1165 pos=" + x + "," + y + "," + z
-                    + " block=" + blockId
-                    + " lines=" + formatLines(out));
                 return out;
             } catch (Exception ignore) {
             }
@@ -3870,7 +3862,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 if (blockId == null || !blockId.toLowerCase().contains("sign")) {
                     continue;
                 }
-                String[] lines = bridge.readSignLinesAt(p.getX(), p.getY(), p.getZ());
+                String[] lines = readSignLinesAtQuiet(mc, p.getX(), p.getY(), p.getZ());
                 if (!hasAnySignText(lines)) {
                     continue;
                 }
@@ -4042,6 +4034,238 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         } catch (Exception ignore) {
         }
         return false;
+    }
+
+    private static String[] readSignLinesAtQuiet(MinecraftClient mc, int x, int y, int z) {
+        if (mc == null || mc.world == null) {
+            return null;
+        }
+        try {
+            BlockEntity be = mc.world.getBlockEntity(new BlockPos(x, y, z));
+            if (be == null) {
+                return null;
+            }
+            String[] out = new String[4];
+            for (int i = 0; i < 4; i++) {
+                out[i] = readSignLineReflectQuiet(be, i);
+            }
+            if (!hasAnySignText(out)) {
+                String[] fromNbt = readSignLinesFromNbtQuiet(be);
+                if (hasAnySignText(fromNbt)) {
+                    return fromNbt;
+                }
+            }
+            return out;
+        } catch (Exception ignore) {
+        }
+        return null;
+    }
+
+    private static String readSignLineReflectQuiet(Object be, int line) {
+        if (be == null) {
+            return "";
+        }
+        try {
+            Object text = be.getClass().getMethod("getTextOnRow", int.class).invoke(be, Integer.valueOf(line));
+            String s = normalizeSignTextQuiet(FabricBridge.textToString(text));
+            if (!s.isEmpty()) {
+                return s;
+            }
+        } catch (Exception ignore) {
+        }
+        try {
+            Object text = be.getClass().getMethod("getTextOnRow", int.class, boolean.class).invoke(be, Integer.valueOf(line), Boolean.FALSE);
+            String s = normalizeSignTextQuiet(FabricBridge.textToString(text));
+            if (!s.isEmpty()) {
+                return s;
+            }
+        } catch (Exception ignore) {
+        }
+        try {
+            Object front = be.getClass().getMethod("getFrontText").invoke(be);
+            Object msg = front.getClass().getMethod("getMessage", int.class, boolean.class).invoke(front, Integer.valueOf(line), Boolean.FALSE);
+            String s = normalizeSignTextQuiet(FabricBridge.textToString(msg));
+            if (!s.isEmpty()) {
+                return s;
+            }
+        } catch (Exception ignore) {
+        }
+        String[] fields = new String[] {"text", "texts", "messages"};
+        for (String f : fields) {
+            String v = readSignLineFromFieldQuiet(be, f, line);
+            if (!v.isEmpty()) {
+                return v;
+            }
+        }
+        try {
+            java.lang.reflect.Field[] all = be.getClass().getDeclaredFields();
+            for (java.lang.reflect.Field f : all) {
+                if (f == null || f.getType() == null || !f.getType().isArray()) {
+                    continue;
+                }
+                f.setAccessible(true);
+                Object raw = f.get(be);
+                if (!(raw instanceof Object[])) {
+                    continue;
+                }
+                Object[] arr = (Object[]) raw;
+                if (arr.length < 4 || line < 0 || line >= arr.length) {
+                    continue;
+                }
+                String s = normalizeSignTextQuiet(FabricBridge.textToString(arr[line]));
+                if (!s.isEmpty()) {
+                    return s;
+                }
+            }
+        } catch (Exception ignore) {
+        }
+        return "";
+    }
+
+    private static String readSignLineFromFieldQuiet(Object be, String fieldName, int line) {
+        if (be == null || fieldName == null || fieldName.isEmpty()) {
+            return "";
+        }
+        try {
+            java.lang.reflect.Field f = be.getClass().getField(fieldName);
+            Object raw = f.get(be);
+            if (raw instanceof Object[]) {
+                Object[] arr = (Object[]) raw;
+                if (line >= 0 && line < arr.length) {
+                    return normalizeSignTextQuiet(FabricBridge.textToString(arr[line]));
+                }
+            }
+        } catch (Exception ignore) {
+        }
+        try {
+            Class<?> cls = be.getClass();
+            while (cls != null && cls != Object.class) {
+                try {
+                    java.lang.reflect.Field f = cls.getDeclaredField(fieldName);
+                    f.setAccessible(true);
+                    Object raw = f.get(be);
+                    if (!(raw instanceof Object[])) {
+                        cls = cls.getSuperclass();
+                        continue;
+                    }
+                    Object[] arr = (Object[]) raw;
+                    if (line < 0 || line >= arr.length) {
+                        return "";
+                    }
+                    return normalizeSignTextQuiet(FabricBridge.textToString(arr[line]));
+                } catch (NoSuchFieldException miss) {
+                    cls = cls.getSuperclass();
+                }
+            }
+        } catch (Exception ignore) {
+        }
+        return "";
+    }
+
+    private static String[] readSignLinesFromNbtQuiet(BlockEntity be) {
+        if (be == null) {
+            return null;
+        }
+        try {
+            NbtCompound tag = createBlockEntityNbtReflectQuiet(be);
+            if (tag == null) {
+                return null;
+            }
+            String[] out = new String[4];
+            boolean any = false;
+            for (int i = 0; i < 4; i++) {
+                String key = "Text" + (i + 1);
+                String raw = tag.getString(key);
+                String value = raw == null ? "" : raw;
+                if (!value.trim().isEmpty()) {
+                    try {
+                        Text parsed = Text.Serializer.fromJson(value);
+                        value = FabricBridge.textToString(parsed);
+                    } catch (Exception ignore) {
+                    }
+                }
+                value = normalizeSignTextQuiet(value);
+                if (!value.isEmpty()) {
+                    any = true;
+                }
+                out[i] = value;
+            }
+            return any ? out : null;
+        } catch (Exception ignore) {
+        }
+        return null;
+    }
+
+    private static NbtCompound createBlockEntityNbtReflectQuiet(BlockEntity be) {
+        if (be == null) {
+            return null;
+        }
+        try {
+            java.lang.reflect.Method[] methods = be.getClass().getMethods();
+            for (java.lang.reflect.Method m : methods) {
+                if (m == null || m.getParameterCount() != 0) {
+                    continue;
+                }
+                if (!NbtCompound.class.isAssignableFrom(m.getReturnType())) {
+                    continue;
+                }
+                try {
+                    m.setAccessible(true);
+                    Object out = m.invoke(be);
+                    if (out instanceof NbtCompound) {
+                        return (NbtCompound) out;
+                    }
+                } catch (Exception ignore) {
+                }
+            }
+        } catch (Exception ignore) {
+        }
+        try {
+            java.lang.reflect.Method[] methods = be.getClass().getMethods();
+            for (java.lang.reflect.Method m : methods) {
+                if (m == null || m.getParameterCount() != 1) {
+                    continue;
+                }
+                Class<?> p = m.getParameterTypes()[0];
+                if (p == null || !p.isAssignableFrom(NbtCompound.class)) {
+                    continue;
+                }
+                NbtCompound tmp = new NbtCompound();
+                try {
+                    m.setAccessible(true);
+                    Object out = m.invoke(be, tmp);
+                    if (out instanceof NbtCompound) {
+                        return (NbtCompound) out;
+                    }
+                    return tmp;
+                } catch (Exception ignore) {
+                }
+            }
+        } catch (Exception ignore) {
+        }
+        return null;
+    }
+
+    private static String normalizeSignTextQuiet(String raw) {
+        String s = raw == null ? "" : raw.trim();
+        if (s.isEmpty()) {
+            return "";
+        }
+        String low = s.toLowerCase();
+        if (low.contains("$$lambda$")) {
+            return "";
+        }
+        if (low.startsWith("net.minecraft.class_") && s.indexOf('@') > 0) {
+            return "";
+        }
+        int at = s.indexOf('@');
+        if (at > 0 && at < s.length() - 1) {
+            String tail = s.substring(at + 1);
+            if (tail.matches("[0-9a-fA-F]{4,}")) {
+                return "";
+            }
+        }
+        return s;
     }
 
     private static void flushNearbySignCache(MinecraftClient mc, long now) {

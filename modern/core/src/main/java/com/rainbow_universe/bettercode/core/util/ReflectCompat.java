@@ -16,7 +16,6 @@ public final class ReflectCompat {
                 .invoke(be, Integer.valueOf(line));
             String s = normalizeSignText(textToString.apply(text));
             if (!s.isEmpty()) {
-                System.out.println("[publish-debug] SIGN_READ line=" + line + " method=getTextOnRow(int) value=" + crop(s));
                 return s;
             }
         } catch (Exception ignore) {
@@ -27,7 +26,6 @@ public final class ReflectCompat {
                 .invoke(be, Integer.valueOf(line), Boolean.FALSE);
             String s = normalizeSignText(textToString.apply(text));
             if (!s.isEmpty()) {
-                System.out.println("[publish-debug] SIGN_READ line=" + line + " method=getTextOnRow(int,bool) value=" + crop(s));
                 return s;
             }
         } catch (Exception ignore) {
@@ -39,7 +37,6 @@ public final class ReflectCompat {
                 .invoke(front, Integer.valueOf(line), Boolean.FALSE);
             String s = normalizeSignText(textToString.apply(msg));
             if (!s.isEmpty()) {
-                System.out.println("[publish-debug] SIGN_READ line=" + line + " method=getFrontText.getMessage value=" + crop(s));
                 return s;
             }
         } catch (Exception ignore) {
@@ -48,7 +45,6 @@ public final class ReflectCompat {
         for (String f : fields) {
             String v = readSignLineFromField(be, f, line, textToString);
             if (!v.isEmpty()) {
-                System.out.println("[publish-debug] SIGN_READ line=" + line + " method=field:" + f + " value=" + crop(v));
                 return v;
             }
         }
@@ -75,13 +71,11 @@ public final class ReflectCompat {
                 Object cell = arr[line];
                 String s = normalizeSignText(textToString.apply(cell));
                 if (!s.isEmpty()) {
-                    System.out.println("[publish-debug] SIGN_READ line=" + line + " method=array_fallback:" + f.getName() + " value=" + crop(s));
                     return s;
                 }
             }
         } catch (Exception ignore) {
         }
-        System.out.println("[publish-debug] SIGN_READ line=" + line + " method=none value=");
         return "";
     }
 
@@ -200,13 +194,4 @@ public final class ReflectCompat {
         return false;
     }
 
-    private static String crop(String v) {
-        if (v == null) {
-            return "";
-        }
-        if (v.length() <= 80) {
-            return v;
-        }
-        return v.substring(0, 80) + "...";
-    }
 }
