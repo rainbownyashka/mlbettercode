@@ -5,6 +5,10 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Fabric1165 hotkey `K` stop anti-spam fix (2026-02-25):
+  - emergency stop hotkey is now ignored while any GUI is open (`currentScreen != null`), including chat input.
+  - `[bettercode] stopped by hotkey K` is now emitted only when something was actually active (runtime, local tp queue, or regalltables crawler).
+  - removes false "stopped" spam when pressing `K` idle or while typing.
 - Fabric1165 publish pipeline switched to legacy-style live export + toolchain (2026-02-25):
   - `/module publish` now uses live selected rows as source (`exportcode_publish_*.json`) instead of pending module files.
   - warmup queue now expands selected rows into per-entry chest targets using legacy row traversal (`-2x`, stop on two empty pairs, sign probe `z-1 dy=-2..0`).

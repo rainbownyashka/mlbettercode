@@ -991,12 +991,25 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             STOP_HOTKEY_K_DOWN = false;
             return;
         }
+        // Do not process emergency hotkey while any GUI is open (chat included).
+        if (mc.currentScreen != null) {
+            STOP_HOTKEY_K_DOWN = false;
+            return;
+        }
         boolean down = GLFW.glfwGetKey(mc.getWindow().getHandle(), GLFW.GLFW_KEY_K) == GLFW.GLFW_PRESS;
         if (down && !STOP_HOTKEY_K_DOWN) {
-            runtime().stopActiveExecution(new FabricBridge(null), "manual_stop_key_k");
-            clearLocalTpQueue();
+            boolean hadRuntime = runtime().hasActiveExecution();
+            boolean hadTpQueue = isLocalTpQueueBusy();
+            boolean hadRegAll = false;
+            if (hadRuntime) {
+                runtime().stopActiveExecution(new FabricBridge(null), "manual_stop_key_k");
+            }
+            if (hadTpQueue) {
+                clearLocalTpQueue();
+            }
             synchronized (REGALL_TABLES) {
                 if (REGALL_TABLES.active) {
+                    hadRegAll = true;
                     int saved = writeRegAllTablesExport(mc, REGALL_TABLES, "hotkey_k");
                     Path out = regAllTablesExportPath(mc);
                     System.out.println("[printer-debug] regalltables stop reason=hotkey_k exported=" + saved + " file=" + out);
@@ -1004,9 +1017,17 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     REGALL_TABLES.reset();
                 }
             }
-            mc.player.sendMessage(new LiteralText("[bettercode] stopped by hotkey K"), false);
+            if (hadRuntime || hadTpQueue || hadRegAll) {
+                mc.player.sendMessage(new LiteralText("[bettercode] stopped by hotkey K"), false);
+            }
         }
         STOP_HOTKEY_K_DOWN = down;
+    }
+
+    private static boolean isLocalTpQueueBusy() {
+        synchronized (LOCAL_TP_STATE) {
+            return !LOCAL_TP_STATE.queue.isEmpty();
+        }
     }
 
     private static void handleRegAllTablesTick(MinecraftClient mc) {
