@@ -30,6 +30,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -42,6 +43,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -510,7 +512,21 @@ public final class RuntimeCore {
         try {
             Path cacheDir = runDirectory.resolve("mldsl_cache");
             Files.createDirectories(cacheDir);
-            Files.writeString(cacheDir.resolve("last_scoreboard_id.txt"), idLine.trim(), StandardCharsets.UTF_8);
+            Path out = cacheDir.resolve("last_scoreboard_id.txt");
+            OutputStream os = null;
+            OutputStreamWriter writer = null;
+            try {
+                os = Files.newOutputStream(out, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                writer = new OutputStreamWriter(os, StandardCharsets.UTF_8);
+                writer.write(idLine.trim());
+                writer.flush();
+            } finally {
+                if (writer != null) {
+                    writer.close();
+                } else if (os != null) {
+                    os.close();
+                }
+            }
         } catch (Exception ignored) {
         }
     }
@@ -524,7 +540,11 @@ public final class RuntimeCore {
             if (!Files.exists(f)) {
                 return "";
             }
-            return Files.readString(f, StandardCharsets.UTF_8).trim();
+            byte[] raw = Files.readAllBytes(f);
+            if (raw == null || raw.length <= 0) {
+                return "";
+            }
+            return new String(raw, StandardCharsets.UTF_8).trim();
         } catch (Exception ignored) {
             return "";
         }

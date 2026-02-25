@@ -5,6 +5,10 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Java 8 publish crash fix (2026-02-25):
+  - removed Java 11+ `Files.writeString/readString` usage from modern core persisted scoreboard id cache I/O.
+  - replaced with Java 8-compatible stream/byte APIs (`newOutputStream`, `readAllBytes`).
+  - fixes `/module publish` crash `NoSuchMethodError: Files.writeString(...)` on Java 8 runtime.
 - Fabric1165 dev-utils GUI auto-selector hook (2026-02-25):
   - on opening handled screen with exact title `Утилиты разработчика`, if context is `editorLike` or creative mode, mod auto-places Code Selector stick into hotbar slot 5.
   - action is one-shot per opened screen (`syncId`) to avoid repeated rewrites while GUI remains open.
