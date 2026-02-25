@@ -5,6 +5,9 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Fabric1165 selector crash fix (`NoClassDefFoundError ... BetterCodeFabric1165$1`) (2026-02-25):
+  - replaced anonymous probe class in selector glass resolve path with named static probe class.
+  - removes runtime dependency on synthetic `BetterCodeFabric1165$1` class during selector right-click handling.
 - Fabric1165 hotkey `K` stop anti-spam fix (2026-02-25):
   - emergency stop hotkey is now ignored while any GUI is open (`currentScreen != null`), including chat input.
   - `[bettercode] stopped by hotkey K` is now emitted only when something was actually active (runtime, local tp queue, or regalltables crawler).

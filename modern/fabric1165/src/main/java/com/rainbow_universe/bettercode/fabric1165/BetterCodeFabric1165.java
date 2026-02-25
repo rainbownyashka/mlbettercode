@@ -129,6 +129,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static String LAST_END_TICK_DIM = "";
     private static String LAST_LEGACY_CLICK_KEY = "";
     private static long LAST_LEGACY_CLICK_MS = 0L;
+    private static final BlueGlassSearch.Probe CODE_SELECTOR_PROBE_1165 = new SelectorProbe1165();
     private static int LAST_LEGACY_CLICK_BURST = 0;
     private static long LAST_TESTCASE_RENDER_LOG_MS = 0L;
     // Name-first parity mode for cross-version table compares.
@@ -1575,22 +1576,23 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         if (world == null || clicked == null) {
             return null;
         }
-        BlueGlassSearch.Probe probe = new BlueGlassSearch.Probe() {
-            @Override
-            public boolean isBlueGlass(int x, int y, int z) {
-                return FabricBridge.isBlueGlass(MinecraftClient.getInstance(), x, y, z);
-            }
-
-            @Override
-            public boolean isFree(int x, int y, int z) {
-                return FabricBridge.isFreeGlass(MinecraftClient.getInstance(), x, y, z);
-            }
-        };
         BlockPosView glass = BlueGlassSearch.resolveClickedGlass(
             new BlockPosView(clicked.getX(), clicked.getY(), clicked.getZ()),
-            probe
+            CODE_SELECTOR_PROBE_1165
         );
         return glass == null ? null : new BlockPos(glass.x(), glass.y(), glass.z());
+    }
+
+    private static final class SelectorProbe1165 implements BlueGlassSearch.Probe {
+        @Override
+        public boolean isBlueGlass(int x, int y, int z) {
+            return FabricBridge.isBlueGlass(MinecraftClient.getInstance(), x, y, z);
+        }
+
+        @Override
+        public boolean isFree(int x, int y, int z) {
+            return FabricBridge.isFreeGlass(MinecraftClient.getInstance(), x, y, z);
+        }
     }
 
     private static boolean isCodeSelectorItem(ItemStack stack) {
