@@ -104,7 +104,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static final long PLACE_TP_SETTLE_MS = 350L;
     private static final long PLACE_WORLD_TRACE_GAP_MS = 300L;
     private static final String DEV_UTILS_TITLE = "Утилиты разработчика";
-    private static final int DEV_UTILS_SELECTOR_SLOT = 4; // 5th hotbar slot
+    private static final int DEV_UTILS_GUI_SELECTOR_SLOT = 4; // 5th GUI slot (zero-based)
+    private static final int DEV_UTILS_REWARD_HOTBAR_SLOT = 4; // local reward slot in hotbar (5th)
     private static long lastCodeSelectorToggleMs = 0L;
     private static String lastBlockCompatLogKey = "";
     private static long lastBlockCompatLogMs = 0L;
@@ -3699,15 +3700,19 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
         LAST_DEV_UTILS_SYNC_ID = syncId;
         LAST_DEV_UTILS_DIM = dim;
-        if (mc.player.inventory == null || DEV_UTILS_SELECTOR_SLOT < 0 || DEV_UTILS_SELECTOR_SLOT >= mc.player.inventory.size()) {
+        if (mc.player.currentScreenHandler == null) {
             return;
         }
-        ItemStack cur = mc.player.inventory.getStack(DEV_UTILS_SELECTOR_SLOT);
-        if (isCodeSelectorItem(cur)) {
+        Slot guiSlot = resolveDevUtilsGuiSlot(mc.player.currentScreenHandler);
+        if (guiSlot == null) {
             return;
         }
-        mc.player.inventory.setStack(DEV_UTILS_SELECTOR_SLOT, createCodeSelectorStack());
-        System.out.println("[printer-debug] dev_utils_auto_selector placed slot=" + (DEV_UTILS_SELECTOR_SLOT + 1)
+        ItemStack cur = guiSlot.getStack();
+        if (isCodeSelectorItem(cur) || (cur != null && !cur.isEmpty())) {
+            return;
+        }
+        guiSlot.setStack(createCodeSelectorStack());
+        System.out.println("[printer-debug] dev_utils_auto_selector placed guiSlot=" + (DEV_UTILS_GUI_SELECTOR_SLOT + 1)
             + " syncId=" + syncId + " editorLike=" + editorLike + " creative=" + creative);
     }
 
@@ -3744,12 +3749,17 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         if (hovered == null) {
             return false;
         }
-        int slotIndex = FabricBridge.readSlotIndex(hovered, Integer.MIN_VALUE);
-        if (slotIndex != DEV_UTILS_SELECTOR_SLOT) {
+        int hoveredId = FabricBridge.readSlotId(hovered, Integer.MIN_VALUE);
+        if (hoveredId != DEV_UTILS_GUI_SELECTOR_SLOT) {
             return false;
         }
-        mc.player.inventory.setStack(DEV_UTILS_SELECTOR_SLOT, createCodeSelectorStack());
-        System.out.println("[printer-debug] dev_utils_auto_selector click_local_cancel slot=" + (DEV_UTILS_SELECTOR_SLOT + 1)
+        if (mc.player.inventory != null
+            && DEV_UTILS_REWARD_HOTBAR_SLOT >= 0
+            && DEV_UTILS_REWARD_HOTBAR_SLOT < mc.player.inventory.size()) {
+            mc.player.inventory.setStack(DEV_UTILS_REWARD_HOTBAR_SLOT, createCodeSelectorStack());
+            mc.player.inventory.selectedSlot = DEV_UTILS_REWARD_HOTBAR_SLOT;
+        }
+        System.out.println("[printer-debug] dev_utils_auto_selector click_local_cancel guiSlot=" + (DEV_UTILS_GUI_SELECTOR_SLOT + 1)
             + " title=" + DEV_UTILS_TITLE + " editorLike=" + editorLike + " creative=" + creative);
         return true; // cancel network click; local-only behavior
     }
@@ -3762,7 +3772,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         int top = FabricBridge.readIntField(screen, "y", 0);
         try {
             for (Slot slot : mc.player.currentScreenHandler.slots) {
-                if (slot == null || slot.inventory != mc.player.inventory) {
+                if (slot == null || slot.inventory == mc.player.inventory) {
                     continue;
                 }
                 int sx = left + slot.x;
@@ -3772,6 +3782,22 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 }
             }
         } catch (Exception ignore) {
+        }
+        return null;
+    }
+
+    private static Slot resolveDevUtilsGuiSlot(net.minecraft.screen.ScreenHandler handler) {
+        if (handler == null || handler.slots == null) {
+            return null;
+        }
+        for (Slot slot : handler.slots) {
+            if (slot == null) {
+                continue;
+            }
+            int id = FabricBridge.readSlotId(slot, Integer.MIN_VALUE);
+            if (id == DEV_UTILS_GUI_SELECTOR_SLOT) {
+                return slot;
+            }
         }
         return null;
     }
