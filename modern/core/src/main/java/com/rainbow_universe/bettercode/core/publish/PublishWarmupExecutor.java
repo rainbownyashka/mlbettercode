@@ -7,6 +7,7 @@ import com.rainbow_universe.bettercode.core.bridge.SlotView;
 import com.rainbow_universe.bettercode.core.bridge.SelectedRow;
 
 public final class PublishWarmupExecutor {
+    private static final long BLOCKED_RETRY_DELAY_MS = 90L;
     public static final class Result {
         public final boolean done;
         public final String errorCode;
@@ -41,12 +42,16 @@ public final class PublishWarmupExecutor {
         state.warmupActive = true;
         while (true) {
             long now = bridge.nowMs();
+            if (now < state.nextActionMs) {
+                sleepQuiet(4L);
+                continue;
+            }
             if (now >= state.timeoutAtMs) {
                 trace.trace("warmup.stop", "reason=timeout");
                 state.warmupActive = false;
                 return Result.fail("PUBLISH_WARMUP_TIMEOUT", "warmup timeout");
             }
-            Result blocked = checkBlocked(state, bridge, trace);
+            Result blocked = checkBlocked(state, bridge, trace, now);
             if (blocked != null) {
                 state.warmupActive = false;
                 return blocked;
@@ -76,6 +81,7 @@ public final class PublishWarmupExecutor {
                     }
                     if (now < state.settleUntilMs) {
                         trace.trace("warmup.wait", "reason=settling now=" + now + " settleUntil=" + state.settleUntilMs);
+                        state.nextActionMs = Math.max(state.nextActionMs, Math.min(state.settleUntilMs, now + BLOCKED_RETRY_DELAY_MS));
                         continue;
                     }
                     state.warmupActive = false;
@@ -106,6 +112,7 @@ public final class PublishWarmupExecutor {
                     return Result.fail("PUBLISH_TP_UNAVAILABLE", "tp unavailable for warmup target");
                 }
                 trace.trace("warmup.wait", "reason=tp_unavailable_but_near distSq=" + distSq);
+                state.nextActionMs = now + BLOCKED_RETRY_DELAY_MS;
             }
             ContainerView beforeOpen = bridge.getContainerSnapshot();
             String beforeHash = hashNonPlayer(beforeOpen);
@@ -139,7 +146,7 @@ public final class PublishWarmupExecutor {
         }
     }
 
-    private static Result checkBlocked(PublishSessionState state, GameBridge bridge, Trace trace) {
+    private static Result checkBlocked(PublishSessionState state, GameBridge bridge, Trace trace, long now) {
         boolean editorContext = bridge.canUseEditorContext();
         boolean holdingBlocker = bridge.isHoldingBlockerItem();
         boolean screenOpen = bridge.isScreenOpen();
@@ -161,16 +168,30 @@ public final class PublishWarmupExecutor {
             state.blockedReason = "blocked";
             trace.trace("warmup.wait", "reason=blocked heldIngot=" + holdingBlocker
                 + " autoCache=false screen=" + screenOpen + " closed=" + closed);
-            if (holdingBlocker || !closed) {
-                return Result.fail("PUBLISH_CONTEXT_BLOCKED", "blocked by held item/screen");
+            if (holdingBlocker || !closed || bridge.isScreenOpen()) {
+                state.nextActionMs = now + BLOCKED_RETRY_DELAY_MS;
+                return null;
             }
         }
         if (tpBusy) {
             state.blockedReason = "tp_path_busy";
             trace.trace("warmup.wait", "reason=tp_path_busy");
-            return Result.fail("PUBLISH_CONTEXT_BLOCKED", "tp path is busy");
+            state.nextActionMs = now + BLOCKED_RETRY_DELAY_MS;
+            return null;
         }
+        state.nextActionMs = 0L;
         return null;
+    }
+
+    private static void sleepQuiet(long ms) {
+        if (ms <= 0L) {
+            return;
+        }
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static Result processPagedChest(PublishSessionState state, GameBridge bridge, Trace trace, SelectedRow row) {

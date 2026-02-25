@@ -5,6 +5,10 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Modern publish warmup transient-block stabilization (2026-02-25):
+  - `PublishWarmupExecutor` no longer hard-fails immediately on transient `tp_path_busy` / screen-block states.
+  - warmup now retries these states within the existing bounded timeout window, with explicit `warmup.wait` trace reasons preserved.
+  - added bounded retry pacing (`nextActionMs`) in warmup loop to reduce hot-spin pressure during settle/blocked phases.
 - Fabric1165 embedded menu-hints preload (2026-02-24):
   - at runtime initialization, adapter now preloads route hints from embedded snapshot:
     - `regalltables/1.16.5/tablesexport.current.txt`.
