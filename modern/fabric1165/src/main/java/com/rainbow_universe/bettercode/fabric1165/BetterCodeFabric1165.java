@@ -137,7 +137,13 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static int SNAPSHOT_CACHE_SCREEN_ID = -1;
     private static ContainerView SNAPSHOT_CACHE_VIEW = ContainerView.empty();
     private static final RegAllTablesState REGALL_TABLES = new RegAllTablesState();
+    private static final NearbySignCacheState NEARBY_SIGN_CACHE = new NearbySignCacheState();
     private static boolean STOP_HOTKEY_K_DOWN = false;
+    private static final int NEARBY_SIGN_CACHE_RADIUS_XZ = 8;
+    private static final int NEARBY_SIGN_CACHE_RADIUS_Y = 3;
+    private static final int NEARBY_SIGN_CACHE_BATCH = 40;
+    private static final long NEARBY_SIGN_CACHE_SCAN_GAP_MS = 90L;
+    private static final long NEARBY_SIGN_CACHE_SAVE_GAP_MS = 2500L;
 
     @Override
     public void onInitializeClient() {
@@ -316,6 +322,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             refreshCodeEntrySeedHint(client);
             renderSelectionHighlights(client);
             runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis());
+            handleNearbySignCacheTick(client);
         });
         WorldRenderEvents.BEFORE_DEBUG_RENDER.register(BetterCodeFabric1165::renderSelectionOutlines);
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
@@ -1775,6 +1782,32 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             this.item = item == null ? "" : item;
             this.itemId = itemId == null ? "" : itemId;
             this.type = type == null ? "" : type;
+        }
+    }
+
+    private static final class NearbySignCacheState {
+        PublishCacheView cache = new PublishCacheView();
+        boolean loaded = false;
+        boolean dirty = false;
+        String dim = "";
+        int centerX = 0;
+        int centerY = 0;
+        int centerZ = 0;
+        long nextScanMs = 0L;
+        long lastSaveMs = 0L;
+        long lastChangeMs = 0L;
+        long lastLogMs = 0L;
+        final Deque<BlockPos> queue = new ArrayDeque<BlockPos>();
+
+        void resetRuntime() {
+            dim = "";
+            centerX = 0;
+            centerY = 0;
+            centerZ = 0;
+            nextScanMs = 0L;
+            lastChangeMs = 0L;
+            lastLogMs = 0L;
+            queue.clear();
         }
     }
 
@@ -3522,10 +3555,157 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             SELECTED.clear();
         }
         TestcaseTool.clearMarker();
+        synchronized (NEARBY_SIGN_CACHE) {
+            NEARBY_SIGN_CACHE.resetRuntime();
+        }
         SPRINTF_ACTIVE = false;
         SPRINTF_BASE_SPEED = Float.NaN;
         SPRINTF_PLAYER_ID = -1;
         System.out.println("[printer-debug] world_session_reset selectedCleared=" + selectedCount + " testcaseMarkerCleared=1");
+    }
+
+    private static void handleNearbySignCacheTick(MinecraftClient mc) {
+        if (mc == null || mc.player == null || mc.world == null) {
+            return;
+        }
+        if (runtime().hasActiveExecution()) {
+            return;
+        }
+        synchronized (DIRECT_PLACE_STATE) {
+            if (DIRECT_PLACE_STATE.active) {
+                return;
+            }
+        }
+        synchronized (REGALL_TABLES) {
+            if (REGALL_TABLES.active) {
+                return;
+            }
+        }
+        if (mc.currentScreen != null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        String dim = String.valueOf(mc.world.getRegistryKey().getValue());
+        BlockPos feet = mc.player.getBlockPos();
+        synchronized (NEARBY_SIGN_CACHE) {
+            if (!NEARBY_SIGN_CACHE.loaded) {
+                NEARBY_SIGN_CACHE.cache = PublishCacheStore.load(mc.runDirectory.toPath());
+                NEARBY_SIGN_CACHE.loaded = true;
+                System.out.println("[publish-debug] nearby_sign_cache load scope="
+                    + NEARBY_SIGN_CACHE.cache.scopeSnapshot().size()
+                    + " dimPos=" + NEARBY_SIGN_CACHE.cache.dimPosSnapshot().size()
+                    + " entryToSign=" + NEARBY_SIGN_CACHE.cache.entryToSignSnapshot().size());
+            }
+            if (now < NEARBY_SIGN_CACHE.nextScanMs) {
+                if (NEARBY_SIGN_CACHE.dirty && now - NEARBY_SIGN_CACHE.lastSaveMs >= NEARBY_SIGN_CACHE_SAVE_GAP_MS) {
+                    flushNearbySignCache(mc, now);
+                }
+                return;
+            }
+            if (!dim.equals(NEARBY_SIGN_CACHE.dim)
+                || NEARBY_SIGN_CACHE.queue.isEmpty()
+                || Math.abs(feet.getX() - NEARBY_SIGN_CACHE.centerX) > 2
+                || Math.abs(feet.getY() - NEARBY_SIGN_CACHE.centerY) > 1
+                || Math.abs(feet.getZ() - NEARBY_SIGN_CACHE.centerZ) > 2) {
+                rebuildNearbySignQueue(dim, feet);
+            }
+            if (NEARBY_SIGN_CACHE.queue.isEmpty()) {
+                NEARBY_SIGN_CACHE.nextScanMs = now + 300L;
+                return;
+            }
+            FabricBridge bridge = new FabricBridge(null);
+            int changed = 0;
+            int scanned = 0;
+            while (scanned < NEARBY_SIGN_CACHE_BATCH && !NEARBY_SIGN_CACHE.queue.isEmpty()) {
+                BlockPos p = NEARBY_SIGN_CACHE.queue.pollFirst();
+                scanned++;
+                if (p == null || !mc.world.isChunkLoaded(p)) {
+                    continue;
+                }
+                String blockId;
+                try {
+                    blockId = String.valueOf(Registry.BLOCK.getId(mc.world.getBlockState(p).getBlock()));
+                } catch (Exception e) {
+                    blockId = "";
+                }
+                if (blockId == null || !blockId.toLowerCase().contains("sign")) {
+                    continue;
+                }
+                String[] lines = bridge.readSignLinesAt(p.getX(), p.getY(), p.getZ());
+                if (!hasAnySignText(lines)) {
+                    continue;
+                }
+                String key = dim + ":" + p.getX() + ":" + p.getY() + ":" + p.getZ();
+                String[] prev = NEARBY_SIGN_CACHE.cache.getDimPos(key);
+                if (!sameLines(prev, lines)) {
+                    NEARBY_SIGN_CACHE.cache.putDimPos(key, lines);
+                    changed++;
+                }
+            }
+            if (changed > 0) {
+                NEARBY_SIGN_CACHE.dirty = true;
+                NEARBY_SIGN_CACHE.lastChangeMs = now;
+                if (now - NEARBY_SIGN_CACHE.lastLogMs >= 1800L) {
+                    NEARBY_SIGN_CACHE.lastLogMs = now;
+                    System.out.println("[publish-debug] nearby_sign_cache update dim=" + dim
+                        + " changed=" + changed
+                        + " queueLeft=" + NEARBY_SIGN_CACHE.queue.size());
+                }
+            }
+            if (NEARBY_SIGN_CACHE.dirty && now - NEARBY_SIGN_CACHE.lastSaveMs >= NEARBY_SIGN_CACHE_SAVE_GAP_MS) {
+                flushNearbySignCache(mc, now);
+            }
+            NEARBY_SIGN_CACHE.nextScanMs = now + NEARBY_SIGN_CACHE_SCAN_GAP_MS;
+        }
+    }
+
+    private static void rebuildNearbySignQueue(String dim, BlockPos center) {
+        NEARBY_SIGN_CACHE.queue.clear();
+        NEARBY_SIGN_CACHE.dim = dim == null ? "" : dim;
+        NEARBY_SIGN_CACHE.centerX = center.getX();
+        NEARBY_SIGN_CACHE.centerY = center.getY();
+        NEARBY_SIGN_CACHE.centerZ = center.getZ();
+        for (int dy = -NEARBY_SIGN_CACHE_RADIUS_Y; dy <= NEARBY_SIGN_CACHE_RADIUS_Y; dy++) {
+            for (int dz = -NEARBY_SIGN_CACHE_RADIUS_XZ; dz <= NEARBY_SIGN_CACHE_RADIUS_XZ; dz++) {
+                for (int dx = -NEARBY_SIGN_CACHE_RADIUS_XZ; dx <= NEARBY_SIGN_CACHE_RADIUS_XZ; dx++) {
+                    NEARBY_SIGN_CACHE.queue.addLast(new BlockPos(
+                        center.getX() + dx,
+                        center.getY() + dy,
+                        center.getZ() + dz
+                    ));
+                }
+            }
+        }
+    }
+
+    private static void flushNearbySignCache(MinecraftClient mc, long now) {
+        try {
+            PublishCacheStore.save(mc.runDirectory.toPath(), NEARBY_SIGN_CACHE.cache);
+            NEARBY_SIGN_CACHE.lastSaveMs = now;
+            NEARBY_SIGN_CACHE.dirty = false;
+            System.out.println("[publish-debug] nearby_sign_cache saved dimPos="
+                + NEARBY_SIGN_CACHE.cache.dimPosSnapshot().size());
+        } catch (Exception e) {
+            System.out.println("[publish-debug] nearby_sign_cache save_failed type="
+                + e.getClass().getSimpleName() + " msg=" + String.valueOf(e.getMessage()));
+        }
+    }
+
+    private static boolean sameLines(String[] a, String[] b) {
+        if (a == b) {
+            return true;
+        }
+        if (a == null || b == null || a.length != b.length) {
+            return false;
+        }
+        for (int i = 0; i < a.length; i++) {
+            String x = a[i] == null ? "" : a[i];
+            String y = b[i] == null ? "" : b[i];
+            if (!x.equals(y)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static void handleSprintFlyBoost(MinecraftClient mc) {

@@ -5,6 +5,11 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Fabric1165 idle nearby sign cache (2026-02-25):
+  - added background caching of nearby sign lines around player into publish cache (`publish_sign_cache.json`) during normal gameplay.
+  - cache tick is strictly disabled while printer runtime is active and while `/regalltables` scanner is active.
+  - caching is rate-limited (bounded batch + periodic flush) with concise trace markers:
+    - `nearby_sign_cache load/update/saved`.
 - Fabric1165 testcase sign diagnostics commands (2026-02-25):
   - added `/testcase gettable`: probes sign candidates from marker (direct + legacy `entry.z-1`, `dy=-2..0`) and prints live sign lines for each candidate.
   - added `/testcase gettablefromcache`: reads `publish_sign_cache.json` and prints `dimPos` + `entry->sign` hits for marker-derived candidates.

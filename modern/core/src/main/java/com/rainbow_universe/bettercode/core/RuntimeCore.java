@@ -327,6 +327,11 @@ public final class RuntimeCore {
         logger.info("printer-debug", "tick step ok source=" + exec.source + " step=" + exec.state.executedCount() + "/" + exec.state.totalCount());
     }
 
+    public boolean hasActiveExecution() {
+        PendingExecution exec = pendingExecution;
+        return exec != null && exec.state != null && exec.state.isActive();
+    }
+
     private static boolean hasMenuPayload(PlaceRuntimeEntry entry) {
         if (entry == null) {
             return false;
