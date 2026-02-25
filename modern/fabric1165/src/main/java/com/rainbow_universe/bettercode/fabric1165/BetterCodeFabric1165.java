@@ -272,6 +272,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     .executes(ctx -> testcaseGetTable(ctx.getSource())))
                 .then(ClientCommandManager.literal("gettablefromcache")
                     .executes(ctx -> testcaseGetTableFromCache(ctx.getSource())))
+                .then(ClientCommandManager.literal("viewentities")
+                    .executes(ctx -> testcaseViewEntities(ctx.getSource())))
                 .then(ClientCommandManager.literal("outline1")
                     .executes(ctx -> testcaseOutlineMode(ctx.getSource(), 1)))
                 .then(ClientCommandManager.literal("outline2")
@@ -672,6 +674,74 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         return 1;
     }
 
+    private static int testcaseViewEntities(FabricClientCommandSource source) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.player == null || mc.world == null) {
+            source.sendError(new LiteralText("[testcase] viewentities failed: player/world unavailable"));
+            return 0;
+        }
+        final int radius = 15;
+        BlockPos center = mc.player.getBlockPos();
+        Iterable<?> iterable = resolveWorldBlockEntities(mc.world);
+        if (iterable == null) {
+            source.sendError(new LiteralText("[testcase] viewentities failed: world block-entity iterable unavailable"));
+            return 0;
+        }
+        FabricBridge bridge = new FabricBridge(source);
+        int inRadius = 0;
+        int signCount = 0;
+        int signNonEmpty = 0;
+        List<String> samples = new ArrayList<String>();
+        try {
+            for (Object raw : iterable) {
+                if (!(raw instanceof BlockEntity)) {
+                    continue;
+                }
+                BlockEntity be = (BlockEntity) raw;
+                BlockPos p = be.getPos();
+                if (p == null) {
+                    continue;
+                }
+                int dx = p.getX() - center.getX();
+                int dy = p.getY() - center.getY();
+                int dz = p.getZ() - center.getZ();
+                if ((dx * dx + dy * dy + dz * dz) > (radius * radius)) {
+                    continue;
+                }
+                inRadius++;
+                if (!isLikelySignBlockEntity(mc, be, p)) {
+                    continue;
+                }
+                signCount++;
+                String[] lines = bridge.readSignLinesAt(p.getX(), p.getY(), p.getZ());
+                boolean nonEmpty = hasAnySignText(lines);
+                if (nonEmpty) {
+                    signNonEmpty++;
+                }
+                if (samples.size() < 5) {
+                    samples.add("pos=" + p.getX() + "," + p.getY() + "," + p.getZ()
+                        + " nonEmpty=" + nonEmpty
+                        + " lines=" + formatLinesShort(lines));
+                }
+            }
+        } catch (Exception e) {
+            source.sendError(new LiteralText("[testcase] viewentities failed: " + e.getClass().getSimpleName()));
+            return 0;
+        }
+        source.sendFeedback(new LiteralText("[testcase] viewentities radius=" + radius
+            + " blockEntitiesInRadius=" + inRadius
+            + " signEntities=" + signCount
+            + " signWithText=" + signNonEmpty));
+        if (samples.isEmpty()) {
+            source.sendFeedback(new LiteralText("[testcase] viewentities samples: none"));
+        } else {
+            for (int i = 0; i < samples.size(); i++) {
+                source.sendFeedback(new LiteralText("[testcase] sample[" + i + "] " + samples.get(i)));
+            }
+        }
+        return 1;
+    }
+
     private static PublishCacheView effectivePublishCache(MinecraftClient mc) {
         PublishCacheView merged = PublishCacheStore.load(mc.runDirectory.toPath());
         synchronized (NEARBY_SIGN_CACHE) {
@@ -765,7 +835,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static int modHelp(FabricClientCommandSource source) {
         source.sendFeedback(new LiteralText("[modhelp] /mldsl run <postId|path.json> [config]"));
         source.sendFeedback(new LiteralText("[modhelp] /module publish - publish selected rows"));
-        source.sendFeedback(new LiteralText("[modhelp] /testcase setpos|rightclick|tp|trapcheck|gettable|gettablefromcache|outline1..4"));
+        source.sendFeedback(new LiteralText("[modhelp] /testcase setpos|rightclick|tp|trapcheck|gettable|gettablefromcache|viewentities|outline1..4"));
         source.sendFeedback(new LiteralText("[modhelp] /regalltables - crawl menu tables from /testcase marker and export tablesexport.txt"));
         source.sendFeedback(new LiteralText("[modhelp] /regalltables select - crawl tables without bulk action mark"));
         source.sendFeedback(new LiteralText("[modhelp] /regalltables stop - stop crawl and export partial result"));
