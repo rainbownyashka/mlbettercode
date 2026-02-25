@@ -9,6 +9,9 @@
   - `PublishWarmupExecutor` no longer hard-fails immediately on transient `tp_path_busy` / screen-block states.
   - warmup now retries these states within the existing bounded timeout window, with explicit `warmup.wait` trace reasons preserved.
   - added bounded retry pacing (`nextActionMs`) in warmup loop to reduce hot-spin pressure during settle/blocked phases.
+- Modern publish sign scan robustness follow-up (2026-02-25):
+  - `PublishSignResolver` now scans full legacy sign candidate window (`entry.z-1`, `dy=-2..0`) and prefers first candidate with non-empty readable lines.
+  - reduces false `sign_empty` when first sign-like candidate is present but unreadable/empty while another candidate in legacy window is valid.
 - Fabric1165 embedded menu-hints preload (2026-02-24):
   - at runtime initialization, adapter now preloads route hints from embedded snapshot:
     - `regalltables/1.16.5/tablesexport.current.txt`.

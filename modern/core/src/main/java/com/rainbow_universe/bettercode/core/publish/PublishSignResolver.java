@@ -51,8 +51,10 @@ public final class PublishSignResolver {
             + " entry=" + entryX + "," + entryY + "," + entryZ
             + " sign_hint=" + signX + "," + signY + "," + signZ);
 
-        // Legacy parity: find sign at z-1 from entry across y offsets [-2..0].
-        int[] signPos = findLegacySignPos(bridge, entryX, entryY, entryZ);
+        // Legacy parity: scan sign at z-1 from entry across y offsets [-2..0].
+        // If multiple sign-like candidates exist, prefer one with readable non-empty lines.
+        SignProbe signProbe = findLegacySignWithLines(bridge, entryX, entryY, entryZ);
+        int[] signPos = signProbe.pos;
         String[] liveLines = null;
         boolean signPresent = false;
         if (signPos != null) {
@@ -60,7 +62,10 @@ public final class PublishSignResolver {
             signY = signPos[1];
             signZ = signPos[2];
             signPresent = true;
-            liveLines = bridge.readSignLinesAt(signX, signY, signZ);
+            liveLines = signProbe.lines;
+            if (liveLines == null) {
+                liveLines = bridge.readSignLinesAt(signX, signY, signZ);
+            }
             System.out.println("[publish-debug] SIGN_RESOLVE sign_found pos="
                 + signX + "," + signY + "," + signZ
                 + " liveLines=" + formatLines(liveLines));
@@ -94,19 +99,29 @@ public final class PublishSignResolver {
         return Result.ok(resolved.source, resolved.key, resolved.lines);
     }
 
-    private static int[] findLegacySignPos(GameBridge bridge, int entryX, int entryY, int entryZ) {
+    private static SignProbe findLegacySignWithLines(GameBridge bridge, int entryX, int entryY, int entryZ) {
         if (bridge == null) {
-            return null;
+            return new SignProbe(null, null);
         }
+        int[] firstSignPos = null;
+        String[] firstSignLines = null;
         for (int dy = -2; dy <= 0; dy++) {
             int sx = entryX;
             int sy = entryY + dy;
             int sz = entryZ - 1;
-            if (bridge.isSignAt(sx, sy, sz)) {
-                return new int[]{sx, sy, sz};
+            if (!bridge.isSignAt(sx, sy, sz)) {
+                continue;
+            }
+            String[] lines = bridge.readSignLinesAt(sx, sy, sz);
+            if (firstSignPos == null) {
+                firstSignPos = new int[]{sx, sy, sz};
+                firstSignLines = lines;
+            }
+            if (!PublishCacheView.isInvalid(lines)) {
+                return new SignProbe(new int[]{sx, sy, sz}, lines);
             }
         }
-        return null;
+        return new SignProbe(firstSignPos, firstSignLines);
     }
 
     private static String normalizeDim(String preferred, String rowDim, String fallback) {
@@ -145,5 +160,15 @@ public final class PublishSignResolver {
         }
         sb.append(']');
         return sb.toString();
+    }
+
+    private static final class SignProbe {
+        final int[] pos;
+        final String[] lines;
+
+        SignProbe(int[] pos, String[] lines) {
+            this.pos = pos;
+            this.lines = lines;
+        }
     }
 }
