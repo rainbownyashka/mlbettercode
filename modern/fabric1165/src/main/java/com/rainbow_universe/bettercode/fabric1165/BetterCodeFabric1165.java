@@ -3619,7 +3619,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 || Math.abs(feet.getX() - NEARBY_SIGN_CACHE.centerX) > 2
                 || Math.abs(feet.getY() - NEARBY_SIGN_CACHE.centerY) > 1
                 || Math.abs(feet.getZ() - NEARBY_SIGN_CACHE.centerZ) > 2) {
-                rebuildNearbySignQueue(dim, feet);
+                rebuildNearbySignQueue(mc, dim, feet);
             }
             if (NEARBY_SIGN_CACHE.queue.isEmpty()) {
                 NEARBY_SIGN_CACHE.nextScanMs = now + 300L;
@@ -3673,12 +3673,20 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
     }
 
-    private static void rebuildNearbySignQueue(String dim, BlockPos center) {
+    private static void rebuildNearbySignQueue(MinecraftClient mc, String dim, BlockPos center) {
         NEARBY_SIGN_CACHE.queue.clear();
         NEARBY_SIGN_CACHE.dim = dim == null ? "" : dim;
         NEARBY_SIGN_CACHE.centerX = center.getX();
         NEARBY_SIGN_CACHE.centerY = center.getY();
         NEARBY_SIGN_CACHE.centerZ = center.getZ();
+        int fromEntities = enqueueNearbySignBlockEntities(mc, center);
+        if (fromEntities > 0) {
+            if (System.currentTimeMillis() - NEARBY_SIGN_CACHE.lastLogMs >= 1500L) {
+                NEARBY_SIGN_CACHE.lastLogMs = System.currentTimeMillis();
+                System.out.println("[publish-debug] nearby_sign_cache source=block_entities count=" + fromEntities);
+            }
+            return;
+        }
         for (int dy = -NEARBY_SIGN_CACHE_RADIUS_Y; dy <= NEARBY_SIGN_CACHE_RADIUS_Y; dy++) {
             for (int dz = -NEARBY_SIGN_CACHE_RADIUS_XZ; dz <= NEARBY_SIGN_CACHE_RADIUS_XZ; dz++) {
                 for (int dx = -NEARBY_SIGN_CACHE_RADIUS_XZ; dx <= NEARBY_SIGN_CACHE_RADIUS_XZ; dx++) {
@@ -3690,6 +3698,123 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 }
             }
         }
+    }
+
+    private static int enqueueNearbySignBlockEntities(MinecraftClient mc, BlockPos center) {
+        if (mc == null || mc.world == null || center == null) {
+            return 0;
+        }
+        Iterable<?> iterable = resolveWorldBlockEntities(mc.world);
+        if (iterable == null) {
+            return 0;
+        }
+        Set<String> seen = new HashSet<String>();
+        int added = 0;
+        try {
+            for (Object raw : iterable) {
+                if (!(raw instanceof BlockEntity)) {
+                    continue;
+                }
+                BlockEntity be = (BlockEntity) raw;
+                BlockPos p = be.getPos();
+                if (p == null) {
+                    continue;
+                }
+                if (Math.abs(p.getX() - center.getX()) > NEARBY_SIGN_CACHE_RADIUS_XZ
+                    || Math.abs(p.getY() - center.getY()) > NEARBY_SIGN_CACHE_RADIUS_Y
+                    || Math.abs(p.getZ() - center.getZ()) > NEARBY_SIGN_CACHE_RADIUS_XZ) {
+                    continue;
+                }
+                if (!isLikelySignBlockEntity(mc, be, p)) {
+                    continue;
+                }
+                String key = p.getX() + ":" + p.getY() + ":" + p.getZ();
+                if (!seen.add(key)) {
+                    continue;
+                }
+                NEARBY_SIGN_CACHE.queue.addLast(p);
+                added++;
+            }
+        } catch (Exception ignore) {
+        }
+        return added;
+    }
+
+    private static Iterable<?> resolveWorldBlockEntities(Object world) {
+        if (world == null) {
+            return null;
+        }
+        // Prefer direct iterable methods first.
+        String[] methodNames = new String[] {
+            "getBlockEntities",
+            "iterateBlockEntities"
+        };
+        for (String name : methodNames) {
+            try {
+                java.lang.reflect.Method m = world.getClass().getMethod(name);
+                Object out = m.invoke(world);
+                if (out instanceof Iterable) {
+                    return (Iterable<?>) out;
+                }
+            } catch (Exception ignore) {
+            }
+        }
+        // Fallback: scan fields and pick first iterable containing BlockEntity instances.
+        Class<?> c = world.getClass();
+        while (c != null && c != Object.class) {
+            try {
+                java.lang.reflect.Field[] fields = c.getDeclaredFields();
+                for (java.lang.reflect.Field f : fields) {
+                    if (f == null) {
+                        continue;
+                    }
+                    Class<?> t = f.getType();
+                    if (t == null || (!Iterable.class.isAssignableFrom(t) && !java.util.Collection.class.isAssignableFrom(t))) {
+                        continue;
+                    }
+                    try {
+                        f.setAccessible(true);
+                        Object v = f.get(world);
+                        if (!(v instanceof Iterable)) {
+                            continue;
+                        }
+                        Iterable<?> it = (Iterable<?>) v;
+                        for (Object sample : it) {
+                            if (sample instanceof BlockEntity) {
+                                return it;
+                            }
+                            break;
+                        }
+                    } catch (Exception ignore) {
+                    }
+                }
+            } catch (Exception ignore) {
+            }
+            c = c.getSuperclass();
+        }
+        return null;
+    }
+
+    private static boolean isLikelySignBlockEntity(MinecraftClient mc, BlockEntity be, BlockPos p) {
+        if (be == null || p == null) {
+            return false;
+        }
+        try {
+            String name = be.getClass().getSimpleName();
+            if (name != null && name.toLowerCase().contains("sign")) {
+                return true;
+            }
+        } catch (Exception ignore) {
+        }
+        if (mc == null || mc.world == null) {
+            return false;
+        }
+        try {
+            String blockId = String.valueOf(Registry.BLOCK.getId(mc.world.getBlockState(p).getBlock()));
+            return blockId != null && blockId.toLowerCase().contains("sign");
+        } catch (Exception ignore) {
+        }
+        return false;
     }
 
     private static void flushNearbySignCache(MinecraftClient mc, long now) {
