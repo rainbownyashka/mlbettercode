@@ -14,7 +14,7 @@ public final class ReflectCompat {
             Object text = be.getClass()
                 .getMethod("getTextOnRow", int.class)
                 .invoke(be, Integer.valueOf(line));
-            String s = safe(textToString.apply(text)).trim();
+            String s = normalizeSignText(textToString.apply(text));
             if (!s.isEmpty()) {
                 System.out.println("[publish-debug] SIGN_READ line=" + line + " method=getTextOnRow(int) value=" + crop(s));
                 return s;
@@ -25,7 +25,7 @@ public final class ReflectCompat {
             Object text = be.getClass()
                 .getMethod("getTextOnRow", int.class, boolean.class)
                 .invoke(be, Integer.valueOf(line), Boolean.FALSE);
-            String s = safe(textToString.apply(text)).trim();
+            String s = normalizeSignText(textToString.apply(text));
             if (!s.isEmpty()) {
                 System.out.println("[publish-debug] SIGN_READ line=" + line + " method=getTextOnRow(int,bool) value=" + crop(s));
                 return s;
@@ -37,7 +37,7 @@ public final class ReflectCompat {
             Object msg = front.getClass()
                 .getMethod("getMessage", int.class, boolean.class)
                 .invoke(front, Integer.valueOf(line), Boolean.FALSE);
-            String s = safe(textToString.apply(msg)).trim();
+            String s = normalizeSignText(textToString.apply(msg));
             if (!s.isEmpty()) {
                 System.out.println("[publish-debug] SIGN_READ line=" + line + " method=getFrontText.getMessage value=" + crop(s));
                 return s;
@@ -73,7 +73,7 @@ public final class ReflectCompat {
                     continue;
                 }
                 Object cell = arr[line];
-                String s = safe(textToString.apply(cell)).trim();
+                String s = normalizeSignText(textToString.apply(cell));
                 if (!s.isEmpty()) {
                     System.out.println("[publish-debug] SIGN_READ line=" + line + " method=array_fallback:" + f.getName() + " value=" + crop(s));
                     return s;
@@ -129,13 +129,13 @@ public final class ReflectCompat {
             java.lang.reflect.Field f = be.getClass().getField(fieldName);
             Object raw = f.get(be);
             if (raw instanceof Object[]) {
-                Object[] arr = (Object[]) raw;
-                if (line >= 0 && line < arr.length) {
-                    return safe(textToString.apply(arr[line])).trim();
+                    Object[] arr = (Object[]) raw;
+                    if (line >= 0 && line < arr.length) {
+                        return normalizeSignText(textToString.apply(arr[line]));
+                    }
                 }
+            } catch (Exception ignore) {
             }
-        } catch (Exception ignore) {
-        }
         try {
             Class<?> cls = be.getClass();
             while (cls != null && cls != Object.class) {
@@ -151,7 +151,7 @@ public final class ReflectCompat {
                     if (line < 0 || line >= arr.length) {
                         return "";
                     }
-                    return safe(textToString.apply(arr[line])).trim();
+                    return normalizeSignText(textToString.apply(arr[line]));
                 } catch (NoSuchFieldException miss) {
                     cls = cls.getSuperclass();
                 }
@@ -163,6 +163,41 @@ public final class ReflectCompat {
 
     private static String safe(String v) {
         return v == null ? "" : v;
+    }
+
+    private static String normalizeSignText(String raw) {
+        String s = safe(raw).trim();
+        if (s.isEmpty()) {
+            return "";
+        }
+        // Drop object identity/toString artifacts from obfuscated fallback paths
+        // (example: net.minecraft.class_...$$Lambda$...@1a2b3c) which are not real sign text.
+        if (looksLikeObjectArtifact(s)) {
+            return "";
+        }
+        return s;
+    }
+
+    private static boolean looksLikeObjectArtifact(String s) {
+        if (s == null) {
+            return false;
+        }
+        String low = s.toLowerCase();
+        if (low.contains("$$lambda$")) {
+            return true;
+        }
+        if (low.startsWith("net.minecraft.class_") && s.indexOf('@') > 0) {
+            return true;
+        }
+        // Generic Java object toString pattern: pkg.Class@hex
+        int at = s.indexOf('@');
+        if (at > 0 && at < s.length() - 1) {
+            String tail = s.substring(at + 1);
+            if (tail.matches("[0-9a-fA-F]{4,}")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String crop(String v) {

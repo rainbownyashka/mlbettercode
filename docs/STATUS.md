@@ -9,6 +9,10 @@
   - added `/testcase gettable`: probes sign candidates from marker (direct + legacy `entry.z-1`, `dy=-2..0`) and prints live sign lines for each candidate.
   - added `/testcase gettablefromcache`: reads `publish_sign_cache.json` and prints `dimPos` + `entry->sign` hits for marker-derived candidates.
   - `/modhelp` updated with new testcase commands for faster live-vs-cache sign debugging.
+- Sign-read garbage filter for obfuscated fallback (2026-02-25):
+  - `ReflectCompat.readSignLineReflect(...)` now drops object-artifact strings from fallback reflection paths
+    (e.g. `net.minecraft.class_...$$Lambda$...@...`) so they are not treated as valid sign text.
+  - reduces false `nonEmpty`/route decisions when sign fallback returns Java object `toString()` artifacts instead of real text.
 - Modern publish warmup transient-block stabilization (2026-02-25):
   - `PublishWarmupExecutor` no longer hard-fails immediately on transient `tp_path_busy` / screen-block states.
   - warmup now retries these states within the existing bounded timeout window, with explicit `warmup.wait` trace reasons preserved.
