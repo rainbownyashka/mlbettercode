@@ -378,7 +378,10 @@ public final class RuntimeCore {
             "source=" + scope.source + " idLine=" + scope.idLine + " scopeKey=" + session.scopeCacheKey + ":" + bridge.currentDimension());
         if (rows != null) {
             session.selectedRows.addAll(rows);
-            session.warmupQueue.addAll(expandWarmupTargets(rows, bridge, settings.getInt("publish.maxSteps", 256)));
+            List<SelectedRow> warmTargets = expandWarmupTargets(rows, bridge, settings.getInt("publish.maxSteps", 256));
+            session.warmupQueue.addAll(warmTargets);
+            publishTrace(bridge, "publish.warmup.targets",
+                "selectedRows=" + rows.size() + " warmupTargets=" + warmTargets.size());
         }
         try {
             PublishCacheView persisted = PublishCacheStore.load(bridge.runDirectory());
@@ -414,6 +417,7 @@ public final class RuntimeCore {
             session.scopeCacheKey,
             settings.getInt("publish.maxSteps", 256),
             true,
+            settings.getBoolean("debug.verbose", false),
             new PublishLiveExportExecutor.Trace() {
                 @Override
                 public void trace(String stage, String details) {
@@ -735,7 +739,12 @@ public final class RuntimeCore {
             + " " + (details == null ? "" : details);
         logger.info("publish-debug", line);
         if (bridge != null) {
-            bridge.sendChat("[publish-debug] " + line);
+            boolean verbose = settings.getBoolean("debug.verbose", false);
+            boolean noisyStage = stage != null && (stage.startsWith("publish.export.row")
+                || stage.startsWith("publish.toolchain.exec"));
+            if (!noisyStage || verbose) {
+                bridge.sendChat("[publish-debug] " + line);
+            }
         }
     }
 

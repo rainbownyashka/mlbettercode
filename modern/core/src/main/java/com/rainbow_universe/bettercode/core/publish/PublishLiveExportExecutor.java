@@ -51,6 +51,7 @@ public final class PublishLiveExportExecutor {
         String scopeKey,
         int maxSteps,
         boolean preferChestCache,
+        boolean verboseTrace,
         Trace trace
     ) {
         if (bridge == null) {
@@ -98,7 +99,9 @@ public final class PublishLiveExportExecutor {
 
         int rowIndex = 0;
         int exportedRows = 0;
+        int skippedRows = 0;
         boolean firstRow = true;
+        int totalRows = rows.size();
         for (SelectedRow row : rows) {
             if (row == null) {
                 continue;
@@ -167,9 +170,17 @@ public final class PublishLiveExportExecutor {
                 }
             };
             ExportCodeCore.Pos glassPos = new ExportCodeCore.Pos(glassX, glassY, glassZ);
+            if (trace != null && shouldTraceRow(rowIndex, totalRows, verboseTrace)) {
+                trace.trace("publish.export.row", "idx=" + rowIndex + " glass=" + glassX + "," + glassY + "," + glassZ);
+            }
             String rowJson = ExportCodeCore.buildRowJson(ctx, glassPos, effectiveMaxSteps, rowIndex, preferChestCache, null);
+            int currentRowIndex = rowIndex;
             rowIndex++;
             if (rowJson == null || rowJson.trim().isEmpty()) {
+                skippedRows++;
+                if (trace != null && shouldTraceRow(currentRowIndex, totalRows, verboseTrace)) {
+                    trace.trace("publish.export.row.skip", "idx=" + currentRowIndex + " reason=empty_row_json");
+                }
                 continue;
             }
             if (!firstRow) {
@@ -178,6 +189,9 @@ public final class PublishLiveExportExecutor {
             firstRow = false;
             sb.append(rowJson);
             exportedRows++;
+            if (trace != null && shouldTraceRow(currentRowIndex, totalRows, verboseTrace)) {
+                trace.trace("publish.export.row.ok", "idx=" + currentRowIndex + " jsonLen=" + rowJson.length());
+            }
         }
         sb.append("]}");
 
@@ -198,6 +212,7 @@ public final class PublishLiveExportExecutor {
                 }
             }
             if (trace != null) {
+                trace.trace("publish.export.summary", "inputRows=" + totalRows + " exportedRows=" + exportedRows + " skippedRows=" + skippedRows);
                 trace.trace("publish.exportcode.generated", "rows=" + exportedRows + " file=" + out.toAbsolutePath());
             }
             return Result.ok(out, exportedRows);
@@ -216,5 +231,15 @@ public final class PublishLiveExportExecutor {
             }
         }
         return false;
+    }
+
+    private static boolean shouldTraceRow(int rowIndex, int totalRows, boolean verboseTrace) {
+        if (rowIndex < 0) {
+            return false;
+        }
+        if (verboseTrace) {
+            return rowIndex < 12 || (rowIndex % 10 == 0) || rowIndex >= Math.max(0, totalRows - 3);
+        }
+        return rowIndex < 3 || (rowIndex % 25 == 0) || rowIndex >= Math.max(0, totalRows - 1);
     }
 }

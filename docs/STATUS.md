@@ -14,6 +14,9 @@
     - compiler path resolve priority: dev `mlctmodified` -> `mldsl.compilerPath` -> `mldsl` in PATH.
   - publish bundle now includes README and legacy artifact set (`exportcode`, `module.mldsl`, `plan.json`, `publish_meta.json`).
   - Fabric1165 bridge exposes live export primitives for core (`getBlockIdAt`, `getBlockFacingAt`, `getChestJsonAtEntry`).
+  - added anti-spam publish diagnostics:
+    - concise per-run summaries always (`publish.warmup.targets`, `publish.export.summary`),
+    - row-level export and full toolchain command traces are throttled and sent to chat only when `debug.verbose=true` (still present in logs).
 - Modern publish strict-mode alignment (2026-02-25):
   - removed selection-only publish fallback in `RuntimeCore.handlePublish(...)`.
   - `/module publish` now requires pending module files from `/mldsl run` or `/loadmodule`; otherwise it fails explicitly (`NO_PENDING_PLAN`) instead of creating `bundle_selection_*`.
