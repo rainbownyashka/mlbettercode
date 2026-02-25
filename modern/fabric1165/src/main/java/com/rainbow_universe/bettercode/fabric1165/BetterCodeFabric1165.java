@@ -101,6 +101,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static final long CODE_SELECTOR_TOGGLE_COOLDOWN_MS = 180L;
     private static final long PLACE_TP_SETTLE_MS = 350L;
     private static final long PLACE_WORLD_TRACE_GAP_MS = 300L;
+    private static final String DEV_UTILS_TITLE = "Утилиты разработчика";
+    private static final int DEV_UTILS_SELECTOR_SLOT = 4; // 5th hotbar slot
     private static long lastCodeSelectorToggleMs = 0L;
     private static String lastBlockCompatLogKey = "";
     private static long lastBlockCompatLogMs = 0L;
@@ -140,6 +142,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static final RegAllTablesState REGALL_TABLES = new RegAllTablesState();
     private static final NearbySignCacheState NEARBY_SIGN_CACHE = new NearbySignCacheState();
     private static boolean STOP_HOTKEY_K_DOWN = false;
+    private static int LAST_DEV_UTILS_SYNC_ID = -1;
+    private static String LAST_DEV_UTILS_DIM = "";
     private static final int NEARBY_SIGN_CACHE_RADIUS_XZ = 8;
     private static final int NEARBY_SIGN_CACHE_RADIUS_Y = 3;
     private static final int NEARBY_SIGN_CACHE_BATCH = 40;
@@ -324,6 +328,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             refreshWorldLoadSeedHint(client);
             refreshCodeEntrySeedHint(client);
             renderSelectionHighlights(client);
+            handleDevUtilitiesAutoSelector(client);
             runtime().handleClientTick(new FabricBridge(null), System.currentTimeMillis());
             handleNearbySignCacheTick(client);
         });
@@ -500,12 +505,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             source.sendError(new LiteralText("[code selector] player is unavailable"));
             return 0;
         }
-        ItemStack stick = new ItemStack(Items.STICK);
-        stick.setCustomName(new LiteralText("§eMLDSL Code Selector"));
-        try {
-            stick.setTag(StringNbtReader.parse("{" + CODE_SELECTOR_TAG + ":1b,Unbreakable:1b}"));
-        } catch (Exception ignore) {
-        }
+        ItemStack stick = createCodeSelectorStack();
         boolean ok = mc.player.giveItemStack(stick);
         if (!ok) {
             source.sendError(new LiteralText("[code selector] inventory full"));
@@ -517,6 +517,16 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
     private static int runCodeSelectorCommand(FabricClientCommandSource source) {
         return issueCodeSelectorTool(source);
+    }
+
+    private static ItemStack createCodeSelectorStack() {
+        ItemStack stick = new ItemStack(Items.STICK);
+        stick.setCustomName(new LiteralText("§eMLDSL Code Selector"));
+        try {
+            stick.setTag(StringNbtReader.parse("{" + CODE_SELECTOR_TAG + ":1b,Unbreakable:1b}"));
+        } catch (Exception ignore) {
+        }
+        return stick;
     }
 
     private static int testcaseSetPos(FabricClientCommandSource source) {
@@ -3642,7 +3652,57 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         SPRINTF_ACTIVE = false;
         SPRINTF_BASE_SPEED = Float.NaN;
         SPRINTF_PLAYER_ID = -1;
+        LAST_DEV_UTILS_SYNC_ID = -1;
+        LAST_DEV_UTILS_DIM = "";
         System.out.println("[printer-debug] world_session_reset selectedCleared=" + selectedCount + " testcaseMarkerCleared=1");
+    }
+
+    private static void handleDevUtilitiesAutoSelector(MinecraftClient mc) {
+        if (mc == null || mc.player == null || mc.world == null) {
+            return;
+        }
+        if (!(mc.currentScreen instanceof HandledScreen)) {
+            LAST_DEV_UTILS_SYNC_ID = -1;
+            LAST_DEV_UTILS_DIM = "";
+            return;
+        }
+        Screen screen = mc.currentScreen;
+        String title = screen == null || screen.getTitle() == null ? "" : screen.getTitle().getString();
+        if (title == null || !DEV_UTILS_TITLE.equals(title.trim())) {
+            return;
+        }
+        FabricBridge bridge = new FabricBridge(null);
+        boolean editorLike = false;
+        try {
+            ScoreboardContext ctx = ScoreboardParser.parse(bridge.scoreboardLines());
+            editorLike = ctx.editorLike();
+        } catch (Exception ignore) {
+        }
+        boolean creative = false;
+        try {
+            creative = mc.player.abilities.creativeMode;
+        } catch (Exception ignore) {
+        }
+        if (!editorLike && !creative) {
+            return;
+        }
+        int syncId = mc.player.currentScreenHandler == null ? -1 : mc.player.currentScreenHandler.syncId;
+        String dim = String.valueOf(mc.world.getRegistryKey().getValue());
+        if (syncId == LAST_DEV_UTILS_SYNC_ID && dim.equals(LAST_DEV_UTILS_DIM)) {
+            return;
+        }
+        LAST_DEV_UTILS_SYNC_ID = syncId;
+        LAST_DEV_UTILS_DIM = dim;
+        if (mc.player.inventory == null || DEV_UTILS_SELECTOR_SLOT < 0 || DEV_UTILS_SELECTOR_SLOT >= mc.player.inventory.size()) {
+            return;
+        }
+        ItemStack cur = mc.player.inventory.getStack(DEV_UTILS_SELECTOR_SLOT);
+        if (isCodeSelectorItem(cur)) {
+            return;
+        }
+        mc.player.inventory.setStack(DEV_UTILS_SELECTOR_SLOT, createCodeSelectorStack());
+        System.out.println("[printer-debug] dev_utils_auto_selector placed slot=" + (DEV_UTILS_SELECTOR_SLOT + 1)
+            + " syncId=" + syncId + " editorLike=" + editorLike + " creative=" + creative);
     }
 
     private static void handleNearbySignCacheTick(MinecraftClient mc) {

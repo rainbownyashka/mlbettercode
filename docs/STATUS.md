@@ -5,6 +5,9 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Fabric1165 dev-utils GUI auto-selector hook (2026-02-25):
+  - on opening handled screen with exact title `Утилиты разработчика`, if context is `editorLike` or creative mode, mod auto-places Code Selector stick into hotbar slot 5.
+  - action is one-shot per opened screen (`syncId`) to avoid repeated rewrites while GUI remains open.
 - Fabric1165 idle nearby sign cache (2026-02-25):
   - added background caching of nearby sign lines around player into publish cache (`publish_sign_cache.json`) during normal gameplay.
   - cache tick is strictly disabled while printer runtime is active and while `/regalltables` scanner is active.
