@@ -911,7 +911,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
     private static int modHelp(FabricClientCommandSource source) {
         source.sendFeedback(new LiteralText("[modhelp] /mldsl run <postId|path.json> [config]"));
-        source.sendFeedback(new LiteralText("[modhelp] /module publish - publish selected rows"));
+        source.sendFeedback(new LiteralText("[modhelp] /module publish - build publish bundle from pending /mldsl run or /loadmodule files"));
         source.sendFeedback(new LiteralText("[modhelp] /testcase setpos|rightclick|tp|trapcheck|gettable|gettablefromcache|viewentities|chestcache|outline1..4"));
         source.sendFeedback(new LiteralText("[modhelp] /regalltables - crawl menu tables from /testcase marker and export tablesexport.txt"));
         source.sendFeedback(new LiteralText("[modhelp] /regalltables select - crawl tables without bulk action mark"));

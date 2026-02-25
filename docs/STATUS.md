@@ -5,6 +5,10 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Modern publish strict-mode alignment (2026-02-25):
+  - removed selection-only publish fallback in `RuntimeCore.handlePublish(...)`.
+  - `/module publish` now requires pending module files from `/mldsl run` or `/loadmodule`; otherwise it fails explicitly (`NO_PENDING_PLAN`) instead of creating `bundle_selection_*`.
+  - export bundle no longer writes `selection_rows.json`; output now contains copied source files + `publish_meta.json`.
 - Fabric1165 testcase chest snapshot probe (2026-02-25):
   - added `/testcase chestcache` command.
   - prints current opened container snapshot summary (`window`, `title`, non-player slots, non-empty count) and several sample items.

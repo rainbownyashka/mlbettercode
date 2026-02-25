@@ -357,17 +357,18 @@ public final class RuntimeCore {
         PendingLoad pl = pendingLoad;
         List<SelectedRow> rows = bridge.selectedRows();
         publishTrace(bridge, "publish.start", "hasPendingLoad=" + (pl != null) + " selectedRows=" + (rows == null ? 0 : rows.size()));
-        if ((pl == null || pl.savedFiles.isEmpty()) && (rows == null || rows.isEmpty())) {
-            publishTrace(bridge, "publish.stop", "reason=no_pending_and_no_selection");
-            return RuntimeResult.fail(RuntimeErrorCode.NO_PENDING_PLAN, "No pending module data and no selected rows. Use /loadmodule or /codeselector first.");
+        if (pl == null || pl.savedFiles == null || pl.savedFiles.isEmpty()) {
+            publishTrace(bridge, "publish.stop", "reason=no_pending_module_files selectedRows=" + (rows == null ? 0 : rows.size()));
+            return RuntimeResult.fail(RuntimeErrorCode.NO_PENDING_PLAN,
+                "No pending module files. Use /mldsl run <postId> or /loadmodule first. Selection-only publish is disabled.");
         }
         PublishSessionState session = new PublishSessionState(
             "pub_" + System.currentTimeMillis(),
             bridge.nowMs(),
             bridge.currentDimension(),
             true,
-            pl == null ? "selection" : pl.postId,
-            pl == null ? "default" : pl.configKey
+            pl.postId,
+            pl.configKey
         );
         ScopeResolution scope = resolveScopeForPublish(bridge);
         session.scopeCacheKey = scope.scopeId;
@@ -387,9 +388,7 @@ public final class RuntimeCore {
         } catch (Exception e) {
             publishTrace(bridge, "publish.cache.load", "error=" + e.getClass().getSimpleName());
         }
-        if (pl != null && pl.savedFiles != null) {
-            session.sourceFiles.addAll(pl.savedFiles);
-        }
+        session.sourceFiles.addAll(pl.savedFiles);
         PublishWarmupExecutor.Result warmup = PublishWarmupExecutor.run(session, bridge,
             new PublishWarmupExecutor.Trace() {
                 @Override
@@ -415,9 +414,6 @@ public final class RuntimeCore {
             return RuntimeResult.fail(RuntimeErrorCode.PUBLISH_PREP_FAILED, out.errorMessage);
         }
         publishTrace(bridge, "publish.bundle.created", "dir=" + out.bundleDir.toAbsolutePath());
-        if (!session.selectedRows.isEmpty()) {
-            publishTrace(bridge, "publish.selection.snapshot", "rows=" + session.selectedRows.size() + " file=selection_rows.json");
-        }
         publishTrace(bridge, "warmup.done", "bundle=" + out.bundleDir.getFileName());
         bridge.sendChat("[publish-debug] prepared bundle=" + out.bundleDir.getFileName() + " files=" + out.copiedFiles);
         bridge.sendActionBar("publish bundle ready: " + out.bundleDir.getFileName());

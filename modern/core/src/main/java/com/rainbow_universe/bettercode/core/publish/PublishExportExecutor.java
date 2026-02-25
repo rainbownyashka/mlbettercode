@@ -1,9 +1,5 @@
 package com.rainbow_universe.bettercode.core.publish;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import com.rainbow_universe.bettercode.core.bridge.SelectedRow;
-
 import java.io.File;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
@@ -60,26 +56,6 @@ public final class PublishExportExecutor {
                 Files.copy(src.toPath(), dst, StandardCopyOption.REPLACE_EXISTING);
                 copied++;
             }
-            if (!state.selectedRows.isEmpty()) {
-                JsonObject root = new JsonObject();
-                root.addProperty("type", "bettercode.selection");
-                root.addProperty("count", state.selectedRows.size());
-                JsonArray rows = new JsonArray();
-                for (SelectedRow row : state.selectedRows) {
-                    if (row == null) {
-                        continue;
-                    }
-                    JsonObject o = new JsonObject();
-                    o.addProperty("dimension", row.dimension());
-                    o.addProperty("x", row.x());
-                    o.addProperty("y", row.y());
-                    o.addProperty("z", row.z());
-                    rows.add(o);
-                }
-                root.add("rows", rows);
-                Files.write(bundleDir.resolve("selection_rows.json"), root.toString().getBytes(StandardCharsets.UTF_8));
-            }
-
             Path meta = bundleDir.resolve("publish_meta.json");
             OutputStreamWriter writer = null;
             try {
@@ -88,8 +64,7 @@ public final class PublishExportExecutor {
                 writer.write("  \"postId\": \"" + esc(state.postId) + "\",\n");
                 writer.write("  \"config\": \"" + esc(state.config) + "\",\n");
                 writer.write("  \"generatedAt\": " + System.currentTimeMillis() + ",\n");
-                writer.write("  \"copiedFiles\": " + copied + ",\n");
-                writer.write("  \"selectedRows\": " + state.selectedRows.size() + "\n");
+                writer.write("  \"copiedFiles\": " + copied + "\n");
                 writer.write("}\n");
             } finally {
                 if (writer != null) {
