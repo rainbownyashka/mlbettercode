@@ -30,6 +30,8 @@ import com.rainbow_universe.bettercode.core.settings.SettingType;
 import com.rainbow_universe.bettercode.core.util.LegacyBlockIdCompat;
 import com.rainbow_universe.bettercode.core.util.ReflectCompat;
 import com.rainbow_universe.bettercode.core.util.TestcaseTool;
+import com.rainbow_universe.bettercode.core.publish.PublishCacheStore;
+import com.rainbow_universe.bettercode.core.publish.PublishCacheView;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v1.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v1.FabricClientCommandSource;
@@ -259,6 +261,10 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                     .executes(ctx -> testcaseTp(ctx.getSource())))
                 .then(ClientCommandManager.literal("trapcheck")
                     .executes(ctx -> testcaseTrapcheck(ctx.getSource())))
+                .then(ClientCommandManager.literal("gettable")
+                    .executes(ctx -> testcaseGetTable(ctx.getSource())))
+                .then(ClientCommandManager.literal("gettablefromcache")
+                    .executes(ctx -> testcaseGetTableFromCache(ctx.getSource())))
                 .then(ClientCommandManager.literal("outline1")
                     .executes(ctx -> testcaseOutlineMode(ctx.getSource(), 1)))
                 .then(ClientCommandManager.literal("outline2")
@@ -550,6 +556,114 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         return 0;
     }
 
+    private static int testcaseGetTable(FabricClientCommandSource source) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.player == null || mc.world == null) {
+            source.sendError(new LiteralText("[testcase] gettable failed: player/world unavailable"));
+            return 0;
+        }
+        TestcaseTool.MarkerView marker = TestcaseTool.markerView();
+        if (marker == null) {
+            source.sendError(new LiteralText("[testcase] gettable failed: no marker, use /testcase setpos"));
+            return 0;
+        }
+        String dim = String.valueOf(mc.world.getRegistryKey().getValue());
+        if (!dim.equals(marker.dimension())) {
+            source.sendError(new LiteralText("[testcase] gettable failed: dimension mismatch current=" + dim + " marker=" + marker.dimension()));
+            return 0;
+        }
+        FabricBridge bridge = new FabricBridge(source);
+        List<BlockPos> candidates = collectSignCandidatesForMarker(bridge, marker);
+        if (candidates.isEmpty()) {
+            source.sendError(new LiteralText("[testcase] gettable failed: no sign candidates from marker"));
+            return 0;
+        }
+        source.sendFeedback(new LiteralText("[testcase] gettable candidates=" + candidates.size() + " marker="
+            + marker.x() + "," + marker.y() + "," + marker.z()));
+        int nonEmptyCount = 0;
+        for (int i = 0; i < candidates.size(); i++) {
+            BlockPos p = candidates.get(i);
+            String[] lines = bridge.readSignLinesAt(p.getX(), p.getY(), p.getZ());
+            boolean ok = hasAnySignText(lines);
+            if (ok) {
+                nonEmptyCount++;
+            }
+            source.sendFeedback(new LiteralText("[testcase] gettable[" + i + "] pos="
+                + p.getX() + "," + p.getY() + "," + p.getZ()
+                + " nonEmpty=" + ok
+                + " lines=" + formatLinesShort(lines)));
+        }
+        if (nonEmptyCount <= 0) {
+            source.sendError(new LiteralText("[testcase] gettable: no readable sign lines"));
+            return 0;
+        }
+        return 1;
+    }
+
+    private static int testcaseGetTableFromCache(FabricClientCommandSource source) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.player == null || mc.world == null) {
+            source.sendError(new LiteralText("[testcase] gettablefromcache failed: player/world unavailable"));
+            return 0;
+        }
+        TestcaseTool.MarkerView marker = TestcaseTool.markerView();
+        if (marker == null) {
+            source.sendError(new LiteralText("[testcase] gettablefromcache failed: no marker, use /testcase setpos"));
+            return 0;
+        }
+        String dim = String.valueOf(mc.world.getRegistryKey().getValue());
+        if (!dim.equals(marker.dimension())) {
+            source.sendError(new LiteralText("[testcase] gettablefromcache failed: dimension mismatch current=" + dim + " marker=" + marker.dimension()));
+            return 0;
+        }
+        PublishCacheView cache = PublishCacheStore.load(mc.runDirectory.toPath());
+        List<BlockPos> candidates = collectSignCandidatesForMarker(new FabricBridge(source), marker);
+        source.sendFeedback(new LiteralText("[testcase] gettablefromcache candidates=" + candidates.size()
+            + " cache(scope=" + cache.scopeSnapshot().size()
+            + ",dimPos=" + cache.dimPosSnapshot().size()
+            + ",entryMap=" + cache.entryToSignSnapshot().size() + ")"));
+        int hits = 0;
+        for (int i = 0; i < candidates.size(); i++) {
+            BlockPos p = candidates.get(i);
+            String dimPosKey = dim + ":" + p.getX() + ":" + p.getY() + ":" + p.getZ();
+            String[] lines = cache.getDimPos(dimPosKey);
+            boolean ok = hasAnySignText(lines);
+            if (ok) {
+                hits++;
+            }
+            source.sendFeedback(new LiteralText("[testcase] cache.dimPos[" + i + "] key=" + dimPosKey
+                + " hit=" + ok + " lines=" + formatLinesShort(lines)));
+        }
+
+        BlockPos entryA = new BlockPos(marker.x(), marker.y(), marker.z());
+        BlockPos entryB = entryA.up();
+        BlockPos[] entryCandidates = new BlockPos[] {entryA, entryB};
+        for (int i = 0; i < entryCandidates.length; i++) {
+            BlockPos entry = entryCandidates[i];
+            String entryKey = dim + ":entry:" + entry.getX() + ":" + entry.getY() + ":" + entry.getZ();
+            String mappedSign = cache.getEntryToSign(entryKey);
+            if (mappedSign == null || mappedSign.trim().isEmpty()) {
+                source.sendFeedback(new LiteralText("[testcase] cache.entry[" + i + "] key=" + entryKey + " mappedSign=-"));
+                continue;
+            }
+            String[] mappedLines = cache.getDimPos(mappedSign);
+            boolean ok = hasAnySignText(mappedLines);
+            if (ok) {
+                hits++;
+            }
+            source.sendFeedback(new LiteralText("[testcase] cache.entry[" + i + "] key=" + entryKey
+                + " mappedSign=" + mappedSign
+                + " hit=" + ok
+                + " lines=" + formatLinesShort(mappedLines)));
+        }
+
+        if (hits <= 0) {
+            source.sendError(new LiteralText("[testcase] gettablefromcache: no cache hits for marker candidates"));
+            return 0;
+        }
+        return 1;
+    }
+
     private static int testcaseOutlineMode(FabricClientCommandSource source, int mode) {
         TestcaseTool.Result result = TestcaseTool.setOutlineMode(mode);
         if (result.ok()) {
@@ -633,13 +747,77 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static int modHelp(FabricClientCommandSource source) {
         source.sendFeedback(new LiteralText("[modhelp] /mldsl run <postId|path.json> [config]"));
         source.sendFeedback(new LiteralText("[modhelp] /module publish - publish selected rows"));
-        source.sendFeedback(new LiteralText("[modhelp] /testcase setpos|rightclick|tp|trapcheck|outline1..4"));
+        source.sendFeedback(new LiteralText("[modhelp] /testcase setpos|rightclick|tp|trapcheck|gettable|gettablefromcache|outline1..4"));
         source.sendFeedback(new LiteralText("[modhelp] /regalltables - crawl menu tables from /testcase marker and export tablesexport.txt"));
         source.sendFeedback(new LiteralText("[modhelp] /regalltables select - crawl tables without bulk action mark"));
         source.sendFeedback(new LiteralText("[modhelp] /regalltables stop - stop crawl and export partial result"));
         source.sendFeedback(new LiteralText("[modhelp] Press K - emergency stop active print/crawler"));
         source.sendFeedback(new LiteralText("[modhelp] /modsettings - runtime settings"));
         return 1;
+    }
+
+    private static List<BlockPos> collectSignCandidatesForMarker(FabricBridge bridge, TestcaseTool.MarkerView marker) {
+        List<BlockPos> out = new ArrayList<>();
+        if (bridge == null || marker == null) {
+            return out;
+        }
+        addSignIfPresent(bridge, out, new BlockPos(marker.x(), marker.y(), marker.z()));
+        addSignIfPresent(bridge, out, new BlockPos(marker.x(), marker.y(), marker.z() - 1));
+        addLegacyEntryScan(bridge, out, marker.x(), marker.y(), marker.z());
+        addLegacyEntryScan(bridge, out, marker.x(), marker.y() + 1, marker.z());
+        return out;
+    }
+
+    private static void addLegacyEntryScan(FabricBridge bridge, List<BlockPos> out, int entryX, int entryY, int entryZ) {
+        for (int dy = -2; dy <= 0; dy++) {
+            addSignIfPresent(bridge, out, new BlockPos(entryX, entryY + dy, entryZ - 1));
+        }
+    }
+
+    private static void addSignIfPresent(FabricBridge bridge, List<BlockPos> out, BlockPos pos) {
+        if (bridge == null || out == null || pos == null) {
+            return;
+        }
+        if (!bridge.isSignAt(pos.getX(), pos.getY(), pos.getZ())) {
+            return;
+        }
+        for (BlockPos e : out) {
+            if (e.getX() == pos.getX() && e.getY() == pos.getY() && e.getZ() == pos.getZ()) {
+                return;
+            }
+        }
+        out.add(pos);
+    }
+
+    private static String formatLinesShort(String[] lines) {
+        if (lines == null) {
+            return "null";
+        }
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) {
+                sb.append(" | ");
+            }
+            String v = lines[i] == null ? "" : lines[i].trim();
+            if (v.length() > 28) {
+                v = v.substring(0, 28) + "...";
+            }
+            sb.append(i).append('=').append(v);
+        }
+        sb.append(']');
+        return sb.toString();
+    }
+
+    private static boolean hasAnySignText(String[] lines) {
+        if (lines == null || lines.length == 0) {
+            return false;
+        }
+        for (String s : lines) {
+            if (s != null && !s.trim().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void handleGlobalStopHotkey(MinecraftClient mc) {
