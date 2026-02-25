@@ -624,7 +624,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             source.sendError(new LiteralText("[testcase] gettablefromcache failed: dimension mismatch current=" + dim + " marker=" + marker.dimension()));
             return 0;
         }
-        PublishCacheView cache = PublishCacheStore.load(mc.runDirectory.toPath());
+        PublishCacheView cache = effectivePublishCache(mc);
         List<BlockPos> candidates = collectSignCandidatesForMarker(new FabricBridge(source), marker);
         source.sendFeedback(new LiteralText("[testcase] gettablefromcache candidates=" + candidates.size()
             + " cache(scope=" + cache.scopeSnapshot().size()
@@ -670,6 +670,16 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             return 0;
         }
         return 1;
+    }
+
+    private static PublishCacheView effectivePublishCache(MinecraftClient mc) {
+        PublishCacheView merged = PublishCacheStore.load(mc.runDirectory.toPath());
+        synchronized (NEARBY_SIGN_CACHE) {
+            if (NEARBY_SIGN_CACHE.loaded && NEARBY_SIGN_CACHE.cache != null) {
+                merged.mergeFrom(NEARBY_SIGN_CACHE.cache);
+            }
+        }
+        return merged;
     }
 
     private static int testcaseOutlineMode(FabricClientCommandSource source, int mode) {

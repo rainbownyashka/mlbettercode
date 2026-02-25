@@ -16,6 +16,7 @@
   - added `/testcase gettable`: probes sign candidates from marker (direct + legacy `entry.z-1`, `dy=-2..0`) and prints live sign lines for each candidate.
   - added `/testcase gettablefromcache`: reads `publish_sign_cache.json` and prints `dimPos` + `entry->sign` hits for marker-derived candidates.
   - `/modhelp` updated with new testcase commands for faster live-vs-cache sign debugging.
+  - `gettablefromcache` now merges disk cache with in-memory nearby-cache state, so freshly scanned signs are visible immediately (without waiting minute flush).
 - Sign-read garbage filter for obfuscated fallback (2026-02-25):
   - `ReflectCompat.readSignLineReflect(...)` now drops object-artifact strings from fallback reflection paths
     (e.g. `net.minecraft.class_...$$Lambda$...@...`) so they are not treated as valid sign text.
