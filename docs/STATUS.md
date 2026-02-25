@@ -10,6 +10,8 @@
   - cache tick is strictly disabled while printer runtime is active and while `/regalltables` scanner is active.
   - caching is rate-limited (bounded batch + periodic flush) with concise trace markers:
     - `nearby_sign_cache load/update/saved`.
+  - updated policy to RAM-first buffering with disk flush no more often than once per minute.
+  - nearby cache now also writes scope-layer entries tagged by current scoreboard `ID` (`ScoreboardScopeResolver`) in addition to `dimPos` cache keys.
 - Fabric1165 testcase sign diagnostics commands (2026-02-25):
   - added `/testcase gettable`: probes sign candidates from marker (direct + legacy `entry.z-1`, `dy=-2..0`) and prints live sign lines for each candidate.
   - added `/testcase gettablefromcache`: reads `publish_sign_cache.json` and prints `dimPos` + `entry->sign` hits for marker-derived candidates.

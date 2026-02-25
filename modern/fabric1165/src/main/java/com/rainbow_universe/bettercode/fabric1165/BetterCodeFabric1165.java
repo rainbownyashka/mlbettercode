@@ -12,6 +12,7 @@ import com.rainbow_universe.bettercode.core.RuntimeCore;
 import com.rainbow_universe.bettercode.core.RuntimeResult;
 import com.rainbow_universe.bettercode.core.ScoreboardContext;
 import com.rainbow_universe.bettercode.core.ScoreboardParser;
+import com.rainbow_universe.bettercode.core.ScoreboardScopeResolver;
 import com.rainbow_universe.bettercode.core.bridge.AckState;
 import com.rainbow_universe.bettercode.core.bridge.BlockPosView;
 import com.rainbow_universe.bettercode.core.bridge.ClickResult;
@@ -143,7 +144,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
     private static final int NEARBY_SIGN_CACHE_RADIUS_Y = 3;
     private static final int NEARBY_SIGN_CACHE_BATCH = 40;
     private static final long NEARBY_SIGN_CACHE_SCAN_GAP_MS = 90L;
-    private static final long NEARBY_SIGN_CACHE_SAVE_GAP_MS = 2500L;
+    private static final long NEARBY_SIGN_CACHE_SAVE_GAP_MS = 60_000L;
 
     @Override
     public void onInitializeClient() {
@@ -3586,6 +3587,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
         long now = System.currentTimeMillis();
         String dim = String.valueOf(mc.world.getRegistryKey().getValue());
+        String scopeId = resolveNearbyScopeId(new FabricBridge(null));
         BlockPos feet = mc.player.getBlockPos();
         synchronized (NEARBY_SIGN_CACHE) {
             if (!NEARBY_SIGN_CACHE.loaded) {
@@ -3639,6 +3641,8 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
                 String[] prev = NEARBY_SIGN_CACHE.cache.getDimPos(key);
                 if (!sameLines(prev, lines)) {
                     NEARBY_SIGN_CACHE.cache.putDimPos(key, lines);
+                    String scopeKey = scopeId + ":" + dim + ":nearby:" + p.getX() + ":" + p.getY() + ":" + p.getZ();
+                    NEARBY_SIGN_CACHE.cache.putScope(scopeKey, lines);
                     changed++;
                 }
             }
@@ -3688,6 +3692,18 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         } catch (Exception e) {
             System.out.println("[publish-debug] nearby_sign_cache save_failed type="
                 + e.getClass().getSimpleName() + " msg=" + String.valueOf(e.getMessage()));
+        }
+    }
+
+    private static String resolveNearbyScopeId(FabricBridge bridge) {
+        if (bridge == null) {
+            return "default";
+        }
+        try {
+            String idLine = ScoreboardScopeResolver.extractScoreboardIdLine(bridge.scoreboardLines());
+            return ScoreboardScopeResolver.normalizeScopeId(idLine);
+        } catch (Exception ignore) {
+            return "default";
         }
     }
 
