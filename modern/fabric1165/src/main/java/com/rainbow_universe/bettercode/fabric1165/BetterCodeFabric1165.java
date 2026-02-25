@@ -39,6 +39,8 @@ import net.fabricmc.fabric.api.client.command.v1.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
@@ -344,6 +346,10 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
             return toggleSelectionAtHit1165(player, world, hitResult.getBlockPos(), true)
                 ? ActionResult.SUCCESS
                 : ActionResult.FAIL;
+        });
+        ScreenEvents.BEFORE_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
+            ScreenMouseEvents.allowMouseClick(screen).register((s, mouseX, mouseY, button) ->
+                !handleDevUtilsPhantomSelectorClick(s, mouseX, mouseY, button));
         });
     }
 
@@ -3703,6 +3709,71 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         mc.player.inventory.setStack(DEV_UTILS_SELECTOR_SLOT, createCodeSelectorStack());
         System.out.println("[printer-debug] dev_utils_auto_selector placed slot=" + (DEV_UTILS_SELECTOR_SLOT + 1)
             + " syncId=" + syncId + " editorLike=" + editorLike + " creative=" + creative);
+    }
+
+    private static boolean handleDevUtilsPhantomSelectorClick(Screen screen, double mouseX, double mouseY, int button) {
+        if (!(screen instanceof HandledScreen)) {
+            return false;
+        }
+        if (button != 0) {
+            return false;
+        }
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.player == null || mc.world == null || mc.player.inventory == null) {
+            return false;
+        }
+        String title = screen.getTitle() == null ? "" : screen.getTitle().getString();
+        if (title == null || !DEV_UTILS_TITLE.equals(title.trim())) {
+            return false;
+        }
+        boolean editorLike = false;
+        try {
+            ScoreboardContext ctx = ScoreboardParser.parse(new FabricBridge(null).scoreboardLines());
+            editorLike = ctx.editorLike();
+        } catch (Exception ignore) {
+        }
+        boolean creative = false;
+        try {
+            creative = mc.player.abilities.creativeMode;
+        } catch (Exception ignore) {
+        }
+        if (!editorLike && !creative) {
+            return false;
+        }
+        Slot hovered = findHoveredPlayerSlot((HandledScreen<?>) screen, mouseX, mouseY, mc);
+        if (hovered == null) {
+            return false;
+        }
+        int slotIndex = FabricBridge.readSlotIndex(hovered, Integer.MIN_VALUE);
+        if (slotIndex != DEV_UTILS_SELECTOR_SLOT) {
+            return false;
+        }
+        mc.player.inventory.setStack(DEV_UTILS_SELECTOR_SLOT, createCodeSelectorStack());
+        System.out.println("[printer-debug] dev_utils_auto_selector click_local_cancel slot=" + (DEV_UTILS_SELECTOR_SLOT + 1)
+            + " title=" + DEV_UTILS_TITLE + " editorLike=" + editorLike + " creative=" + creative);
+        return true; // cancel network click; local-only behavior
+    }
+
+    private static Slot findHoveredPlayerSlot(HandledScreen<?> screen, double mouseX, double mouseY, MinecraftClient mc) {
+        if (screen == null || mc == null || mc.player == null || mc.player.currentScreenHandler == null) {
+            return null;
+        }
+        int left = FabricBridge.readIntField(screen, "x", 0);
+        int top = FabricBridge.readIntField(screen, "y", 0);
+        try {
+            for (Slot slot : mc.player.currentScreenHandler.slots) {
+                if (slot == null || slot.inventory != mc.player.inventory) {
+                    continue;
+                }
+                int sx = left + slot.x;
+                int sy = top + slot.y;
+                if (mouseX >= sx && mouseX < sx + 16 && mouseY >= sy && mouseY < sy + 16) {
+                    return slot;
+                }
+            }
+        } catch (Exception ignore) {
+        }
+        return null;
     }
 
     private static void handleNearbySignCacheTick(MinecraftClient mc) {
