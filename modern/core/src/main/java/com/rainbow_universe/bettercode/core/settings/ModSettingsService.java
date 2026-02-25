@@ -108,6 +108,24 @@ public final class ModSettingsService implements SettingsProvider {
             null,
             null
         ));
+        defs.put("mldsl.compilerPath", new SettingDef(
+            "mldsl.compilerPath",
+            "MLDSL Compiler Path",
+            "Custom path/command for mldsl compiler",
+            SettingType.STRING,
+            "",
+            null,
+            null
+        ));
+        defs.put("mldsl.preferDevCompiler", new SettingDef(
+            "mldsl.preferDevCompiler",
+            "Prefer Dev Compiler",
+            "Prefer Documents\\\\mlctmodified\\\\mldsl_cli.py over installed mldsl",
+            SettingType.BOOLEAN,
+            Boolean.TRUE,
+            null,
+            null
+        ));
 
         ModSettingsService svc = new ModSettingsService(runDir.resolve(FILE_NAME), defs);
         svc.load();

@@ -71,9 +71,35 @@ public final class PublishExportExecutor {
                     writer.close();
                 }
             }
+            writeReadme(bundleDir);
             return Result.ok(bundleDir, copied);
         } catch (Exception e) {
             return Result.fail("PUBLISH_PREP_FAILED", e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage()));
+        }
+    }
+
+    private static void writeReadme(Path bundleDir) {
+        if (bundleDir == null) {
+            return;
+        }
+        OutputStreamWriter writer = null;
+        try {
+            writer = new OutputStreamWriter(Files.newOutputStream(bundleDir.resolve("README.txt")), StandardCharsets.UTF_8);
+            writer.write("MLDSL Hub publish bundle\n");
+            writer.write("\n");
+            writer.write("Files in this folder were prepared by BetterCode /module publish.\n");
+            writer.write("- exportcode_*.json (raw export)\n");
+            writer.write("- module.mldsl (generated via mldsl exportcode)\n");
+            writer.write("- plan.json (generated via mldsl compile)\n");
+            writer.write("- publish_meta.json\n");
+        } catch (Exception ignore) {
+        } finally {
+            try {
+                if (writer != null) {
+                    writer.close();
+                }
+            } catch (Exception ignore) {
+            }
         }
     }
 

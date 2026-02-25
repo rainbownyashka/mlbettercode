@@ -10,6 +10,8 @@ import com.rainbow_universe.bettercode.core.bridge.SelectedRow;
 import com.rainbow_universe.bettercode.core.publish.PublishExportExecutor;
 import com.rainbow_universe.bettercode.core.publish.PublishCacheView;
 import com.rainbow_universe.bettercode.core.publish.PublishCacheStore;
+import com.rainbow_universe.bettercode.core.publish.MlDslToolchainExecutor;
+import com.rainbow_universe.bettercode.core.publish.PublishLiveExportExecutor;
 import com.rainbow_universe.bettercode.core.publish.PublishRowContext;
 import com.rainbow_universe.bettercode.core.publish.PublishSignResolver;
 import com.rainbow_universe.bettercode.core.publish.PublishSessionState;
@@ -354,29 +356,29 @@ public final class RuntimeCore {
         logger.info("publish-debug",
             "publish requested scoreboardLines=" + ctx.lineCount() + " tier=" + ctx.detectedTier() + " editorLike=" + ctx.editorLike());
 
-        PendingLoad pl = pendingLoad;
         List<SelectedRow> rows = bridge.selectedRows();
-        publishTrace(bridge, "publish.start", "hasPendingLoad=" + (pl != null) + " selectedRows=" + (rows == null ? 0 : rows.size()));
-        if (pl == null || pl.savedFiles == null || pl.savedFiles.isEmpty()) {
-            publishTrace(bridge, "publish.stop", "reason=no_pending_module_files selectedRows=" + (rows == null ? 0 : rows.size()));
-            return RuntimeResult.fail(RuntimeErrorCode.NO_PENDING_PLAN,
-                "No pending module files. Use /mldsl run <postId> or /loadmodule first. Selection-only publish is disabled.");
+        publishTrace(bridge, "publish.start", "selectedRows=" + (rows == null ? 0 : rows.size()) + " source=live_export");
+        if (rows == null || rows.isEmpty()) {
+            publishTrace(bridge, "publish.stop", "reason=no_selected_rows");
+            return RuntimeResult.fail(RuntimeErrorCode.PUBLISH_PAYLOAD_INVALID,
+                "No selected rows for /module publish. Select rows with /codeselector first.");
         }
+        ScopeResolution scope = resolveScopeForPublish(bridge);
+        String publishPostId = "live_" + safePath(scope.scopeId == null ? "default" : scope.scopeId);
         PublishSessionState session = new PublishSessionState(
             "pub_" + System.currentTimeMillis(),
             bridge.nowMs(),
             bridge.currentDimension(),
             true,
-            pl.postId,
-            pl.configKey
+            publishPostId,
+            "default"
         );
-        ScopeResolution scope = resolveScopeForPublish(bridge);
         session.scopeCacheKey = scope.scopeId;
         publishTrace(bridge, "publish.scope",
             "source=" + scope.source + " idLine=" + scope.idLine + " scopeKey=" + session.scopeCacheKey + ":" + bridge.currentDimension());
         if (rows != null) {
             session.selectedRows.addAll(rows);
-            session.warmupQueue.addAll(rows);
+            session.warmupQueue.addAll(expandWarmupTargets(rows, bridge, settings.getInt("publish.maxSteps", 256)));
         }
         try {
             PublishCacheView persisted = PublishCacheStore.load(bridge.runDirectory());
@@ -388,7 +390,6 @@ public final class RuntimeCore {
         } catch (Exception e) {
             publishTrace(bridge, "publish.cache.load", "error=" + e.getClass().getSimpleName());
         }
-        session.sourceFiles.addAll(pl.savedFiles);
         PublishWarmupExecutor.Result warmup = PublishWarmupExecutor.run(session, bridge,
             new PublishWarmupExecutor.Trace() {
                 @Override
@@ -407,6 +408,75 @@ public final class RuntimeCore {
             savePublishCache(bridge.runDirectory(), session.cacheView, bridge);
             return signValidation;
         }
+        PublishLiveExportExecutor.Result export = PublishLiveExportExecutor.export(
+            bridge,
+            session.selectedRows,
+            session.scopeCacheKey,
+            settings.getInt("publish.maxSteps", 256),
+            true,
+            new PublishLiveExportExecutor.Trace() {
+                @Override
+                public void trace(String stage, String details) {
+                    publishTrace(bridge, stage, details);
+                }
+            }
+        );
+        if (!export.ok) {
+            savePublishCache(bridge.runDirectory(), session.cacheView, bridge);
+            publishTrace(bridge, "publish.stop", "reason=export_failed detail=" + export.errorMessage);
+            return RuntimeResult.fail(RuntimeErrorCode.PUBLISH_PAYLOAD_INVALID, export.errorMessage);
+        }
+
+        String compilerPath = MlDslToolchainExecutor.resolveCompilerPath(settings);
+        if (compilerPath == null || compilerPath.trim().isEmpty()) {
+            publishTrace(bridge, "publish.stop", "reason=compiler_not_found");
+            return RuntimeResult.fail(RuntimeErrorCode.COMMAND_EXECUTION_FAILED,
+                "mldsl compiler not found. Configure mldsl.compilerPath or install mldsl.");
+        }
+        publishTrace(bridge, "publish.toolchain.resolve", "compiler=" + compilerPath);
+        Path workDir = bridge.runDirectory().resolve("mldsl_cache").resolve("publish_work_" + System.currentTimeMillis());
+        try {
+            Files.createDirectories(workDir);
+        } catch (Exception e) {
+            publishTrace(bridge, "publish.stop", "reason=workdir_create_failed detail=" + e.getClass().getSimpleName());
+            return RuntimeResult.fail(RuntimeErrorCode.PUBLISH_PREP_FAILED,
+                "cannot create publish work dir: " + String.valueOf(e.getMessage()));
+        }
+        Path moduleFile = workDir.resolve("module.mldsl");
+        Path planFile = workDir.resolve("plan.json");
+        MlDslToolchainExecutor.ExecResult conv = MlDslToolchainExecutor.exportcodeToMldsl(
+            compilerPath,
+            export.exportFile,
+            moduleFile,
+            new MlDslToolchainExecutor.Trace() {
+                @Override
+                public void trace(String stage, String details) {
+                    publishTrace(bridge, stage, details);
+                }
+            });
+        if (!conv.ok || !Files.exists(moduleFile)) {
+            publishTrace(bridge, "publish.stop", "reason=converter_failed exit=" + conv.exitCode);
+            return RuntimeResult.fail(RuntimeErrorCode.COMMAND_EXECUTION_FAILED,
+                "mldsl exportcode failed: code=" + conv.exitCode + " stderr=" + trimForChat(conv.stderr));
+        }
+        MlDslToolchainExecutor.ExecResult comp = MlDslToolchainExecutor.compileToPlan(
+            compilerPath,
+            moduleFile,
+            planFile,
+            new MlDslToolchainExecutor.Trace() {
+                @Override
+                public void trace(String stage, String details) {
+                    publishTrace(bridge, stage, details);
+                }
+            });
+        if (!comp.ok || !Files.exists(planFile)) {
+            publishTrace(bridge, "publish.stop", "reason=compile_failed exit=" + comp.exitCode);
+            return RuntimeResult.fail(RuntimeErrorCode.COMMAND_EXECUTION_FAILED,
+                "mldsl compile failed: code=" + comp.exitCode + " stderr=" + trimForChat(comp.stderr));
+        }
+        session.sourceFiles.add(export.exportFile.toFile());
+        session.sourceFiles.add(moduleFile.toFile());
+        session.sourceFiles.add(planFile.toFile());
         savePublishCache(bridge.runDirectory(), session.cacheView, bridge);
         PublishExportExecutor.Result out = PublishExportExecutor.prepareBundle(session, bridge.runDirectory());
         if (!out.ok) {
@@ -418,6 +488,99 @@ public final class RuntimeCore {
         bridge.sendChat("[publish-debug] prepared bundle=" + out.bundleDir.getFileName() + " files=" + out.copiedFiles);
         bridge.sendActionBar("publish bundle ready: " + out.bundleDir.getFileName());
         return RuntimeResult.ok("Publish bundle prepared at: " + out.bundleDir.toAbsolutePath());
+    }
+
+    private static List<SelectedRow> expandWarmupTargets(List<SelectedRow> rows, GameBridge bridge, int maxSteps) {
+        List<SelectedRow> out = new ArrayList<SelectedRow>();
+        if (rows == null || rows.isEmpty() || bridge == null) {
+            return out;
+        }
+        List<String> seen = new ArrayList<String>();
+        int steps = Math.max(32, maxSteps);
+        for (SelectedRow row : rows) {
+            if (row == null) {
+                continue;
+            }
+            int emptyPairs = 0;
+            int startX = row.x();
+            int startY = row.y() + 1;
+            int startZ = row.z();
+            for (int p = 0; p < steps; p++) {
+                int entryX = startX - (2 * p);
+                int entryY = startY;
+                int entryZ = startZ;
+                int sideX = entryX - 1;
+                String entryBlock = safeId(bridge.getBlockIdAt(entryX, entryY, entryZ));
+                String sideBlock = safeId(bridge.getBlockIdAt(sideX, entryY, entryZ));
+                if (entryBlock.isEmpty() && sideBlock.isEmpty()) {
+                    break;
+                }
+                boolean sidePiston = "minecraft:piston".equals(sideBlock) || "minecraft:sticky_piston".equals(sideBlock);
+                boolean hasSign = hasLegacySignAtEntry(bridge, entryX, entryY, entryZ);
+                boolean emptySlot = isAirId(entryBlock) && !sidePiston && !hasSign;
+                if (emptySlot) {
+                    emptyPairs++;
+                    if (emptyPairs >= 2) {
+                        break;
+                    }
+                    continue;
+                }
+                emptyPairs = 0;
+                String chestBlock = safeId(bridge.getBlockIdAt(entryX, entryY + 1, entryZ));
+                if (!isExportChestBlock(chestBlock)) {
+                    continue;
+                }
+                String dim = row.dimension() == null ? "" : row.dimension();
+                String key = dim + ":" + entryX + ":" + entryY + ":" + entryZ;
+                if (seen.contains(key)) {
+                    continue;
+                }
+                seen.add(key);
+                out.add(new SelectedRow(dim, entryX, entryY - 1, entryZ));
+            }
+        }
+        if (out.isEmpty()) {
+            out.addAll(rows);
+        }
+        return out;
+    }
+
+    private static boolean hasLegacySignAtEntry(GameBridge bridge, int entryX, int entryY, int entryZ) {
+        if (bridge == null) {
+            return false;
+        }
+        for (int dy = -2; dy <= 0; dy++) {
+            if (bridge.isSignAt(entryX, entryY + dy, entryZ - 1)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String safeId(String id) {
+        return id == null ? "" : id.trim().toLowerCase();
+    }
+
+    private static boolean isAirId(String id) {
+        return id == null || id.isEmpty() || "minecraft:air".equals(id);
+    }
+
+    private static boolean isExportChestBlock(String blockId) {
+        if (blockId == null || blockId.isEmpty()) {
+            return false;
+        }
+        return blockId.contains("chest") || blockId.contains("barrel") || blockId.contains("shulker_box");
+    }
+
+    private static String trimForChat(String s) {
+        if (s == null) {
+            return "";
+        }
+        String t = s.replace('\r', ' ').replace('\n', ' ').trim();
+        if (t.length() > 220) {
+            return t.substring(0, 220) + "...";
+        }
+        return t;
     }
 
     private RuntimeResult validatePublishSigns(PublishSessionState session, GameBridge bridge) {

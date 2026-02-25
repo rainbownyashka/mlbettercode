@@ -62,6 +62,15 @@ public interface GameBridge {
     boolean isHoldingBlockerItem();
     boolean isSignAt(int x, int y, int z);
     String[] readSignLinesAt(int x, int y, int z);
+    default String getBlockIdAt(int x, int y, int z) {
+        return "";
+    }
+    default String getBlockFacingAt(int x, int y, int z) {
+        return "";
+    }
+    default String getChestJsonAtEntry(int entryX, int entryY, int entryZ, boolean preferCache) {
+        return "";
+    }
     String dimensionId();
     boolean supportsLegacyLookSpoof();
     BlockPosView getRuntimeEntryAnchor();

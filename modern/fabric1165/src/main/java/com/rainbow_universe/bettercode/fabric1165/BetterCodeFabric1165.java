@@ -52,6 +52,7 @@ import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.inventory.Inventory;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -911,7 +912,7 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
     private static int modHelp(FabricClientCommandSource source) {
         source.sendFeedback(new LiteralText("[modhelp] /mldsl run <postId|path.json> [config]"));
-        source.sendFeedback(new LiteralText("[modhelp] /module publish - build publish bundle from pending /mldsl run or /loadmodule files"));
+        source.sendFeedback(new LiteralText("[modhelp] /module publish - live export selected rows -> module.mldsl -> plan.json"));
         source.sendFeedback(new LiteralText("[modhelp] /testcase setpos|rightclick|tp|trapcheck|gettable|gettablefromcache|viewentities|chestcache|outline1..4"));
         source.sendFeedback(new LiteralText("[modhelp] /regalltables - crawl menu tables from /testcase marker and export tablesexport.txt"));
         source.sendFeedback(new LiteralText("[modhelp] /regalltables select - crawl tables without bulk action mark"));
@@ -3220,6 +3221,109 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
         }
 
         @Override
+        public String getBlockIdAt(int x, int y, int z) {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc == null || mc.world == null) {
+                return "";
+            }
+            try {
+                return String.valueOf(Registry.BLOCK.getId(mc.world.getBlockState(new BlockPos(x, y, z)).getBlock()));
+            } catch (Exception e) {
+                return "";
+            }
+        }
+
+        @Override
+        public String getBlockFacingAt(int x, int y, int z) {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc == null || mc.world == null) {
+                return "";
+            }
+            try {
+                net.minecraft.block.BlockState st = mc.world.getBlockState(new BlockPos(x, y, z));
+                for (Map.Entry<?, ?> e : st.getEntries().entrySet()) {
+                    Object value = e == null ? null : e.getValue();
+                    if (value instanceof Direction) {
+                        return ((Direction) value).asString();
+                    }
+                }
+            } catch (Exception ignore) {
+            }
+            return "";
+        }
+
+        @Override
+        public String getChestJsonAtEntry(int entryX, int entryY, int entryZ, boolean preferCache) {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc == null || mc.world == null) {
+                return "";
+            }
+            BlockPos chestPos = new BlockPos(entryX, entryY + 1, entryZ);
+            String chestBlockId = getBlockIdAt(chestPos.getX(), chestPos.getY(), chestPos.getZ());
+            if (!isExportChestBlockId(chestBlockId)) {
+                return "";
+            }
+            BlockEntity be = mc.world.getBlockEntity(chestPos);
+            if (!(be instanceof Inventory)) {
+                return "";
+            }
+            Inventory inv = (Inventory) be;
+            int size;
+            try {
+                size = Math.max(1, inv.size());
+            } catch (Exception e) {
+                size = 27;
+            }
+            String title = "";
+            try {
+                if (be instanceof net.minecraft.block.entity.LockableContainerBlockEntity) {
+                    title = textToString(((net.minecraft.block.entity.LockableContainerBlockEntity) be).getDisplayName());
+                }
+            } catch (Exception ignore) {
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.append("{");
+            sb.append("\"pos\":").append("{\"x\":").append(chestPos.getX())
+                .append(",\"y\":").append(chestPos.getY())
+                .append(",\"z\":").append(chestPos.getZ()).append("},");
+            sb.append("\"title\":\"").append(escapeJsonQuiet(title)).append("\",");
+            sb.append("\"size\":").append(size).append(",");
+            sb.append("\"slots\":[");
+            boolean first = true;
+            for (int i = 0; i < size; i++) {
+                ItemStack st;
+                try {
+                    st = inv.getStack(i);
+                } catch (Exception e) {
+                    st = ItemStack.EMPTY;
+                }
+                if (st == null || st.isEmpty()) {
+                    continue;
+                }
+                if (!first) {
+                    sb.append(",");
+                }
+                first = false;
+                String reg = st.getItem() == null ? "unknown" : String.valueOf(Registry.ITEM.getId(st.getItem()));
+                String display = textToString(st.getName());
+                String clean = display == null ? "" : display;
+                String nbt = readNbtString(st);
+                int count = st.getCount();
+                sb.append("{");
+                sb.append("\"slot\":").append(i).append(",");
+                sb.append("\"registry\":\"").append(escapeJsonQuiet(reg)).append("\",");
+                sb.append("\"id\":\"").append(escapeJsonQuiet(reg)).append("\",");
+                sb.append("\"count\":").append(Math.max(1, count)).append(",");
+                sb.append("\"display\":\"").append(escapeJsonQuiet(display)).append("\",");
+                sb.append("\"displayClean\":\"").append(escapeJsonQuiet(clean)).append("\",");
+                sb.append("\"nbt\":\"").append(escapeJsonQuiet(nbt)).append("\"");
+                sb.append("}");
+            }
+            sb.append("]}");
+            return sb.toString();
+        }
+
+        @Override
         public String[] readSignLinesAt(int x, int y, int z) {
             MinecraftClient mc = MinecraftClient.getInstance();
             if (mc == null || mc.world == null) {
@@ -3441,6 +3545,54 @@ public final class BetterCodeFabric1165 implements ClientModInitializer {
 
         private static String readSignLineReflect(Object be, int line) {
             return ReflectCompat.readSignLineReflect(be, line, FabricBridge::textToString);
+        }
+
+        private static boolean isExportChestBlockId(String blockId) {
+            if (blockId == null || blockId.trim().isEmpty()) {
+                return false;
+            }
+            String s = blockId.trim().toLowerCase();
+            return s.contains("chest") || s.contains("barrel") || s.contains("shulker_box");
+        }
+
+        private static String escapeJsonQuiet(String s) {
+            if (s == null) {
+                return "";
+            }
+            StringBuilder out = new StringBuilder(s.length() + 16);
+            for (int i = 0; i < s.length(); i++) {
+                char c = s.charAt(i);
+                switch (c) {
+                    case '"':
+                        out.append("\\\"");
+                        break;
+                    case '\\':
+                        out.append("\\\\");
+                        break;
+                    case '\b':
+                        out.append("\\b");
+                        break;
+                    case '\f':
+                        out.append("\\f");
+                        break;
+                    case '\n':
+                        out.append("\\n");
+                        break;
+                    case '\r':
+                        out.append("\\r");
+                        break;
+                    case '\t':
+                        out.append("\\t");
+                        break;
+                    default:
+                        if (c < 0x20) {
+                            out.append(String.format("\\u%04x", (int) c));
+                        } else {
+                            out.append(c);
+                        }
+                }
+            }
+            return out.toString();
         }
 
         private static boolean hasAnySignText(String[] lines) {

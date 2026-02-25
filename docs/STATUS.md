@@ -5,6 +5,15 @@
 - Active branch baseline: `main` (mod repo)
 
 ## Verified features
+- Fabric1165 publish pipeline switched to legacy-style live export + toolchain (2026-02-25):
+  - `/module publish` now uses live selected rows as source (`exportcode_publish_*.json`) instead of pending module files.
+  - warmup queue now expands selected rows into per-entry chest targets using legacy row traversal (`-2x`, stop on two empty pairs, sign probe `z-1 dy=-2..0`).
+  - added strict external toolchain execution in modern core:
+    - `mldsl exportcode ... --api ... -o module.mldsl`
+    - `mldsl compile ... --plan plan.json`
+    - compiler path resolve priority: dev `mlctmodified` -> `mldsl.compilerPath` -> `mldsl` in PATH.
+  - publish bundle now includes README and legacy artifact set (`exportcode`, `module.mldsl`, `plan.json`, `publish_meta.json`).
+  - Fabric1165 bridge exposes live export primitives for core (`getBlockIdAt`, `getBlockFacingAt`, `getChestJsonAtEntry`).
 - Modern publish strict-mode alignment (2026-02-25):
   - removed selection-only publish fallback in `RuntimeCore.handlePublish(...)`.
   - `/module publish` now requires pending module files from `/mldsl run` or `/loadmodule`; otherwise it fails explicitly (`NO_PENDING_PLAN`) instead of creating `bundle_selection_*`.
